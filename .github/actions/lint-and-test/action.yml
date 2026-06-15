@@ -39,32 +39,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: cargo fmt --check
-      if: ${{ inputs.fmt == 'true' }}
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      run: cargo fmt --all -- --check
-
-    - name: cargo clippy
-      if: ${{ inputs.clippy == 'true' }}
+    - name: Lint and test
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
+        FMT: ${{ inputs.fmt }}
+        CLIPPY: ${{ inputs.clippy }}
+        TEST: ${{ inputs.test }}
         FEATURES: ${{ inputs.features }}
         CLIPPY_ARGS: ${{ inputs.clippy-args }}
-      run: |
-        set -euo pipefail
-        # shellcheck disable=SC2086
-        cargo clippy --workspace $CLIPPY_ARGS $FEATURES -- -D warnings
-
-    - name: cargo test
-      if: ${{ inputs.test == 'true' }}
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        FEATURES: ${{ inputs.features }}
         TEST_ARGS: ${{ inputs.test-args }}
-      run: |
-        set -euo pipefail
-        # shellcheck disable=SC2086
-        cargo test --workspace $FEATURES $TEST_ARGS
+      run: bash "$GITHUB_ACTION_PATH/lint-and-test.sh"

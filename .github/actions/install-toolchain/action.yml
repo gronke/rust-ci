@@ -27,24 +27,4 @@ runs:
         TOOLCHAIN: ${{ inputs.toolchain }}
         COMPONENTS: ${{ inputs.components }}
         TARGETS: ${{ inputs.targets }}
-      run: |
-        set -euo pipefail
-        if command -v rustup >/dev/null 2>&1; then
-          rustup toolchain install "$TOOLCHAIN" --profile minimal
-          rustup default "$TOOLCHAIN"
-        else
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --default-toolchain "$TOOLCHAIN" --profile minimal --no-modify-path
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-        fi
-        if [ -n "$COMPONENTS" ]; then
-          # shellcheck disable=SC2086
-          rustup component add $COMPONENTS
-        fi
-        if [ -n "$TARGETS" ]; then
-          # shellcheck disable=SC2086
-          rustup target add $TARGETS
-        fi
-        rustc --version
-        cargo --version
+      run: bash "$GITHUB_ACTION_PATH/install-toolchain.sh"
