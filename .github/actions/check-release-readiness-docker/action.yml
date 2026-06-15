@@ -1,0 +1,67 @@
+name: Check release readiness (Docker)
+description: >-
+  Run the release-readiness checks inside the pinned container (jq is baked in).
+  Networked — it needs the crates.io index for `cargo publish --dry-run` and the
+  not-already-published probe. Runs --locked against a read-only workdir.
+
+inputs:
+  image:
+    description: CI image (Rust toolchain + jq).
+    required: false
+    default: ghcr.io/gronke/rust-ci:latest
+  working-directory:
+    description: Crate/workspace directory (mounted read-only).
+    required: false
+    default: "."
+  target-dir:
+    description: Host dir for cargo target (read-write).
+    required: false
+    default: target
+  cargo-cache:
+    description: Host dir for CARGO_HOME (read-write).
+    required: false
+    default: .cargo-cache
+  package:
+    description: Package name to check (required for a workspace with >1 member).
+    required: false
+    default: ""
+  expected-version:
+    description: Version the crate must declare (else derived from a v* tag).
+    required: false
+    default: ""
+  run-tests:
+    description: Also run cargo test --workspace.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: check release readiness
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
+        INPUT_RUN_TESTS: ${{ inputs.run-tests }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
+        docker run --rm \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e CARGO_HOME=/cache/cargo \
+          -e RUSTUP_HOME=/usr/local/rustup \
+          -e INPUT_PACKAGE="$INPUT_PACKAGE" \
+          -e INPUT_EXPECTED_VERSION="$INPUT_EXPECTED_VERSION" \
+          -e INPUT_RUN_TESTS="$INPUT_RUN_TESTS" \
+          -e GITHUB_REF="${GITHUB_REF:-}" \
+          -v "$PWD:/work:ro" \
+          -v "$PWD/$TARGET_DIR:/work/target" \
+          -v "$PWD/$CARGO_CACHE:/cache/cargo" \
+          -v "$GITHUB_ACTION_PATH:/cicd:ro" \
+          -w /work \
+          "$IMAGE" bash /cicd/check-release-readiness.sh

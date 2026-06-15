@@ -1,0 +1,41 @@
+name: Cargo fetch (Docker)
+description: >-
+  The one networked step: populate the cargo registry/git cache inside the
+  pinned container, so subsequent actions can run sealed (--network none
+  --offline). Requires a committed Cargo.lock (runs --locked).
+
+inputs:
+  image:
+    description: CI image (Rust toolchain + clippy/rustfmt + jq).
+    required: false
+    default: ghcr.io/gronke/rust-ci:latest
+  working-directory:
+    description: Crate/workspace directory (mounted read-only).
+    required: false
+    default: "."
+  cargo-cache:
+    description: Host dir for CARGO_HOME (registry/git cache; read-write, cacheable).
+    required: false
+    default: .cargo-cache
+
+runs:
+  using: composite
+  steps:
+    - name: cargo fetch (networked)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$CARGO_CACHE"
+        docker run --rm \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e CARGO_HOME=/cache/cargo \
+          -e RUSTUP_HOME=/usr/local/rustup \
+          -v "$PWD:/work:ro" \
+          -v "$PWD/$CARGO_CACHE:/cache/cargo" \
+          -w /work \
+          "$IMAGE" cargo fetch --locked

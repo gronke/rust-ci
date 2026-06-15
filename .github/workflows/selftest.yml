@@ -32,3 +32,34 @@ jobs:
         with:
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
+
+  # The Docker action set: build the image locally (no GHCR dependency to prove)
+  # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
+  # (networked) against the fixture.
+  selftest-docker:
+    name: exercise the Docker actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build the CI image locally
+        run: docker build -t rust-ci:selftest image/
+
+      - name: cargo-fetch (networked)
+        uses: ./.github/actions/cargo-fetch
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+
+      - name: lint-and-test (sealed, --network none)
+        uses: ./.github/actions/lint-and-test-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+
+      - name: check-release-readiness (networked)
+        uses: ./.github/actions/check-release-readiness-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          expected-version: "0.1.0"

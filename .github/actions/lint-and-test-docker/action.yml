@@ -1,0 +1,55 @@
+name: Lint and test (Docker, sealed)
+description: >-
+  cargo fmt --check + clippy (-D warnings) + test inside the pinned container,
+  sealed with --network none against a pre-fetched cache (run cargo-fetch
+  first). Runs --offline --locked. Workdir is read-only; target + cache are
+  read-write.
+
+inputs:
+  image:
+    description: CI image (Rust toolchain + clippy/rustfmt).
+    required: false
+    default: ghcr.io/gronke/rust-ci:latest
+  working-directory:
+    description: Crate/workspace directory (mounted read-only).
+    required: false
+    default: "."
+  target-dir:
+    description: Host dir for cargo target (read-write, cacheable).
+    required: false
+    default: target
+  cargo-cache:
+    description: Host dir for CARGO_HOME (read-write; populated by cargo-fetch).
+    required: false
+    default: .cargo-cache
+  features:
+    description: Feature flag applied to clippy + test (e.g. --all-features).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: lint + test (sealed)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        FEATURES: ${{ inputs.features }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
+        docker run --rm --network none \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e CARGO_HOME=/cache/cargo \
+          -e RUSTUP_HOME=/usr/local/rustup \
+          -e FEATURES="$FEATURES" \
+          -v "$PWD:/work:ro" \
+          -v "$PWD/$TARGET_DIR:/work/target" \
+          -v "$PWD/$CARGO_CACHE:/cache/cargo" \
+          -v "$GITHUB_ACTION_PATH:/cicd:ro" \
+          -w /work \
+          "$IMAGE" bash /cicd/lint-and-test.sh

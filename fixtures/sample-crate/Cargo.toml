@@ -6,5 +6,11 @@ description = "Trivial crate exercised by cicd-rust's self-test workflow; not in
 license = "MIT"
 repository = "https://github.com/gronke/cicd-rust"
 
+[dependencies]
+# A real (tiny, ubiquitous) dependency so the self-test proves the network
+# split: cargo-fetch downloads it with network on, then the sealed
+# (--network none --offline) lint/test must compile it from the cache alone.
+libc = "0.2"
+
 # Standalone workspace root so cargo never searches parent directories.
 [workspace]

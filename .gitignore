@@ -1,2 +1,5 @@
 target/
 Cargo.lock
+# The fixture commits its lock: the Docker actions run --locked against a
+# read-only workdir, which needs an existing Cargo.lock.
+!fixtures/sample-crate/Cargo.lock
