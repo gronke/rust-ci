@@ -91,6 +91,7 @@ When it is set, `cargo-fetch` configures git to authenticate `github.com` fetche
 
 The token must carry `contents: read` on every private dependency repository.
 The default `GITHUB_TOKEN` only grants access to the workflow's own repository, so a cross-repository dependency needs a fine-grained PAT or a GitHub App installation token, stored as a secret.
+See [docs/private-git-dependencies.md](docs/private-git-dependencies.md) for the GitHub App setup and an in-workflow minting example.
 The sealed `lint-and-test-docker` passes run `--offline` against the cache `cargo-fetch` populated, so they need no token.
 
 ## Self-test
