@@ -33,6 +33,25 @@ inputs:
     description: Also run cargo test --workspace.
     required: false
     default: "false"
+  env-include:
+    description: >-
+      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
+      container, anchored full-name. Default forwards cargo's own vars.
+    required: false
+    default: "CARGO_.*"
+  env-exclude:
+    description: >-
+      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Defaults to the action-owned vars; widening env-include to ".*" forwards
+      secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
+    required: false
+    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+  env:
+    description: >-
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
+      regardless of env-include/env-exclude.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -47,14 +66,29 @@ runs:
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
         INPUT_RUN_TESTS: ${{ inputs.run-tests }}
+        ENV_INCLUDE: ${{ inputs.env-include }}
+        ENV_EXCLUDE: ${{ inputs.env-exclude }}
+        INPUT_ENV: ${{ inputs.env }}
       run: |
         set -euo pipefail
         mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
+        # Forward env into the container (see env-include/env-exclude/env inputs);
+        # owner-vars pinned after --env-file (last-wins).
+        ef="$(mktemp)"; trap 'rm -f "$ef"' EXIT
+        env | awk -v inc="$ENV_INCLUDE" -v exc="$ENV_EXCLUDE" '
+          { name = $0; sub(/=.*/, "", name) }
+          inc != "" && name !~ "^(" inc ")$" { next }
+          exc != "" && name ~  "^(" exc ")$" { next }
+          { print }
+        ' > "$ef"
+        if [ -n "$INPUT_ENV" ]; then printf '%s\n' "$INPUT_ENV" >> "$ef"; fi
         docker run --rm \
+          --env-file "$ef" \
           --user "$(id -u):$(id -g)" \
           -e HOME=/tmp \
           -e CARGO_HOME=/cache/cargo \
           -e RUSTUP_HOME=/usr/local/rustup \
+          -e CARGO_TARGET_DIR=/work/target \
           -e INPUT_PACKAGE="$INPUT_PACKAGE" \
           -e INPUT_EXPECTED_VERSION="$INPUT_EXPECTED_VERSION" \
           -e INPUT_RUN_TESTS="$INPUT_RUN_TESTS" \

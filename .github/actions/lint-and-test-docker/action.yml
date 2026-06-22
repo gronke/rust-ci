@@ -33,6 +33,25 @@ inputs:
       skipping the warmup. Default "true".
     required: false
     default: "true"
+  env-include:
+    description: >-
+      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
+      container, anchored full-name. Default forwards cargo's own vars.
+    required: false
+    default: "CARGO_.*"
+  env-exclude:
+    description: >-
+      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Defaults to the action-owned vars; widening env-include to ".*" forwards
+      secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
+    required: false
+    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+  env:
+    description: >-
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
+      regardless of env-include/env-exclude.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -46,6 +65,9 @@ runs:
         CARGO_CACHE: ${{ inputs.cargo-cache }}
         FEATURES: ${{ inputs.features }}
         OFFLINE: ${{ inputs.offline }}
+        ENV_INCLUDE: ${{ inputs.env-include }}
+        ENV_EXCLUDE: ${{ inputs.env-exclude }}
+        INPUT_ENV: ${{ inputs.env }}
       run: |
         set -euo pipefail
         mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
@@ -53,12 +75,27 @@ runs:
         # networked so cargo fetches as it builds (no cargo-fetch warmup needed).
         net=""
         if [ "$OFFLINE" = "true" ]; then net="--network none"; fi
+        # Forward env into the container: env-include selects names (default
+        # CARGO_.*), env-exclude drops them (exclusion wins), then the literal
+        # `env` input is appended verbatim. The owner-vars (CARGO_HOME /
+        # RUSTUP_HOME / CARGO_TARGET_DIR) are pinned after --env-file (last-wins),
+        # so clearing env-exclude can't redirect the mounted cache/target.
+        ef="$(mktemp)"; trap 'rm -f "$ef"' EXIT
+        env | awk -v inc="$ENV_INCLUDE" -v exc="$ENV_EXCLUDE" '
+          { name = $0; sub(/=.*/, "", name) }
+          inc != "" && name !~ "^(" inc ")$" { next }
+          exc != "" && name ~  "^(" exc ")$" { next }
+          { print }
+        ' > "$ef"
+        if [ -n "$INPUT_ENV" ]; then printf '%s\n' "$INPUT_ENV" >> "$ef"; fi
         # shellcheck disable=SC2086  # $net is intentionally word-split (flags or empty)
         docker run --rm $net \
+          --env-file "$ef" \
           --user "$(id -u):$(id -g)" \
           -e HOME=/tmp \
           -e CARGO_HOME=/cache/cargo \
           -e RUSTUP_HOME=/usr/local/rustup \
+          -e CARGO_TARGET_DIR=/work/target \
           -e OFFLINE="$OFFLINE" \
           -e FEATURES="$FEATURES" \
           -v "$PWD:/work:ro" \

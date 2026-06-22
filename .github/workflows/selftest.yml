@@ -39,6 +39,11 @@ jobs:
   selftest-docker:
     name: exercise the Docker actions
     runs-on: ubuntu-latest
+    # CICD_PROBE rides the runner env so the env-passthrough proofs below can
+    # (conditionally) forward it into the container; the expectation is supplied
+    # per step via the literal `env` input (CICD_EXPECT) so it always crosses.
+    env:
+      CICD_PROBE: forwarded
     steps:
       - uses: actions/checkout@v6
 
@@ -51,14 +56,29 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
 
-      - name: lint-and-test (sealed, --network none)
+      - name: lint-and-test (sealed, --network none) + env passthrough
         uses: ./.github/actions/lint-and-test-docker
         with:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
+          # Positive proof: env-include forwards CICD_PROBE across the sealed
+          # boundary; CICD_EXPECT=present makes the fixture assert it arrived.
+          env-include: "CICD_.*"
+          env: |
+            CICD_EXPECT=present
+
+      # Negative control: the DEFAULT include (CARGO_.*) must NOT forward an
+      # unrelated host var. CICD_PROBE is in the runner env but should not cross.
+      - name: lint-and-test (default include does not leak)
+        uses: ./.github/actions/lint-and-test-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          env: |
+            CICD_EXPECT=absent
 
       # Prove the no-warmup path: networked, a cold cache, no cargo-fetch before it.
-      - name: lint-and-test (networked, no warmup)
+      - name: lint-and-test (networked, no warmup) + exclusion wins
         uses: ./.github/actions/lint-and-test-docker
         with:
           image: rust-ci:selftest
@@ -66,6 +86,12 @@ jobs:
           offline: "false"
           cargo-cache: .cargo-cache-online
           target-dir: target-online
+          # Exclusion wins: CICD_PROBE matches env-include but is also in
+          # env-exclude, so it must NOT cross (CICD_EXPECT=absent asserts that).
+          env-include: "CICD_.*"
+          env-exclude: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR|CICD_PROBE"
+          env: |
+            CICD_EXPECT=absent
 
       - name: check-release-readiness (networked)
         uses: ./.github/actions/check-release-readiness-docker
