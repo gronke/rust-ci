@@ -1,0 +1,70 @@
+name: Lint and test
+description: >-
+  Run cargo fmt --check, clippy (deny warnings), and cargo test for one feature
+  universe. Call it once per universe to build a default / all-features /
+  no-default-features matrix; enable `fmt` on a single leg to avoid repeating it.
+
+inputs:
+  working-directory:
+    description: Directory to run cargo in.
+    required: false
+    default: "."
+  features:
+    description: >-
+      Feature flag applied to clippy and test (e.g. "--all-features" or
+      "--no-default-features"). Empty means the default feature set.
+    required: false
+    default: ""
+  fmt:
+    description: Run `cargo fmt --all -- --check` (universe-independent).
+    required: false
+    default: "true"
+  clippy:
+    description: Run clippy with `-D warnings`.
+    required: false
+    default: "true"
+  test:
+    description: Run `cargo test`.
+    required: false
+    default: "true"
+  clippy-args:
+    description: Extra clippy args, placed before `-- -D warnings`.
+    required: false
+    default: "--all-targets"
+  test-args:
+    description: Extra `cargo test` args.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: cargo fmt --check
+      if: ${{ inputs.fmt == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: cargo fmt --all -- --check
+
+    - name: cargo clippy
+      if: ${{ inputs.clippy == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FEATURES: ${{ inputs.features }}
+        CLIPPY_ARGS: ${{ inputs.clippy-args }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086
+        cargo clippy --workspace $CLIPPY_ARGS $FEATURES -- -D warnings
+
+    - name: cargo test
+      if: ${{ inputs.test == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FEATURES: ${{ inputs.features }}
+        TEST_ARGS: ${{ inputs.test-args }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086
+        cargo test --workspace $FEATURES $TEST_ARGS

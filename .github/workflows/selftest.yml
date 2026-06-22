@@ -1,0 +1,34 @@
+name: selftest
+
+# Exercise every composite action end-to-end against the fixture crate, so the
+# actions are verified before any consumer relies on them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: exercise the composite actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: install-toolchain
+        uses: ./.github/actions/install-toolchain
+        with:
+          components: rustfmt clippy
+
+      - name: lint-and-test (fixture)
+        uses: ./.github/actions/lint-and-test
+        with:
+          working-directory: fixtures/sample-crate
+
+      - name: check-release-readiness (fixture)
+        uses: ./.github/actions/check-release-readiness
+        with:
+          working-directory: fixtures/sample-crate
+          expected-version: "0.1.0"

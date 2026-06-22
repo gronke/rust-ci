@@ -1,0 +1,10 @@
+[package]
+name = "cicd-rust-selftest-fixture"
+version = "0.1.0"
+edition = "2021"
+description = "Trivial crate exercised by cicd-rust's self-test workflow; not intended for release."
+license = "MIT"
+repository = "https://github.com/gronke/cicd-rust"
+
+# Standalone workspace root so cargo never searches parent directories.
+[workspace]

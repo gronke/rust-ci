@@ -1,0 +1,50 @@
+name: Install Rust toolchain
+description: >-
+  Install Rust via rustup (toolchain, components, targets) and put
+  ~/.cargo/bin on PATH. Avoids third-party toolchain actions so behaviour does
+  not drift with the runner image.
+
+inputs:
+  toolchain:
+    description: Toolchain passed to rustup (e.g. stable, 1.77.2).
+    required: false
+    default: stable
+  components:
+    description: Space-separated rustup components to add (e.g. "rustfmt clippy").
+    required: false
+    default: ""
+  targets:
+    description: Space-separated rustup targets to add (e.g. "x86_64-apple-darwin").
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        COMPONENTS: ${{ inputs.components }}
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        set -euo pipefail
+        if command -v rustup >/dev/null 2>&1; then
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+        else
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain "$TOOLCHAIN" --profile minimal --no-modify-path
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+        fi
+        if [ -n "$COMPONENTS" ]; then
+          # shellcheck disable=SC2086
+          rustup component add $COMPONENTS
+        fi
+        if [ -n "$TARGETS" ]; then
+          # shellcheck disable=SC2086
+          rustup target add $TARGETS
+        fi
+        rustc --version
+        cargo --version
