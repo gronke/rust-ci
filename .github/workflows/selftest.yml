@@ -57,6 +57,16 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
 
+      # Prove the no-warmup path: networked, a cold cache, no cargo-fetch before it.
+      - name: lint-and-test (networked, no warmup)
+        uses: ./.github/actions/lint-and-test-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          offline: "false"
+          cargo-cache: .cargo-cache-online
+          target-dir: target-online
+
       - name: check-release-readiness (networked)
         uses: ./.github/actions/check-release-readiness-docker
         with:

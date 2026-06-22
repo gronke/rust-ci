@@ -26,6 +26,13 @@ inputs:
     description: Feature flag applied to clippy + test (e.g. --all-features).
     required: false
     default: ""
+  offline:
+    description: >-
+      Run sealed: --network none + cargo --offline (needs a prior cargo-fetch to
+      populate the cache). Set "false" to run networked and fetch-as-it-builds,
+      skipping the warmup. Default "true".
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -38,14 +45,21 @@ runs:
         TARGET_DIR: ${{ inputs.target-dir }}
         CARGO_CACHE: ${{ inputs.cargo-cache }}
         FEATURES: ${{ inputs.features }}
+        OFFLINE: ${{ inputs.offline }}
       run: |
         set -euo pipefail
         mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
-        docker run --rm --network none \
+        # Sealed (default): no network + cargo --offline. offline=false runs
+        # networked so cargo fetches as it builds (no cargo-fetch warmup needed).
+        net=""
+        if [ "$OFFLINE" = "true" ]; then net="--network none"; fi
+        # shellcheck disable=SC2086  # $net is intentionally word-split (flags or empty)
+        docker run --rm $net \
           --user "$(id -u):$(id -g)" \
           -e HOME=/tmp \
           -e CARGO_HOME=/cache/cargo \
           -e RUSTUP_HOME=/usr/local/rustup \
+          -e OFFLINE="$OFFLINE" \
           -e FEATURES="$FEATURES" \
           -v "$PWD:/work:ro" \
           -v "$PWD/$TARGET_DIR:/work/target" \
