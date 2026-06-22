@@ -76,6 +76,23 @@ jobs:
 Widening `env-include` to `.*` forwards **everything on the runner**, including secrets such as `GITHUB_TOKEN` — prefer a tight `env-include`, or add sensitive names to `env-exclude`.
 Regardless of the inputs, the actions always pin `CARGO_HOME`, `RUSTUP_HOME`, and `CARGO_TARGET_DIR` to their in-container paths (after `--env-file`, last-wins), so a forwarded copy can never redirect the mounted cache or target and break the sealed build.
 
+## Private git dependencies (cargo-fetch)
+
+A `Cargo.toml` git dependency on a **private** repository can't be cloned anonymously, and `cargo-fetch` runs cargo inside the container, so the credential has to reach the container's git — not the runner's.
+Pass a token through the `git-token` input.
+When it is set, `cargo-fetch` configures git to authenticate `github.com` fetches as `x-access-token` and forces cargo to fetch via the git CLI (so the rewrite applies); when it is empty the step is unchanged, so public-only workspaces need nothing.
+
+```yaml
+- name: Cargo fetch
+  uses: gronke/cicd-rust/.github/actions/cargo-fetch@main
+  with:
+    git-token: ${{ secrets.PRIVATE_DEP_TOKEN }}
+```
+
+The token must carry `contents: read` on every private dependency repository.
+The default `GITHUB_TOKEN` only grants access to the workflow's own repository, so a cross-repository dependency needs a fine-grained PAT or a GitHub App installation token, stored as a secret.
+The sealed `lint-and-test-docker` passes run `--offline` against the cache `cargo-fetch` populated, so they need no token.
+
 ## Self-test
 
 [`.github/workflows/selftest.yml`](.github/workflows/selftest.yml) runs every action against the fixture crate in [`fixtures/sample-crate`](fixtures/sample-crate/) on each push and pull request.

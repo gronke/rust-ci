@@ -36,6 +36,14 @@ inputs:
       regardless of env-include/env-exclude.
     required: false
     default: ""
+  git-token:
+    description: >-
+      Token for cloning PRIVATE git dependencies inside the container. When set,
+      git is configured (url.insteadOf) to authenticate github.com fetches as
+      x-access-token, and cargo is forced to fetch via the git CLI. Pass a secret
+      carrying contents:read on the dependency repos; leave empty for public deps.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -49,6 +57,7 @@ runs:
         ENV_INCLUDE: ${{ inputs.env-include }}
         ENV_EXCLUDE: ${{ inputs.env-exclude }}
         INPUT_ENV: ${{ inputs.env }}
+        GIT_TOKEN: ${{ inputs.git-token }}
       run: |
         set -euo pipefail
         mkdir -p "$CARGO_CACHE"
@@ -62,6 +71,10 @@ runs:
           { print }
         ' > "$ef"
         if [ -n "$INPUT_ENV" ]; then printf '%s\n' "$INPUT_ENV" >> "$ef"; fi
+        # Private git deps: hand the token to the CONTAINER's git (configured in the
+        # command below), never the runner's. Forwarded only as this explicit line,
+        # so widening env-include can't also smuggle it.
+        if [ -n "$GIT_TOKEN" ]; then printf 'CICD_GIT_TOKEN=%s\n' "$GIT_TOKEN" >> "$ef"; fi
         docker run --rm \
           --env-file "$ef" \
           --user "$(id -u):$(id -g)" \
@@ -71,4 +84,13 @@ runs:
           -v "$PWD:/work:ro" \
           -v "$PWD/$CARGO_CACHE:/cache/cargo" \
           -w /work \
-          "$IMAGE" cargo fetch --locked
+          "$IMAGE" bash -c '
+            # With a git-token, authenticate github.com fetches as x-access-token and
+            # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies
+            # — lets cargo clone PRIVATE git dependencies. No-op for public deps.
+            if [ -n "${CICD_GIT_TOKEN:-}" ]; then
+              git config --global url."https://x-access-token:${CICD_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+              export CARGO_NET_GIT_FETCH_WITH_CLI=true
+            fi
+            exec cargo fetch --locked
+          '
