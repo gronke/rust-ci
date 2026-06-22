@@ -71,10 +71,12 @@ runs:
           { print }
         ' > "$ef"
         if [ -n "$INPUT_ENV" ]; then printf '%s\n' "$INPUT_ENV" >> "$ef"; fi
-        # Private git deps: hand the token to the CONTAINER's git (configured in the
-        # command below), never the runner's. Forwarded only as this explicit line,
-        # so widening env-include can't also smuggle it.
-        if [ -n "$GIT_TOKEN" ]; then printf 'CICD_GIT_TOKEN=%s\n' "$GIT_TOKEN" >> "$ef"; fi
+        # Private git deps: forward the token as one explicit env-file line (not
+        # via env-include) to the container's git; add-mask redacts it from logs.
+        if [ -n "$GIT_TOKEN" ]; then
+          printf '::add-mask::%s\n' "$GIT_TOKEN"
+          printf 'CICD_GIT_TOKEN=%s\n' "$GIT_TOKEN" >> "$ef"
+        fi
         docker run --rm \
           --env-file "$ef" \
           --user "$(id -u):$(id -g)" \
