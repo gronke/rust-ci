@@ -1,4 +1,4 @@
-# cicd-rust
+# Rust CI/CD
 
 Reusable GitHub Actions for Rust CI/CD.
 Install a toolchain, run the lint-and-test gate, and check a crate's release readiness — without depending on third-party actions whose behaviour drifts with the runner image.
@@ -112,6 +112,11 @@ The sealed `lint-and-test-docker` passes run `--offline` against the cache `carg
 
 [`.github/workflows/selftest.yml`](.github/workflows/selftest.yml) runs every action against the fixture crate in [`fixtures/sample-crate`](fixtures/sample-crate/) on each push and pull request.
 The actions are therefore exercised end-to-end before any consumer relies on them.
+
+
+## Motivation
+
+GitHub Actions have huge potential for supply-chain attacks. Repeating the same setup across repositories was tedious or required using and combining various other third-party actions, none of which is hardened against malicious build.rs scripts in test-dependencies, that potentially receive less attention than the release dependency tree. What purpose does it have to execute both in the same job context? As Archer would say: "That's how you get ants". Given how quick Rust build caches can grow and how time-consuming it can be to pass artifcats between jobs, Docker is available in GitHub Actions and provides easier means of compartmentalization.
 
 ## Status and licence
 
