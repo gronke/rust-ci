@@ -22,6 +22,19 @@ jobs:
         with:
           components: rustfmt clippy
 
+      # rust-cache: warms the cargo cache + sets CARGO_INCREMENTAL=0 for the build steps below.
+      - name: rust-cache (fixture)
+        uses: ./.github/actions/rust-cache
+        with:
+          prefix: fixture
+          cache-target: "true"
+          target-dir: fixtures/sample-crate/target
+          lockfiles: fixtures/sample-crate/Cargo.lock
+
+      # Prove the env export crosses into a later step (the build inherits incremental=off).
+      - name: rust-cache exported CARGO_INCREMENTAL=0
+        run: test "$CARGO_INCREMENTAL" = "0"
+
       - name: lint-and-test (fixture)
         uses: ./.github/actions/lint-and-test
         with:
@@ -99,3 +112,18 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
+
+  # rust-cache must OBEY an explicit CARGO_INCREMENTAL (not force it off): set it at job level and
+  # confirm the action leaves it untouched for the build steps that would follow.
+  selftest-cache-passthrough:
+    name: rust-cache obeys CARGO_INCREMENTAL
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: passthrough
+      - name: explicit CARGO_INCREMENTAL is preserved
+        run: test "$CARGO_INCREMENTAL" = "1"

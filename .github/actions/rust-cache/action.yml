@@ -1,0 +1,90 @@
+name: Rust cache
+description: >-
+  Cache cargo for CI without the usual footguns. DEFAULTS incremental compilation off — pure cost in
+  CI (no edit→recompile loop) and the main thing that balloons target/ — while OBEYING an explicit
+  CARGO_INCREMENTAL the consumer sets (some matrix/variant builds are faster with it on). It does not
+  impose a build profile: the build stays cargo's default unless the consumer sets CARGO_* vars, which
+  flow through unchanged (incl. into the Docker actions via their CARGO_.* forwarding). Caches cargo's
+  download cache (registry index + .crate tarballs + git db) via the first-party actions/cache;
+  optionally caches target/ too, kept bounded by the Cargo.lock-based key (no restore-key ratchet).
+  Avoids third-party cache actions whose behaviour drifts with the runner image.
+
+inputs:
+  prefix:
+    description: Cache-family name, so independent jobs (build, tauri, …) keep separate caches.
+    required: false
+    default: rust
+  cache-target:
+    description: >-
+      Also cache the build target/ directory (keeps compiled dependencies between runs). Off by
+      default — registry/git alone is small and always safe; turn it on for a heavy dependency tree
+      where recompiling every run is the bottleneck. Bounded by the Cargo.lock-based key (no
+      restore-key ratchet); leave CARGO_INCREMENTAL at its default (off) to keep it tight.
+    required: false
+    default: "false"
+  target-dir:
+    description: Workspace-relative target directory to cache when cache-target is true (e.g. an out-of-workspace crate's target).
+    required: false
+    default: target
+  lockfiles:
+    description: Glob of lockfile(s) whose hash keys the cache.
+    required: false
+    default: "**/Cargo.lock"
+  cache-directories:
+    description: Extra newline-separated paths to add to the cache.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # Incremental compilation is pure cost in CI (no edit→recompile loop) and is what balloons target/
+    # — gigabytes of codegen units + dep-graph data that are never reused across runs. Defaulting it
+    # off is the single biggest size reduction and is what makes caching target/ safe; a consumer who
+    # knows a variant build benefits can still set CARGO_INCREMENTAL and have it honoured.
+    - name: Configure cargo for CI + compute cache key
+      id: meta
+      shell: bash
+      env:
+        CACHE_TARGET: ${{ inputs.cache-target }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        EXTRA_DIRS: ${{ inputs.cache-directories }}
+      run: |
+        set -euo pipefail
+        # Default these only when the consumer hasn't set them — an explicit CARGO_INCREMENTAL
+        # (workflow/job env) is obeyed and left to flow through (e.g. into the Docker actions).
+        if [ -z "${CARGO_INCREMENTAL:-}" ]; then echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"; fi
+        if [ -z "${CARGO_TERM_COLOR:-}" ]; then echo "CARGO_TERM_COLOR=always" >> "$GITHUB_ENV"; fi
+
+        # Fold the toolchain into the key so a rustc bump can't reuse incompatible artifacts.
+        if command -v rustc >/dev/null 2>&1; then
+          rust=$(rustc -V | sha256sum | cut -c1-12)
+        else
+          rust=norustc
+        fi
+        echo "rust=$rust" >> "$GITHUB_OUTPUT"
+
+        # Cache cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never
+        # registry/src: cargo re-extracts it from the tarballs, so caching it is pure duplication
+        # (it roughly doubles the registry footprint for no benefit).
+        {
+          echo 'paths<<__PATHS__'
+          echo "$HOME/.cargo/registry/index"
+          echo "$HOME/.cargo/registry/cache"
+          echo "$HOME/.cargo/git/db"
+          if [ "$CACHE_TARGET" = "true" ]; then echo "$TARGET_DIR"; fi
+          if [ -n "$EXTRA_DIRS" ]; then printf '%s\n' "$EXTRA_DIRS"; fi
+          echo '__PATHS__'
+        } >> "$GITHUB_OUTPUT"
+
+    # actions/cache restores here and auto-saves at job end (its post step runs even when nested in a
+    # composite action). An exact-key save is skipped on a hit, so an unchanged Cargo.lock never grows
+    # the cache; a changed lock seeds a fresh entry and the stale one is LRU-evicted — no ratchet.
+    - name: Cache cargo registry/git (+ target)
+      uses: actions/cache@v5
+      with:
+        path: ${{ steps.meta.outputs.paths }}
+        key: ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        restore-keys: |
+          ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-
+          ${{ inputs.prefix }}-${{ runner.os }}-rust-

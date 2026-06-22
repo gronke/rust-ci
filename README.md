@@ -1,6 +1,6 @@
 # cicd-rust
 
-Reusable GitHub Actions for Rust CI/CD across our repositories.
+Reusable GitHub Actions for Rust CI/CD.
 Install a toolchain, run the lint-and-test gate, and check a crate's release readiness — without depending on third-party actions whose behaviour drifts with the runner image.
 
 Each action is a composite action under [`.github/actions/`](.github/actions/).
@@ -45,6 +45,20 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
   with:
     package: my-crate          # required only for a workspace with >1 member
     # expected-version: 1.2.3  # defaults to the pushed v* tag
+```
+
+### `rust-cache`
+
+Caches cargo for CI and **defaults** incremental compilation off — pure cost in CI (no edit→recompile loop), and the main thing that balloons `target/`.
+An explicit `CARGO_INCREMENTAL` (set at the workflow/job level) is obeyed — for the occasional variant build that is faster with it on — and flows through to the Docker actions via their `CARGO_.*` forwarding. The action imposes no build profile; set `CARGO_*` vars to tune the build.
+Caches the cargo download cache (registry index + `.crate` tarballs + git db) via the first-party `actions/cache`; optionally caches `target/` too, kept bounded by the `Cargo.lock` key (no restore-key ratchet).
+Place it before your build/test steps.
+
+```yaml
+- uses: gronke/cicd-rust/.github/actions/rust-cache@main
+  with:
+    prefix: build            # cache family — use a distinct one per job
+    cache-target: "true"     # also cache target/ (off by default)
 ```
 
 ## Passing env into the container (Docker actions)
@@ -101,5 +115,4 @@ The actions are therefore exercised end-to-end before any consumer relies on the
 
 ## Status and licence
 
-Developed in the `gronke` organisation and consumed there first; it may later move to a public home for broader use across Rust projects.
-Released under the MIT licence.
+Reusable across Rust projects; released under the MIT licence (see [LICENSE](LICENSE)).
