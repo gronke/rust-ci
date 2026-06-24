@@ -1,8 +1,9 @@
 name: Install Rust toolchain
 description: >-
   Install Rust via rustup (toolchain, components, targets) and put
-  ~/.cargo/bin on PATH. Avoids third-party toolchain actions so behaviour does
-  not drift with the runner image.
+  ~/.cargo/bin on PATH. Works on Linux, macOS and Windows — including
+  windows-11-arm, which ships no preinstalled Rust. Avoids third-party
+  toolchain actions so behaviour does not drift with the runner image.
 
 inputs:
   toolchain:

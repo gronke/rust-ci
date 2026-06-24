@@ -12,6 +12,7 @@ During bring-up, pin `@main`; once the interface is stable we cut a `v1` tag plu
 ### `install-toolchain`
 
 Installs Rust via rustup — toolchain, components, and targets — and puts `~/.cargo/bin` on `PATH`.
+Works on Linux, macOS and Windows; when a runner ships no Rust at all (e.g. `windows-11-arm`) it bootstraps the arch-appropriate `rustup-init` instead of failing.
 
 ```yaml
 - uses: gronke/cicd-rust/.github/actions/install-toolchain@main
