@@ -113,6 +113,30 @@ jobs:
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
 
+  # install-toolchain must also work on Windows. windows-latest exercises the rustup-present path;
+  # windows-11-arm ships no Rust at all, exercising the rustup-init.exe bootstrap. Building the
+  # fixture proves the toolchain is usable, not merely installed (and, on arm64, that the image
+  # provides the MSVC arm64 link tools).
+  selftest-windows:
+    name: install-toolchain · ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/install-toolchain
+        with:
+          components: clippy
+      - name: toolchain is installed + on PATH
+        shell: bash
+        run: rustc --version && cargo --version && cargo clippy --version
+      - name: build the fixture
+        shell: bash
+        working-directory: fixtures/sample-crate
+        run: cargo build --locked
+
   # rust-cache must OBEY an explicit CARGO_INCREMENTAL (not force it off): set it at job level and
   # confirm the action leaves it untouched for the build steps that would follow.
   selftest-cache-passthrough:
