@@ -62,9 +62,38 @@ Place it before your build/test steps.
     cache-target: "true"     # also cache target/ (off by default)
 ```
 
+### `cargo-docker`
+
+Runs one cargo command inside the pinned image, **sealed**: non-root, all Linux capabilities dropped (`--cap-drop=ALL`), no privilege escalation (`--security-opt=no-new-privileges`), the repo mounted read-only, and — by default — `--network=none` with `cargo --offline` (run `cargo-fetch` first to warm the cache).
+The low-level primitive for a network-isolated build: dependency `build.rs` and proc-macros execute during compilation, and with no network they can't exfiltrate or fetch a payload.
+
+```yaml
+- uses: gronke/cicd-rust/.github/actions/cargo-fetch@main      # warm the cache (the one networked step)
+- uses: gronke/cicd-rust/.github/actions/cargo-docker@main      # sealed build — offline, --network none
+  with:
+    args: "build --release --locked --features full"  # do NOT add --offline; `offline` controls it
+    # offline: "false"   # opt out to fetch-as-it-builds (networked)
+```
+
+### `publish-dry-run`
+
+A release gate split into **network-with-no-code** then **code-with-no-network**.
+A networked prep does the publish checks *without building* — cache warm-up, tag ↔ `Cargo.toml` version, a not-already-published probe, and `cargo publish --dry-run --no-verify` — so no dependency code runs while it has the network.
+Then the **verify-build runs sealed**: `cargo package --offline` under `--network=none`, so the dependency `build.rs` / proc-macros it compiles and executes can't reach the network. (`cargo publish --dry-run` can't run here — it always contacts the registry, which `--offline` rejects.)
+
+```yaml
+- uses: gronke/cicd-rust/.github/actions/publish-dry-run@main
+  with:
+    package: my-crate          # required only for a workspace with >1 publishable member
+    # expected-version: 1.2.3  # defaults to the pushed v* tag
+    # git-token: ${{ secrets.PRIVATE_DEP_TOKEN }}   # only for private git deps
+```
+
+The runner-based `check-release-readiness` above runs the same checks without Docker (networked, on the runner) for repositories not using the sealed flow.
+
 ## Passing env into the container (Docker actions)
 
-The Docker actions (`cargo-fetch`, `lint-and-test-docker`, `check-release-readiness-docker`) run cargo inside the pinned image, so a variable set on the runner does not reach the build unless the action forwards it.
+The Docker actions (`cargo-fetch`, `cargo-docker`, `lint-and-test-docker`, `publish-dry-run`) run cargo inside the pinned image, so a variable set on the runner does not reach the build unless the action forwards it.
 Each action forwards a configurable set, controlled by three inputs:
 
 - `env-include` — a POSIX-ERE regex matched against variable **names** (anchored full-name); default `CARGO_.*`, so `CARGO_BUILD_JOBS`, `CARGO_NET_RETRY`, `CARGO_TERM_COLOR`, … flow in with no per-variable wiring.
@@ -118,6 +147,7 @@ The actions are therefore exercised end-to-end before any consumer relies on the
 ## Motivation
 
 GitHub Actions have huge potential for supply-chain attacks. Repeating the same setup across repositories was tedious or required using and combining various other third-party actions, none of which is hardened against malicious build.rs scripts in test-dependencies, that potentially receive less attention than the release dependency tree. What purpose does it have to execute both in the same job context? As Archer would say: "That's how you get ants". Given how quick Rust build caches can grow and how time-consuming it can be to pass artifcats between jobs, Docker is available in GitHub Actions and provides easier means of compartmentalization.
+The Docker actions take that further: a build runs sealed — non-root, all capabilities dropped, no privilege escalation, and `--network=none` against a cache a separate `cargo-fetch` warmed — so a dependency `build.rs` or proc-macro compiles but cannot reach the network. `cargo-fetch` is the one networked step; `publish-dry-run` keeps that same seal around the verify-build (`cargo package`), where dependency code is otherwise executed during a release — while the publish checks, which run no build, keep the network.
 
 ## Status and licence
 

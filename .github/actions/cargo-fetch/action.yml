@@ -60,39 +60,22 @@ runs:
         GIT_TOKEN: ${{ inputs.git-token }}
       run: |
         set -euo pipefail
-        mkdir -p "$CARGO_CACHE"
-        # Forward env into the container (see env-include/env-exclude/env inputs);
-        # CARGO_HOME/RUSTUP_HOME are pinned after --env-file (last-wins).
-        ef="$(mktemp)"; trap 'rm -f "$ef"' EXIT
-        env | awk -v inc="$ENV_INCLUDE" -v exc="$ENV_EXCLUDE" '
-          { name = $0; sub(/=.*/, "", name) }
-          inc != "" && name !~ "^(" inc ")$" { next }
-          exc != "" && name ~  "^(" exc ")$" { next }
-          { print }
-        ' > "$ef"
-        if [ -n "$INPUT_ENV" ]; then printf '%s\n' "$INPUT_ENV" >> "$ef"; fi
-        # Private git deps: forward the token as one explicit env-file line (not
-        # via env-include) to the container's git; add-mask redacts it from logs.
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        # The one networked step: OFFLINE unset → no --network=none; no target mount
+        # (fetch only populates the cache). Forward a private-git token as one masked
+        # env-file line (not via env-include); add-mask redacts it from logs.
         if [ -n "$GIT_TOKEN" ]; then
           printf '::add-mask::%s\n' "$GIT_TOKEN"
-          printf 'CICD_GIT_TOKEN=%s\n' "$GIT_TOKEN" >> "$ef"
+          export EXTRA_ENV="CICD_GIT_TOKEN=$GIT_TOKEN"
         fi
-        docker run --rm \
-          --env-file "$ef" \
-          --user "$(id -u):$(id -g)" \
-          -e HOME=/tmp \
-          -e CARGO_HOME=/cache/cargo \
-          -e RUSTUP_HOME=/usr/local/rustup \
-          -v "$PWD:/work:ro" \
-          -v "$PWD/$CARGO_CACHE:/cache/cargo" \
-          -w /work \
-          "$IMAGE" bash -c '
-            # With a git-token, authenticate github.com fetches as x-access-token and
-            # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies
-            # — lets cargo clone PRIVATE git dependencies. No-op for public deps.
-            if [ -n "${CICD_GIT_TOKEN:-}" ]; then
-              git config --global url."https://x-access-token:${CICD_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-              export CARGO_NET_GIT_FETCH_WITH_CLI=true
-            fi
-            exec cargo fetch --locked
-          '
+        seal_run bash -c '
+          # With a git-token, authenticate github.com fetches as x-access-token and
+          # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies
+          # — lets cargo clone PRIVATE git dependencies. No-op for public deps.
+          if [ -n "${CICD_GIT_TOKEN:-}" ]; then
+            git config --global url."https://x-access-token:${CICD_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+            export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          fi
+          exec cargo fetch --locked
+        '
