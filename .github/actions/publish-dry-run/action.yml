@@ -1,0 +1,99 @@
+name: Publish dry-run (Docker, sealed)
+description: >-
+  Release gate split into network-with-no-code then code-with-no-network: a networked
+  prep does the publish checks WITHOUT a build (cargo fetch warm-up + tag<->version
+  assert + not-already-published probe + cargo publish --dry-run --no-verify), then the
+  verify-BUILD runs SEALED (cargo package --offline under --network=none) so the
+  dependency build.rs / proc-macros it compiles and executes cannot reach the network.
+  Requires a committed Cargo.lock.
+
+inputs:
+  image:
+    description: CI image (Rust toolchain + jq + curl).
+    required: false
+    default: ghcr.io/gronke/rust-ci:latest
+  working-directory:
+    description: Crate/workspace directory (mounted read-only).
+    required: false
+    default: "."
+  target-dir:
+    description: Host dir for cargo target (read-write; also carries the prep→verify handoff).
+    required: false
+    default: target
+  cargo-cache:
+    description: Host dir for CARGO_HOME (read-write; warmed by the prep step).
+    required: false
+    default: .cargo-cache
+  package:
+    description: Package name to check (required for a workspace with >1 publishable member).
+    required: false
+    default: ""
+  expected-version:
+    description: Version the crate must declare (else derived from a v* tag).
+    required: false
+    default: ""
+  git-token:
+    description: >-
+      Token for cloning PRIVATE git dependencies during the prep fetch. Masked and
+      forwarded to the container's git as x-access-token; leave empty for public deps.
+    required: false
+    default: ""
+  env-include:
+    description: >-
+      Regex (POSIX ERE) of env-var NAMES to forward into the container (anchored).
+      Default forwards cargo's own vars.
+    required: false
+    default: "CARGO_.*"
+  env-exclude:
+    description: >-
+      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Widening env-include to ".*" forwards secrets like GITHUB_TOKEN; prefer a tight include.
+    required: false
+    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+  env:
+    description: Extra literal KEY=VALUE lines forwarded verbatim, regardless of include/exclude.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: publish dry-run (networked prep, then sealed verify)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
+        GIT_TOKEN: ${{ inputs.git-token }}
+        ENV_INCLUDE: ${{ inputs.env-include }}
+        ENV_EXCLUDE: ${{ inputs.env-exclude }}
+        INPUT_ENV: ${{ inputs.env }}
+      run: |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        export CICD_DIR="$GITHUB_ACTION_PATH"
+
+        # Optional private-git token: mask it and forward as one explicit env-file line.
+        token_line=""
+        if [ -n "${GIT_TOKEN:-}" ]; then
+          printf '::add-mask::%s\n' "$GIT_TOKEN"
+          token_line="CICD_GIT_TOKEN=$GIT_TOKEN"
+        fi
+
+        # 1) Networked prep: cargo fetch + metadata + tag<->version + crates.io probe.
+        export OFFLINE=false
+        export EXTRA_ENV="$(printf '%s\n%s\n%s\n%s' \
+          "INPUT_PACKAGE=$INPUT_PACKAGE" \
+          "INPUT_EXPECTED_VERSION=$INPUT_EXPECTED_VERSION" \
+          "GITHUB_REF=${GITHUB_REF:-}" \
+          "$token_line")"
+        seal_run bash /cicd/prep.sh
+
+        # 2) Sealed verify-build: cargo publish --dry-run --offline, --network=none.
+        export OFFLINE=true
+        export EXTRA_ENV=""
+        seal_run bash /cicd/verify.sh

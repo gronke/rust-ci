@@ -1,19 +1,25 @@
-name: Lint and test (Docker, sealed)
+name: Cargo (Docker, sealed)
 description: >-
-  cargo fmt --check + clippy (-D warnings) + test inside the pinned container,
-  sealed with --network none against a pre-fetched cache (run cargo-fetch
-  first). Runs --offline --locked. Workdir is read-only; target + cache are
-  read-write.
+  Run one cargo command inside the pinned container — non-root, all caps dropped,
+  no-new-privileges, repo mounted read-only. Sealed by default (--network none +
+  cargo --offline; run cargo-fetch first to warm the cache); set offline:false to
+  run networked and fetch as it builds. The low-level primitive behind the sealed
+  build / publish-dry-run steps.
 
 inputs:
   image:
-    description: CI image (Rust toolchain + clippy/rustfmt).
+    description: CI image (Rust toolchain + clippy/rustfmt + jq).
     required: false
     default: ghcr.io/gronke/rust-ci:latest
   working-directory:
     description: Crate/workspace directory (mounted read-only).
     required: false
     default: "."
+  args:
+    description: >-
+      The cargo command + flags, e.g. "build --release --locked --features full".
+      Do NOT include --offline — the `offline` input controls it.
+    required: true
   target-dir:
     description: Host dir for cargo target (read-write, cacheable).
     required: false
@@ -22,15 +28,11 @@ inputs:
     description: Host dir for CARGO_HOME (read-write; populated by cargo-fetch).
     required: false
     default: .cargo-cache
-  features:
-    description: Feature flag applied to clippy + test (e.g. --all-features).
-    required: false
-    default: ""
   offline:
     description: >-
       Run sealed: --network none + cargo --offline (needs a prior cargo-fetch to
-      populate the cache). Set "false" to run networked and fetch-as-it-builds,
-      skipping the warmup. Default "true".
+      populate the cache). Set "false" to run networked and fetch as it builds.
+      Default "true".
     required: false
     default: "true"
   env-include:
@@ -56,25 +58,25 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: lint + test (sealed)
+    - name: cargo (sealed)
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
         IMAGE: ${{ inputs.image }}
         TARGET_DIR: ${{ inputs.target-dir }}
         CARGO_CACHE: ${{ inputs.cargo-cache }}
-        FEATURES: ${{ inputs.features }}
         OFFLINE: ${{ inputs.offline }}
         ENV_INCLUDE: ${{ inputs.env-include }}
         ENV_EXCLUDE: ${{ inputs.env-exclude }}
         INPUT_ENV: ${{ inputs.env }}
+        ARGS: ${{ inputs.args }}
       run: |
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
         export CICD_DIR="$GITHUB_ACTION_PATH"
-        # OFFLINE + FEATURES aren't CARGO_* (env-include won't forward them); inject
-        # them for the in-container script. seal_run also reads OFFLINE for --network.
-        EXTRA_ENV="$(printf '%s\n%s' "OFFLINE=$OFFLINE" "FEATURES=$FEATURES")"
+        # ARGS + OFFLINE aren't CARGO_* (so env-include won't forward them); inject
+        # them as explicit env-file lines for the in-container script.
+        EXTRA_ENV="$(printf '%s\n%s' "ARGS=$ARGS" "OFFLINE=$OFFLINE")"
         export EXTRA_ENV
-        seal_run bash /cicd/lint-and-test.sh
+        seal_run bash /cicd/cargo-docker.sh

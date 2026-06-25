@@ -63,11 +63,29 @@ jobs:
       - name: Build the CI image locally
         run: docker build -t rust-ci:selftest image/
 
+      # Negative control: the sealing flag seal_run applies (--network=none) really
+      # blocks egress — a curl from inside a sealed container must fail.
+      - name: sealed network is blocked (negative control)
+        run: |
+          if docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges \
+               rust-ci:selftest bash -c 'curl -sSf --max-time 5 https://crates.io >/dev/null 2>&1'; then
+            echo "::error::network reachable inside a --network=none container"; exit 1
+          fi
+          echo "✓ --network=none blocks network egress"
+
       - name: cargo-fetch (networked)
         uses: ./.github/actions/cargo-fetch
         with:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
+
+      # cargo-docker: a sealed build off the warmed cache (exercises the low-level wrapper).
+      - name: cargo-docker (sealed build)
+        uses: ./.github/actions/cargo-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          args: "build --locked"
 
       - name: lint-and-test (sealed, --network none) + env passthrough
         uses: ./.github/actions/lint-and-test-docker
@@ -106,8 +124,8 @@ jobs:
           env: |
             CICD_EXPECT=absent
 
-      - name: check-release-readiness (networked)
-        uses: ./.github/actions/check-release-readiness-docker
+      - name: publish-dry-run (networked prep, sealed verify-build)
+        uses: ./.github/actions/publish-dry-run
         with:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
