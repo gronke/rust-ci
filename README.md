@@ -75,6 +75,42 @@ The low-level primitive for a network-isolated build: dependency `build.rs` and 
     # offline: "false"   # opt out to fetch-as-it-builds (networked)
 ```
 
+### `cargo-install`
+
+Installs a cargo-based CLI tool (e.g. `cargo-audit`) into a **shared cargo cache** inside the sealed image — non-root, all capabilities dropped, no privilege escalation, the repo mounted read-only — so the tool's own `build.rs` / proc-macros compile contained, even though the install must reach the network to download crates (`--network=none` is the *only* seal dropped for the install; every other restriction still applies).
+The binary lands in the host-mounted `CARGO_HOME` (`<cargo-cache>/bin/<tool>`), where a later `cargo-use` — or any sealed run mounting the same `cargo-cache` — picks it up.
+`tool` and `version` are allowlisted on the runner, and every input crosses into the container only as data (never interpolated into a shell), so a crafted value can't inject a command or a stray flag.
+Set `docker: "false"` to wrap a plain `cargo install` on the runner instead (which runs `args` on the host — trusted input only).
+
+```yaml
+- uses: gronke/cicd-rust/.github/actions/cargo-install@main
+  with:
+    tool: cargo-audit
+    version: "0.21"            # optional; pins the install (and a consumer cache key)
+    cargo-cache: .cargo-tools  # shared dir; reuse the same value in cargo-use
+    # docker: "true"           # default: install sealed; "false" runs on the host
+```
+
+### `cargo-use`
+
+Runs a tool a prior `cargo-install` placed in the shared cache, sealed in the same image and — by default — with `--network=none`.
+It prepends `<cargo-cache>/bin` to `PATH`, so both the tool and a `cargo <subcommand>` form (cargo finds `cargo-<sub>` on `PATH`) resolve.
+Set `offline: "false"` for a tool that genuinely needs the network (e.g. `cargo-audit` cloning the advisory DB); the canonical shape is one networked fetch, then a sealed offline run:
+
+```yaml
+- uses: gronke/cicd-rust/.github/actions/cargo-use@main      # fetch the advisory DB (networked, runs no project build)
+  with:
+    args: "cargo-audit fetch"
+    cargo-cache: .cargo-tools
+    offline: "false"
+- uses: gronke/cicd-rust/.github/actions/cargo-use@main      # audit sealed, zero egress
+  with:
+    args: "cargo audit --no-fetch"
+    cargo-cache: .cargo-tools
+```
+
+Use the same `image` for `cargo-install` and `cargo-use`: a binary is only guaranteed to run in the image it was built in.
+
 ### `publish-dry-run`
 
 A release gate split into **network-with-no-code** then **code-with-no-network**.
@@ -93,7 +129,7 @@ The runner-based `check-release-readiness` above runs the same checks without Do
 
 ## Passing env into the container (Docker actions)
 
-The Docker actions (`cargo-fetch`, `cargo-docker`, `lint-and-test-docker`, `publish-dry-run`) run cargo inside the pinned image, so a variable set on the runner does not reach the build unless the action forwards it.
+The Docker actions (`cargo-fetch`, `cargo-docker`, `cargo-install`, `cargo-use`, `lint-and-test-docker`, `publish-dry-run`) run cargo inside the pinned image, so a variable set on the runner does not reach the build unless the action forwards it.
 Each action forwards a configurable set, controlled by three inputs:
 
 - `env-include` — a POSIX-ERE regex matched against variable **names** (anchored full-name); default `CARGO_.*`, so `CARGO_BUILD_JOBS`, `CARGO_NET_RETRY`, `CARGO_TERM_COLOR`, … flow in with no per-variable wiring.

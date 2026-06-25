@@ -46,6 +46,43 @@ jobs:
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
 
+      # cargo-install + cargo-use in HOST mode (docker:false): wrap a plain
+      # `cargo install` on the runner, then run the tool from the shared bin dir.
+      - name: cargo-install (host) a tool into a shared cache
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-hack
+          cargo-cache: .cargo-tools-host
+          locked: "false"   # probe tests the action plumbing, not --locked semantics
+
+      - name: cargo-use (host) runs the installed tool
+        uses: ./.github/actions/cargo-use
+        with:
+          docker: "false"
+          cargo-cache: .cargo-tools-host
+          args: "cargo hack --version"
+
+      # Negative control: a malicious tool name is rejected on the runner by the
+      # cargo-install allowlist before any shell runs it — no command injection.
+      - name: cargo-install rejects a malicious tool name (negative control)
+        id: evil_tool
+        continue-on-error: true
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: "evil; touch /tmp/cicd-pwned"
+
+      - name: assert the injection was rejected
+        run: |
+          if [ "${{ steps.evil_tool.outcome }}" != "failure" ]; then
+            echo "::error::malicious tool name was not rejected"; exit 1
+          fi
+          if [ -e /tmp/cicd-pwned ]; then
+            echo "::error::injection executed: /tmp/cicd-pwned exists"; exit 1
+          fi
+          echo "✓ malicious tool name rejected; no injection"
+
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.
@@ -130,6 +167,49 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
+
+      # cargo-install + cargo-use: install a real cargo subcommand into a SHARED
+      # cache in one sealed container, then run it from a SEPARATE sealed, offline
+      # container — proving installed tools persist in the host-mounted CARGO_HOME
+      # and resolve via the prepended bin dir. cargo-hack is small and has no
+      # native-TLS/openssl deps, so it builds cleanly in the base image.
+      - name: cargo-install (sealed) a tool into the shared cache
+        uses: ./.github/actions/cargo-install
+        with:
+          image: rust-ci:selftest
+          tool: cargo-hack
+          cargo-cache: .cargo-tools
+          locked: "false"   # probe tests the action plumbing, not --locked semantics
+
+      - name: the installed binary landed in the shared host dir
+        run: test -x .cargo-tools/bin/cargo-hack
+
+      - name: cargo-use (sealed, offline) runs the installed tool
+        uses: ./.github/actions/cargo-use
+        with:
+          image: rust-ci:selftest
+          cargo-cache: .cargo-tools
+          offline: "true"
+          args: "cargo hack --version"
+
+      # Negative control: cargo-use offline really seals the network — a tool that
+      # reaches out must fail (proves the action wires OFFLINE -> --network=none).
+      - name: cargo-use offline blocks egress (negative control)
+        id: use_offline_egress
+        continue-on-error: true
+        uses: ./.github/actions/cargo-use
+        with:
+          image: rust-ci:selftest
+          cargo-cache: .cargo-tools
+          offline: "true"
+          args: "curl -sSf --max-time 5 https://crates.io"
+
+      - name: assert cargo-use sealed the network
+        run: |
+          if [ "${{ steps.use_offline_egress.outcome }}" != "failure" ]; then
+            echo "::error::cargo-use offline did not block network egress"; exit 1
+          fi
+          echo "✓ cargo-use offline sealed the network"
 
   # install-toolchain must also work on Windows. windows-latest exercises the rustup-present path;
   # windows-11-arm ships no Rust at all, exercising the rustup-init.exe bootstrap. Building the

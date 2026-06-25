@@ -1,0 +1,109 @@
+name: Cargo use (shared cache, sealed)
+description: >-
+  Run a tool previously installed by `cargo-install` from the shared cargo cache,
+  inside the pinned container by default (non-root, --cap-drop=ALL,
+  no-new-privileges, repo mounted read-only, and — when offline:true —
+  --network=none). Prepends the shared bin dir (<cargo-cache>/bin) to PATH so the
+  tool and `cargo <subcommand>` resolve. Set offline:false for a tool that must
+  reach the network (e.g. fetching an advisory DB). Set docker:false to run on the
+  host (trusted input only).
+
+inputs:
+  args:
+    description: >-
+      The command line to run, e.g. "cargo audit --no-fetch" or "cargo-audit fetch".
+      Word-split INSIDE the container — it never reaches the host shell in docker mode.
+    required: true
+  docker:
+    description: Run inside the sealed container (default). "false" runs on the host.
+    required: false
+    default: "true"
+  image:
+    description: CI image. Use the SAME image cargo-install used (binary ABI must match).
+    required: false
+    default: ghcr.io/gronke/rust-ci:latest
+  cargo-cache:
+    description: >-
+      Host dir mounted RW as CARGO_HOME (/cache/cargo); must match the cargo-cache
+      cargo-install wrote to. Its bin/ is prepended to PATH.
+    required: false
+    default: .cargo-cache
+  offline:
+    description: >-
+      Run sealed with --network=none (default "true"). Set "false" for a tool that
+      must reach the network (e.g. cargo-audit fetching the advisory DB).
+    required: false
+    default: "true"
+  target-dir:
+    description: >-
+      Optional host dir mounted RW at /work/target (+ CARGO_TARGET_DIR) for a tool
+      that builds. Empty (default) mounts no target — minimal surface; the repo
+      stays read-only.
+    required: false
+    default: ""
+  working-directory:
+    description: Directory the action runs from (its repo is mounted read-only).
+    required: false
+    default: "."
+  env-include:
+    description: >-
+      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
+      container, anchored full-name. Default forwards cargo's own vars.
+    required: false
+    default: "CARGO_.*"
+  env-exclude:
+    description: >-
+      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Defaults to the action-owned vars.
+    required: false
+    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+  env:
+    description: >-
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
+      regardless of env-include/env-exclude.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: run (sealed)
+      if: ${{ inputs.docker == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        OFFLINE: ${{ inputs.offline }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        ARGS: ${{ inputs.args }}
+        ENV_INCLUDE: ${{ inputs.env-include }}
+        ENV_EXCLUDE: ${{ inputs.env-exclude }}
+        INPUT_ENV: ${{ inputs.env }}
+      run: |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        export CICD_DIR="$GITHUB_ACTION_PATH"
+        # seal_run reads OFFLINE from this env for the --network=none decision. ARGS
+        # and the in-container bin dir aren't CARGO_* (env-include won't forward
+        # them); inject them as explicit env-file lines for the in-container script.
+        EXTRA_ENV="$(printf '%s\n%s' "ARGS=$ARGS" "USE_BIN_DIR=/cache/cargo/bin")"
+        export EXTRA_ENV
+        seal_run bash /cicd/cargo-use.sh
+
+    - name: run (host)
+      if: ${{ inputs.docker != 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        # Host mode: run the tool from the shared bin dir on the runner. NOTE: ARGS
+        # word-splits on the host shell here, so use docker mode (the default) for
+        # untrusted input. Reuses the same script as the sealed path.
+        export CARGO_HOME="$PWD/${CARGO_CACHE}"
+        export USE_BIN_DIR="$PWD/${CARGO_CACHE}/bin"
+        bash "$GITHUB_ACTION_PATH/cargo-use.sh"
