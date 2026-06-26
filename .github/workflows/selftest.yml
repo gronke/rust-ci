@@ -48,20 +48,21 @@ jobs:
 
       # cargo-install + cargo-use in HOST mode (docker:false): wrap a plain
       # `cargo install` on the runner, then run the tool from the shared bin dir.
-      - name: cargo-install (host) a tool into a shared cache
+      - name: cargo-install (host) a CLI crate into a shared cache
         uses: ./.github/actions/cargo-install
         with:
           docker: "false"
-          tool: cargo-hack
-          cargo-cache: .cargo-tools-host
+          tool: npm-utils
+          args: "--features cli"
           locked: "false"   # probe tests the action plumbing, not --locked semantics
+          cargo-cache: .cargo-tools-host
 
       - name: cargo-use (host) runs the installed tool
         uses: ./.github/actions/cargo-use
         with:
           docker: "false"
           cargo-cache: .cargo-tools-host
-          args: "cargo hack --version"
+          args: "npm-utils --version"
 
       # Negative control: a malicious tool name is rejected on the runner by the
       # cargo-install allowlist before any shell runs it — no command injection.
@@ -168,29 +169,31 @@ jobs:
           working-directory: fixtures/sample-crate
           expected-version: "0.1.0"
 
-      # cargo-install + cargo-use: install a real cargo subcommand into a SHARED
-      # cache in one sealed container, then run it from a SEPARATE sealed, offline
-      # container — proving installed tools persist in the host-mounted CARGO_HOME
-      # and resolve via the prepended bin dir. cargo-hack is small and has no
-      # native-TLS/openssl deps, so it builds cleanly in the base image.
-      - name: cargo-install (sealed) a tool into the shared cache
+      # cargo-install + cargo-use: install a real CLI crate into a SHARED cache in
+      # one sealed container, then run it from a SEPARATE sealed, offline container.
+      # Proves an installed tool persists in the host-mounted CARGO_HOME and resolves
+      # via the prepended bin dir — including the `cargo <subcommand>` form. npm-utils
+      # is pure-Rust (no openssl) and gates its binaries behind the `cli` feature, so
+      # this also exercises the free-form `args` pass-through.
+      - name: cargo-install (sealed) a CLI crate into the shared cache
         uses: ./.github/actions/cargo-install
         with:
           image: rust-ci:selftest
-          tool: cargo-hack
-          cargo-cache: .cargo-tools
+          tool: npm-utils
+          args: "--features cli"
           locked: "false"   # probe tests the action plumbing, not --locked semantics
+          cargo-cache: .cargo-tools
 
-      - name: the installed binary landed in the shared host dir
-        run: test -x .cargo-tools/bin/cargo-hack
+      - name: both installed binaries landed in the shared host dir
+        run: test -x .cargo-tools/bin/npm-utils && test -x .cargo-tools/bin/cargo-npm-utils
 
-      - name: cargo-use (sealed, offline) runs the installed tool
+      - name: cargo-use (sealed, offline) runs the installed cargo subcommand
         uses: ./.github/actions/cargo-use
         with:
           image: rust-ci:selftest
           cargo-cache: .cargo-tools
           offline: "true"
-          args: "cargo hack --version"
+          args: "cargo npm-utils --help"
 
       # Negative control: cargo-use offline really seals the network — a tool that
       # reaches out must fail (proves the action wires OFFLINE -> --network=none).

@@ -1,13 +1,5 @@
 name: Cargo install (shared cache, sealed)
-description: >-
-  Install a cargo-based CLI tool into a shared cargo cache so later steps — and
-  other sealed containers — can run it. Sealed by default: the install runs in the
-  pinned container (non-root, --cap-drop=ALL, no-new-privileges, repo mounted
-  read-only) and the tool lands in CARGO_HOME=/cache/cargo, i.e. the host-mounted
-  <cargo-cache>/bin/<tool>. Installing reaches the network to download crates; the
-  hardening above still applies (OFFLINE toggles only --network=none). Set
-  docker:false to wrap a plain `cargo install` on the host (which runs args on the
-  runner — use for trusted input only). Pair with `cargo-use` to run the tool.
+description: Install a cargo-based CLI tool into a shared, hardened cargo cache so later sealed runs can use it.
 
 inputs:
   tool:

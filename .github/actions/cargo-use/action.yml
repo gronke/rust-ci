@@ -1,12 +1,5 @@
 name: Cargo use (shared cache, sealed)
-description: >-
-  Run a tool previously installed by `cargo-install` from the shared cargo cache,
-  inside the pinned container by default (non-root, --cap-drop=ALL,
-  no-new-privileges, repo mounted read-only, and — when offline:true —
-  --network=none). Prepends the shared bin dir (<cargo-cache>/bin) to PATH so the
-  tool and `cargo <subcommand>` resolve. Set offline:false for a tool that must
-  reach the network (e.g. fetching an advisory DB). Set docker:false to run on the
-  host (trusted input only).
+description: Run a tool that cargo-install placed in the shared cache, sealed and network-isolated by default.
 
 inputs:
   args:
