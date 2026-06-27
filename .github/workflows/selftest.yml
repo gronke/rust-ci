@@ -98,8 +98,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build the CI image locally
-        run: docker build -t rust-ci:selftest image/
+      - name: build-image (local, cached)
+        uses: ./.github/actions/build-image
+        with:
+          tag: rust-ci:selftest
+          cache: "true"
 
       # Negative control: the sealing flag seal_run applies (--network=none) really
       # blocks egress — a curl from inside a sealed container must fail.

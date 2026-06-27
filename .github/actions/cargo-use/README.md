@@ -17,12 +17,12 @@ That mode runs `args` on the host, so use it only with trusted input; Docker mod
 ## Usage
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/cargo-use@main      # fetch the advisory DB (networked, runs no project build)
+- uses: gronke/rust-ci/.github/actions/cargo-use@main      # fetch the advisory DB (networked, runs no project build)
   with:
     args: "cargo-audit fetch"
     cargo-cache: .cargo-tools
     offline: "false"
-- uses: gronke/cicd-rust/.github/actions/cargo-use@main      # audit sealed, zero egress
+- uses: gronke/rust-ci/.github/actions/cargo-use@main      # audit sealed, zero egress
   with:
     args: "cargo audit --no-fetch"
     cargo-cache: .cargo-tools
@@ -37,7 +37,7 @@ a binary is only guaranteed to run in the image it was built in.
 | --- | --- | --- |
 | `args` | — (required) | The command line to run, for example `cargo audit --no-fetch`. Word-split inside the container. |
 | `docker` | `"true"` | Run sealed in the container; `"false"` runs on the host. |
-| `image` | `ghcr.io/gronke/rust-ci:latest` | CI image. Match the one `cargo-install` used (binary ABI). |
+| `image` | `rust-ci:latest` | CI image. Match the one `cargo-install` used (binary ABI). |
 | `cargo-cache` | `.cargo-cache` | Host dir mounted read-write as `CARGO_HOME`; its `bin/` is prepended to `PATH`. |
 | `offline` | `"true"` | Run with `--network=none`; set `"false"` for a tool that needs the network. |
 | `target-dir` | `""` | Optional host dir mounted read-write at `/work/target` for a tool that builds. Empty mounts no target. |

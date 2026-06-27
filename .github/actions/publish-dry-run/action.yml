@@ -11,7 +11,7 @@ inputs:
   image:
     description: CI image (Rust toolchain + jq + curl).
     required: false
-    default: ghcr.io/gronke/rust-ci:latest
+    default: rust-ci:latest
   working-directory:
     description: Crate/workspace directory (mounted read-only).
     required: false

@@ -4,7 +4,7 @@ Reusable GitHub Actions for Rust CI/CD.
 Install a toolchain, run the lint-and-test gate, and check a crate's release readiness — without depending on third-party actions whose behaviour drifts with the runner image.
 
 Each action is a composite action under [`.github/actions/`](.github/actions/).
-A repository consumes one with `uses: gronke/cicd-rust/.github/actions/<name>@<ref>`.
+A repository consumes one with `uses: gronke/rust-ci/.github/actions/<name>@<ref>`.
 During bring-up, pin `@main`; once the interface is stable we cut a `v1` tag plus a moving major tag, and consumers pin `@v1`.
 
 ## Actions
@@ -15,7 +15,7 @@ Installs Rust via rustup — toolchain, components, and targets — and puts `~/
 Works on Linux, macOS and Windows; when a runner ships no Rust at all (e.g. `windows-11-arm`) it bootstraps the arch-appropriate `rustup-init` instead of failing.
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/install-toolchain@main
+- uses: gronke/rust-ci/.github/actions/install-toolchain@main
   with:
     toolchain: stable          # or an MSRV like 1.77.2
     components: rustfmt clippy
@@ -28,7 +28,7 @@ Runs `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, and `cargo t
 Call it once per universe for a default / all-features / no-default-features matrix, enabling `fmt` on a single leg so it does not repeat.
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/lint-and-test@main
+- uses: gronke/rust-ci/.github/actions/lint-and-test@main
   with:
     features: ""               # or --all-features / --no-default-features
     fmt: "true"
@@ -42,7 +42,7 @@ For a publishable crate it runs `cargo publish --dry-run` and checks the version
 A crate with `publish = false` is validated for tag/version coherence only, so the action is equally useful for internal crates.
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/check-release-readiness@main
+- uses: gronke/rust-ci/.github/actions/check-release-readiness@main
   with:
     package: my-crate          # required only for a workspace with >1 member
     # expected-version: 1.2.3  # defaults to the pushed v* tag
@@ -56,10 +56,23 @@ Caches the cargo download cache (registry index + `.crate` tarballs + git db) vi
 Place it before your build/test steps.
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/rust-cache@main
+- uses: gronke/rust-ci/.github/actions/rust-cache@main
   with:
     prefix: build            # cache family — use a distinct one per job
     cache-target: "true"     # also cache target/ (off by default)
+```
+
+### `build-image`
+
+Builds the toolchain image — `rust:<version>` plus clippy, rustfmt, and jq — locally and loads it into the Docker daemon, so the Docker actions below run against a local `rust-ci:latest` tag with no registry.
+Run it once before the Docker actions; `cache: "true"` caches the added layer (the `rust:<version>` base is pulled from Docker Hub).
+See [the action's README](.github/actions/build-image/README.md).
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/build-image@main
+  with:
+    rust-version: "1"      # any rust:<tag>; default "latest"
+    cache: "true"          # cache the added layer (opt-in)
 ```
 
 ### `cargo-docker`
@@ -68,8 +81,8 @@ Runs one cargo command inside the pinned image, **sealed**: non-root, all Linux 
 The low-level primitive for a network-isolated build: dependency `build.rs` and proc-macros execute during compilation, and with no network they can't exfiltrate or fetch a payload.
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/cargo-fetch@main      # warm the cache (the one networked step)
-- uses: gronke/cicd-rust/.github/actions/cargo-docker@main      # sealed build — offline, --network none
+- uses: gronke/rust-ci/.github/actions/cargo-fetch@main      # warm the cache (the one networked step)
+- uses: gronke/rust-ci/.github/actions/cargo-docker@main      # sealed build — offline, --network none
   with:
     args: "build --release --locked --features full"  # do NOT add --offline; `offline` controls it
     # offline: "false"   # opt out to fetch-as-it-builds (networked)
@@ -92,7 +105,7 @@ A networked prep does the publish checks *without building* — cache warm-up, t
 Then the **verify-build runs sealed**: `cargo package --offline` under `--network=none`, so the dependency `build.rs` / proc-macros it compiles and executes can't reach the network. (`cargo publish --dry-run` can't run here — it always contacts the registry, which `--offline` rejects.)
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/publish-dry-run@main
+- uses: gronke/rust-ci/.github/actions/publish-dry-run@main
   with:
     package: my-crate          # required only for a workspace with >1 publishable member
     # expected-version: 1.2.3  # defaults to the pushed v* tag
@@ -119,7 +132,7 @@ env:
 jobs:
   ci:
     steps:
-      - uses: gronke/cicd-rust/.github/actions/lint-and-test-docker@main
+      - uses: gronke/rust-ci/.github/actions/lint-and-test-docker@main
         with:
           env-include: "(CARGO_|RUST).*"   # forward cargo + rust vars
           # env-exclude defaults to the owner-vars; add your own to widen the blacklist
@@ -138,7 +151,7 @@ When it is set, `cargo-fetch` configures git to authenticate `github.com` fetche
 
 ```yaml
 - name: Cargo fetch
-  uses: gronke/cicd-rust/.github/actions/cargo-fetch@main
+  uses: gronke/rust-ci/.github/actions/cargo-fetch@main
   with:
     git-token: ${{ secrets.PRIVATE_DEP_TOKEN }}
 ```
