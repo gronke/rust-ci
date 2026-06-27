@@ -22,7 +22,7 @@ That mode runs `args` on the host, so use it only with trusted input; Docker mod
 ## Usage
 
 ```yaml
-- uses: gronke/cicd-rust/.github/actions/cargo-install@main
+- uses: gronke/rust-ci/.github/actions/cargo-install@main
   with:
     tool: cargo-audit
     version: "0.21"            # optional; pins the install (and a consumer cache key)
@@ -42,7 +42,7 @@ a binary is only guaranteed to run in the image it was built in.
 | `args` | `""` | Extra flags appended to `cargo install` (for example `--features cli`). Word-split inside the container. |
 | `locked` | `"true"` | Append `--locked`. |
 | `docker` | `"true"` | Install sealed in the container; `"false"` installs on the host. |
-| `image` | `ghcr.io/gronke/rust-ci:latest` | CI image. Match it in `cargo-use`. |
+| `image` | `rust-ci:latest` | CI image. Match it in `cargo-use`. |
 | `cargo-cache` | `.cargo-cache` | Host dir mounted read-write as `CARGO_HOME`; the tool lands in its `bin/`. |
 | `working-directory` | `.` | Directory the action runs from. |
 | `env-include` / `env-exclude` / `env` | (as `cargo-docker`) | Control which runner env vars are forwarded into the container. |

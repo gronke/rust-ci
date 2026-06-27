@@ -34,7 +34,7 @@ inputs:
   image:
     description: CI image (Rust toolchain). Use the same image in cargo-use (ABI).
     required: false
-    default: ghcr.io/gronke/rust-ci:latest
+    default: rust-ci:latest
   cargo-cache:
     description: >-
       Host dir mounted RW as CARGO_HOME (/cache/cargo); the tool installs to its

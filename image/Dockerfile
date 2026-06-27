@@ -1,10 +1,6 @@
-# Lean Rust CI image for the cicd-rust composite actions.
-#
-# The official rust image ships the minimal rustup profile (no clippy/rustfmt),
-# so we add them here; we also add jq for the release-readiness script. The full
-# rust image already provides curl + git. Pinning the base (rather than the
-# runner's preinstalled toolchain) is the reproducibility win.
-FROM rust:1
+# Rust toolchain image for the rust-ci composite actions: adds clippy, rustfmt, jq.
+ARG RUST_VERSION=latest
+FROM rust:${RUST_VERSION}
 
 RUN rustup component add clippy rustfmt \
     && apt-get update \

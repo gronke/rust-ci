@@ -57,7 +57,7 @@ fi
 # not-already-published probe (crates.io API; non-fatal on a network blip)
 if [ "$PUBLISHABLE" = "true" ]; then
   CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-    -H "User-Agent: cicd-rust publish-dry-run" \
+    -H "User-Agent: rust-ci publish-dry-run" \
     "https://crates.io/api/v1/crates/${NAME}/${VERSION}" || echo "000")
   if [ "$CODE" = "200" ]; then
     echo "::error::${NAME} ${VERSION} is already published on crates.io"

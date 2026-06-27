@@ -52,7 +52,7 @@ else
   fi
   # Not-already-published guard (crates.io API; non-fatal on a network blip).
   CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-    -H "User-Agent: cicd-rust release-readiness" \
+    -H "User-Agent: rust-ci release-readiness" \
     "https://crates.io/api/v1/crates/${NAME}/${VERSION}" || echo "000")
   if [ "$CODE" = "200" ]; then
     echo "::error::${NAME} ${VERSION} is already published on crates.io"

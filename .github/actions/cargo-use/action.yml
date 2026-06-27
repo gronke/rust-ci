@@ -14,7 +14,7 @@ inputs:
   image:
     description: CI image. Use the SAME image cargo-install used (binary ABI must match).
     required: false
-    default: ghcr.io/gronke/rust-ci:latest
+    default: rust-ci:latest
   cargo-cache:
     description: >-
       Host dir mounted RW as CARGO_HOME (/cache/cargo); must match the cargo-cache

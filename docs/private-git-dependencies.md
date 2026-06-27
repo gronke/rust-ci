@@ -45,7 +45,7 @@ Mint the token just before `cargo-fetch` and hand the output to `git-token`:
     permission-contents: read       # narrow the minted token to read-only contents
 
 - name: Cargo fetch
-  uses: gronke/cicd-rust/.github/actions/cargo-fetch@main
+  uses: gronke/rust-ci/.github/actions/cargo-fetch@main
   with:
     git-token: ${{ steps.deps-token.outputs.token }}
 ```
@@ -64,7 +64,7 @@ Create a fine-grained PAT with **Contents: Read** on each private dependency rep
 
 ```yaml
 - name: Cargo fetch
-  uses: gronke/cicd-rust/.github/actions/cargo-fetch@main
+  uses: gronke/rust-ci/.github/actions/cargo-fetch@main
   with:
     git-token: ${{ secrets.PRIVATE_DEP_TOKEN }}
 ```

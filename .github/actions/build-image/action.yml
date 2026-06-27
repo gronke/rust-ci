@@ -1,0 +1,49 @@
+name: Build image (local)
+description: >-
+  Build the rust-ci toolchain image from image/Dockerfile for a Rust version and
+  load it into the Docker daemon, so the Docker actions run against a local tag
+  with no registry. With cache:true the added layer (clippy/rustfmt/jq) is cached
+  via the GitHub Actions cache; the rust base is pulled from Docker Hub.
+
+inputs:
+  rust-version:
+    description: Rust base version — the rust:<version> tag to build on.
+    required: false
+    default: latest
+  tag:
+    description: Tag for the built image.
+    required: false
+    default: rust-ci:latest
+  cache:
+    description: Cache the added layer across runs (GitHub Actions cache via buildx type=gha).
+    required: false
+    default: "false"
+
+outputs:
+  image:
+    description: The built image tag.
+    value: ${{ inputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    # Re-export the runtime token + v2 results URL; the runner withholds them from
+    # step processes, and buildx needs them for the type=gha cache.
+    - name: Expose Actions cache tokens
+      if: ${{ inputs.cache == 'true' }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          for (const k of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL']) {
+            if (process.env[k]) core.exportVariable(k, process.env[k]);
+          }
+
+    - name: Build image
+      shell: bash
+      env:
+        RUST_VERSION: ${{ inputs.rust-version }}
+        TAG: ${{ inputs.tag }}
+        CACHE: ${{ inputs.cache }}
+        SCOPE: rust-ci-${{ inputs.rust-version }}
+        ACTIONS_CACHE_SERVICE_V2: "true"
+      run: bash "$GITHUB_ACTION_PATH/build-image.sh"
