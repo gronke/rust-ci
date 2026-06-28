@@ -7,7 +7,10 @@ description: >-
 
 inputs:
   rust-version:
-    description: Rust base version — the rust:<version> tag to build on.
+    description: >-
+      Rust base version — the rust:<version> tag to build on. The literal `msrv`
+      resolves to the crate's declared `rust-version` from Cargo.toml (see
+      working-directory), so the image is built on the support floor.
     required: false
     default: latest
   tag:
@@ -18,6 +21,12 @@ inputs:
     description: Cache the added layer across runs (GitHub Actions cache via buildx type=gha).
     required: false
     default: "false"
+  working-directory:
+    description: >-
+      Directory whose Cargo.toml supplies the version when rust-version is `msrv`
+      (ignored for any other rust-version).
+    required: false
+    default: "."
 
 outputs:
   image:
@@ -44,6 +53,6 @@ runs:
         RUST_VERSION: ${{ inputs.rust-version }}
         TAG: ${{ inputs.tag }}
         CACHE: ${{ inputs.cache }}
-        SCOPE: rust-ci-${{ inputs.rust-version }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
         ACTIONS_CACHE_SERVICE_V2: "true"
       run: bash "$GITHUB_ACTION_PATH/build-image.sh"

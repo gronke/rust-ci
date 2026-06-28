@@ -66,12 +66,13 @@ Place it before your build/test steps.
 
 Builds the toolchain image — `rust:<version>` plus clippy, rustfmt, and jq — locally and loads it into the Docker daemon, so the Docker actions below run against a local `rust-ci:latest` tag with no registry.
 Run it once before the Docker actions; `cache: "true"` caches the added layer (the `rust:<version>` base is pulled from Docker Hub).
+Pass `rust-version: msrv` to build at the crate's declared MSRV (read from `Cargo.toml`), so the whole Docker pipeline runs on the support floor and a dependency that raises its MSRV fails the normal gate.
 See [the action's README](.github/actions/build-image/README.md).
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/build-image@main
   with:
-    rust-version: "1"      # any rust:<tag>; default "latest"
+    rust-version: "1"      # any rust:<tag>; default "latest" (or `msrv` → Cargo.toml)
     cache: "true"          # cache the added layer (opt-in)
 ```
 
@@ -86,6 +87,21 @@ The low-level primitive for a network-isolated build: dependency `build.rs` and 
   with:
     args: "build --release --locked --features full"  # do NOT add --offline; `offline` controls it
     # offline: "false"   # opt out to fetch-as-it-builds (networked)
+```
+
+### `msrv`
+
+Compiles a crate on its **declared MSRV** (`rust-version` in `Cargo.toml`) inside a container built at exactly that toolchain, so a dependency that raises its own MSRV is caught on the PR that pulls it in — not only at release time.
+The image *is* the MSRV, so a plain sealed `cargo check` is the check; there is no MSRV tool to install and no toolchain to select.
+If you already run the sealed Docker pipeline, point `build-image` at `rust-version: msrv` and the normal lint-and-test gate enforces the MSRV across fmt/clippy/test — this action is then an explicit floor gate (a cheap `cargo check`), most useful when your main CI runs natively or on stable.
+See [the action's README](.github/actions/msrv/README.md).
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/msrv@main
+  with:
+    package: my-crate           # required for a workspace with >1 member
+    features: "--features full" # optional; the flag passed to cargo check
+    # rust-version: "1.95"      # optional override; default reads Cargo.toml
 ```
 
 ### `cargo-install`
