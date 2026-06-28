@@ -10,6 +10,9 @@ The image is `rust:<rust-version>` plus clippy, rustfmt, and jq.
 With `cache: "true"` the build runs under buildx with the GitHub Actions cache (`type=gha,mode=min`): only the added layer (clippy/rustfmt/jq) is cached, scoped per Rust version, while the `rust:<version>` base is pulled from Docker Hub.
 Caching is off by default, so a consumer opts in before anything writes to their Actions cache.
 
+Pass `rust-version: msrv` to build at the crate's **declared MSRV** instead of a literal tag: the version is read from `Cargo.toml` (`rust-version`) under `working-directory` and validated as numeric, so the whole sealed Docker pipeline can run on the support floor and a dependency that raises its MSRV fails the normal lint-and-test gate rather than the release.
+The cache is scoped per *resolved* version (`rust-ci-<version>`), so a latest image and an MSRV image cache independently.
+
 ## Usage
 
 ```yaml
@@ -18,6 +21,8 @@ Caching is off by default, so a consumer opts in before anything writes to their
     rust-version: "1"          # any rust:<tag>; default "latest"
     tag: rust-ci:latest        # the Docker actions' default image
     cache: "true"              # opt in to caching the added layer
+    # rust-version: msrv       # or build at the crate's declared MSRV (Cargo.toml)
+    # working-directory: .     # where that Cargo.toml lives (for rust-version: msrv)
 - uses: gronke/rust-ci/.github/actions/lint-and-test-docker@main
   with:
     working-directory: .       # image defaults to rust-ci:latest
@@ -27,9 +32,10 @@ Caching is off by default, so a consumer opts in before anything writes to their
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `rust-version` | `latest` | The `rust:<version>` base tag to build on. |
+| `rust-version` | `latest` | The `rust:<version>` base tag to build on. `msrv` resolves to the crate's declared `rust-version` from `Cargo.toml`. |
 | `tag` | `rust-ci:latest` | Tag for the built image. |
 | `cache` | `"false"` | Cache the added layer across runs (GitHub Actions cache via buildx `type=gha`). |
+| `working-directory` | `.` | Directory whose `Cargo.toml` supplies the version when `rust-version: msrv` (ignored otherwise). |
 
 ## Outputs
 

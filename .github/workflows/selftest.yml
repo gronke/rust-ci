@@ -217,6 +217,74 @@ jobs:
           fi
           echo "✓ cargo-use offline sealed the network"
 
+      # build-image `msrv` sentinel: build at the fixture's DECLARED rust-version, read
+      # from Cargo.toml (no hand-managed version), so a consumer can run the whole Docker
+      # pipeline on the support floor. The fixture pins 1.82.
+      - name: build-image resolves the msrv sentinel from Cargo.toml
+        uses: ./.github/actions/build-image
+        with:
+          rust-version: msrv
+          working-directory: fixtures/sample-crate
+          tag: rust-ci:bi-msrv
+      - name: the sentinel image IS the declared MSRV (1.82)
+        run: |
+          v="$(docker run --rm rust-ci:bi-msrv rustc --version)"
+          echo "$v"
+          case "$v" in
+            *" 1.82"*) echo "✓ sentinel image is rust 1.82" ;;
+            *) echo "::error::sentinel image is not rust 1.82: $v"; exit 1 ;;
+          esac
+
+      # Negative control: a non-numeric Cargo.toml rust-version is rejected by the shared
+      # resolver before it can become a docker tag — proving build-image wires the
+      # validation into the sentinel path (the smuggled command must not run).
+      - name: craft a bad-MSRV manifest (for the negative control)
+        run: |
+          mkdir -p "$RUNNER_TEMP/bad-msrv"
+          printf '[package]\nname = "bad"\nversion = "0.0.0"\nrust-version = "1.0; touch pwned"\n' \
+            > "$RUNNER_TEMP/bad-msrv/Cargo.toml"
+      - name: build-image rejects a non-numeric declared rust-version (negative control)
+        id: bi_bad
+        continue-on-error: true
+        uses: ./.github/actions/build-image
+        with:
+          rust-version: msrv
+          working-directory: ${{ runner.temp }}/bad-msrv
+          tag: rust-ci:bi-bad
+      - name: assert the bad declared rust-version was rejected
+        run: |
+          if [ "${{ steps.bi_bad.outcome }}" != "failure" ]; then
+            echo "::error::build-image accepted a non-numeric rust-version"; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/bad-msrv/pwned"
+          echo "✓ build-image rejected a non-numeric declared rust-version"
+
+      # msrv: build an image at the fixture's DECLARED rust-version and cargo check there.
+      # Exercises the Cargo.toml extraction, the image-at-MSRV build, and the sealed check.
+      - name: msrv (image at the declared MSRV, sealed check)
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: fixtures/sample-crate
+          package: cicd-rust-selftest-fixture
+
+      # Negative control: a non-numeric rust-version is rejected before it can reach a docker
+      # tag or shell (proves the input validation; the smuggled command must not run).
+      - name: msrv rejects a non-numeric rust-version (negative control)
+        id: msrv_bad
+        continue-on-error: true
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: fixtures/sample-crate
+          rust-version: "latest; touch pwned"
+
+      - name: assert the bad rust-version was rejected
+        run: |
+          if [ "${{ steps.msrv_bad.outcome }}" != "failure" ]; then
+            echo "::error::msrv accepted a non-numeric rust-version"; exit 1
+          fi
+          test ! -e fixtures/sample-crate/pwned
+          echo "✓ msrv rejected a non-numeric rust-version"
+
   # install-toolchain must also work on Windows. windows-latest exercises the rustup-present path;
   # windows-11-arm ships no Rust at all, exercising the rustup-init.exe bootstrap. Building the
   # fixture proves the toolchain is usable, not merely installed (and, on arm64, that the image
