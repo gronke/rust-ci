@@ -11,7 +11,10 @@ Because the container's compiler **is** the declared MSRV, a plain `cargo check`
 
 The check runs through the same hardened `docker run` as the other Docker actions (non-root, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, repo mounted read-only).
 By default it is **networked** (otherwise sealed), so dependencies resolve fresh with no `cargo-fetch` warmup and a newer release within range is caught; set `offline: "true"` (after a `cargo-fetch`) for a `--network none` run.
-Resolution is **unlocked** by default (`locked: "false"`) so it reflects what a fresh consumer build would pick, which a committed `Cargo.lock` would otherwise hide.
+Resolution is **unlocked** by default (`locked: "false"`): because the source is mounted read-only the lockfile cannot be written during the check, so it is resolved at the MSRV up front — in a **disposable copy** of the source under the runner's temp dir, never in the checkout itself.
+The checkout is therefore never modified: a crate without a `Cargo.lock` gains none, and a committed one stays byte-identical while the fresh in-range resolution (which it would otherwise hide) still happens in the copy.
+The copy shares the checkout's cargo cache and target dir, so caching behaves as usual, and it carries a self-contained snapshot of the checkout's git metadata (`.git` as a directory, or as a file for linked worktrees and submodules) — so a `build.rs` that runs `git describe` or reads the commit hash behaves the same as in a `locked: "true"` run.
+Set `locked: "true"` to require a committed `Cargo.lock` and check exactly those pinned versions, straight from the checkout.
 
 ## Usage
 
@@ -33,7 +36,7 @@ Resolution is **unlocked** by default (`locked: "false"`) so it reflects what a 
 | `features` | `""` | Feature flag passed to `cargo check` (e.g. `--features full`). |
 | `rust-version` | `""` | MSRV to test. Empty reads `rust-version` from `Cargo.toml`. |
 | `working-directory` | `.` | Crate/workspace directory (Cargo.toml read from here; mounted read-only). |
-| `locked` | `"false"` | Append `--locked` (test the pinned lockfile instead of fresh resolution). |
+| `locked` | `"false"` | `"false"` resolves a fresh lock at the MSRV (in a disposable copy — the checkout is never modified); `"true"` requires a committed `Cargo.lock` and checks exactly that. |
 | `offline` | `"false"` | Sealed `--network none` + `--offline` (needs a prior `cargo-fetch`). |
 | `image-tag` | `rust-ci:msrv` | Local tag for the MSRV image, distinct from `rust-ci:latest`. |
 | `target-dir` | `target` | Host dir for cargo target (read-write, cacheable). |

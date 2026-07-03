@@ -11,6 +11,12 @@
 # (and the dependency build.rs / proc-macros it runs) cannot reach the network.
 # Run cargo-fetch first to warm the cache for the sealed (offline) path.
 #
+# `seal_run` mounts the source read-only, unconditionally — no environment
+# variable can weaken that. The one sanctioned exception is
+# `seal_run_rw_lockresolve`, for resolving a lockfile in a DISPOSABLE COPY of
+# the source (never a consumer checkout); its mount mode is an explicit,
+# validated function argument, not an ambient knob.
+#
 # Config is read from the environment (an action sets these before calling):
 #   IMAGE        (required) the CI image to run
 #   CARGO_CACHE  (required) host dir for CARGO_HOME (registry/git cache), mounted RW
@@ -26,7 +32,19 @@
 # `-e` AFTER --env-file (last-wins), so no env-include/-exclude tinkering can redirect
 # the mounted cache or target.
 
-seal_run() {
+# Private runner. The /work mount mode is its explicit first argument — exactly
+# "ro" or "rw", anything else is fatal — so the mode is fixed at each call site
+# and no environment variable can flip it. Call through the wrappers below.
+_seal_run() {
+  local work_mount="$1"
+  shift
+  case "$work_mount" in
+    ro | rw) ;;
+    *)
+      echo "::error::_seal_run: invalid /work mount mode '$work_mount' (expected ro or rw)"
+      return 1
+      ;;
+  esac
   : "${IMAGE:?seal_run: IMAGE required}" "${CARGO_CACHE:?seal_run: CARGO_CACHE required}"
   mkdir -p "$CARGO_CACHE"
 
@@ -65,11 +83,26 @@ seal_run() {
     -e CARGO_HOME=/cache/cargo \
     -e RUSTUP_HOME=/usr/local/rustup \
     "${target_args[@]}" \
-    -v "$PWD:/work:ro" \
+    -v "$PWD:/work:$work_mount" \
     -v "$PWD/$CARGO_CACHE:/cache/cargo" \
     "${cicd_args[@]}" \
     -w /work \
     "$IMAGE" "$@" || rc=$?
   rm -f "$ef"
   return "$rc"
+}
+
+# The default runner: source mounted READ-ONLY, hard-coded. Every build, check,
+# and test goes through this.
+seal_run() {
+  _seal_run ro "$@"
+}
+
+# Writable-source variant for exactly one job: `cargo generate-lockfile` cannot
+# write Cargo.lock through the read-only mount, so the msrv action resolves it
+# in a disposable copy of the source under the runner's temp dir and calls this
+# from that copy. Never point it at a consumer checkout; anything that compiles
+# dependency code stays on `seal_run`.
+seal_run_rw_lockresolve() {
+  _seal_run rw "$@"
 }

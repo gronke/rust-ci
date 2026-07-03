@@ -27,9 +27,11 @@ inputs:
     default: "."
   locked:
     description: >-
-      Append --locked. Default "false" — resolve unlocked so a newer dependency
-      release within range (which a fresh consumer build would pick up, and which a
-      committed Cargo.lock would hide) is caught too.
+      Default "false": resolve a fresh Cargo.lock at the MSRV before the check, so a newer
+      dependency release within range — which a committed Cargo.lock would hide — is exercised
+      on the floor. "true": require a committed Cargo.lock and check exactly those versions.
+      The source is always mounted read-only and the fresh lock is resolved in a disposable
+      copy, so the consumer checkout is never modified either way.
     required: false
     default: "false"
   offline:
@@ -77,8 +79,13 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         INPUT_RUST_VERSION: ${{ inputs.rust-version }}
+        INPUT_LOCKED: ${{ inputs.locked }}
       run: |
         set -euo pipefail
+        # locked: true checks a committed lockfile, so require one before building an image.
+        if [ "${INPUT_LOCKED:-false}" = "true" ] && [ ! -f Cargo.lock ]; then
+          echo "::error::locked: true but no committed Cargo.lock in $(pwd)"; exit 1
+        fi
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/rust-version.sh"
         if [ -n "$INPUT_RUST_VERSION" ]; then
@@ -120,9 +127,77 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+
+        # The source is mounted read-only, so cargo cannot write Cargo.lock during the check.
+        # With locked: false, resolve a fresh lock at the MSRV up front — in a DISPOSABLE COPY
+        # of the source under the runner's temp dir, so the consumer checkout is never
+        # written: a lockless crate stays lockless, a committed Cargo.lock stays byte-
+        # identical, and the fresh in-range resolution still happens (in the copy).
+        # generate-lockfile only resolves the graph — no build.rs/proc-macros run — so its
+        # writable run needs no seal; the sealed check then runs --locked from the copy.
+        # (locked: true checks the committed lock in place, already required above.)
+        if [ "$LOCKED" != "true" ]; then
+          scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/msrv-resolve.XXXXXX")"
+          trap 'rm -rf "$scratch"' EXIT
+          # Copy the source, skipping the heavy build/cache dirs and .git at the top level
+          # (an explicit loop — tar/rsync exclude-pattern semantics are too easy to get
+          # wrong). Git metadata is materialized separately right below.
+          shopt -s dotglob nullglob
+          for entry in ./*; do
+            case "${entry#./}" in "$TARGET_DIR" | "$CARGO_CACHE" | .git) continue ;; esac
+            cp -a "$entry" "$scratch/"
+          done
+          shopt -u dotglob nullglob
+          # Preserve the checkout's git metadata in the copy: a build.rs or proc-macro may
+          # read it (git describe, the commit hash), and locked:true — which checks in
+          # place — can see it, so the copy must not behave differently. Materialize a
+          # SELF-CONTAINED .git directory, covering .git as a directory and as a file
+          # (linked worktrees, submodules); skipped when the source is not a git repo.
+          # The check mounts the copy read-only, so the metadata is read-only there.
+          if gd="$(git rev-parse --absolute-git-dir 2>/dev/null)"; then
+            common="$(git rev-parse --git-common-dir)"
+            case "$common" in /*) ;; *) common="$PWD/$common" ;; esac
+            if [ "$gd" = "$common" ]; then
+              # Plain repo (top-level or crate-in-subdir) or submodule: the git dir is
+              # already self-contained.
+              cp -a "$gd" "$scratch/.git"
+            else
+              # Linked worktree: start from the shared metadata, drop the host-path
+              # worktree references (they would dangle inside the container), then
+              # overlay the per-worktree state so HEAD reflects THIS checkout.
+              cp -a "$common" "$scratch/.git"
+              rm -rf "$scratch/.git/worktrees"
+              for f in HEAD index config.worktree; do
+                [ -e "$gd/$f" ] && cp -a "$gd/$f" "$scratch/.git/$f"
+              done
+            fi
+            # The copy's working tree is the copy itself; a stale core.worktree in the
+            # copied config (submodules set one) would point at a path that is absent in
+            # the container — and it even breaks repo discovery, so edit the config FILE
+            # directly instead of going through `git -C` (which would need that discovery).
+            git config --file "$scratch/.git/config" --unset core.worktree 2>/dev/null || true
+            git -C "$scratch" rev-parse HEAD >/dev/null 2>&1 \
+              || echo "::warning::msrv: git metadata could not be materialized in the resolve copy"
+          fi
+          # Share the checkout's cargo cache and target dir with the copy via symlinks
+          # (docker resolves a symlinked mount source): offline mode needs the cargo-fetch-
+          # warmed cache, and the check keeps its incremental target across runs. A nested
+          # custom dir (e.g. target-dir: build/target) is copied above instead of excluded;
+          # the guards keep the copy self-consistent then (cold but correct).
+          mkdir -p "$TARGET_DIR" "$CARGO_CACHE"
+          [ -e "$scratch/$TARGET_DIR" ] || ln -s "$PWD/$TARGET_DIR" "$scratch/$TARGET_DIR"
+          [ -e "$scratch/$CARGO_CACHE" ] || ln -s "$PWD/$CARGO_CACHE" "$scratch/$CARGO_CACHE"
+          cd "$scratch"
+          gen_args=()
+          [ "$OFFLINE" = "true" ] && gen_args+=(--offline)
+          echo "::group::resolve Cargo.lock at the MSRV (in a disposable copy of the source)"
+          seal_run_rw_lockresolve cargo generate-lockfile "${gen_args[@]}"
+          echo "::endgroup::"
+        fi
+
         export CICD_DIR="$GITHUB_ACTION_PATH"
-        # PACKAGE/FEATURES/LOCKED/MSRV aren't CARGO_* (env-include won't forward them);
-        # inject them for the in-container script. seal_run reads OFFLINE for --network.
-        EXTRA_ENV="$(printf '%s\n%s\n%s\n%s' "PACKAGE=$PACKAGE" "FEATURES=$FEATURES" "LOCKED=$LOCKED" "MSRV=$MSRV")"
+        # PACKAGE/FEATURES/MSRV aren't CARGO_* (env-include won't forward them); inject them for
+        # the in-container script. seal_run reads OFFLINE for --network; the check is always --locked.
+        EXTRA_ENV="$(printf '%s\n%s\n%s' "PACKAGE=$PACKAGE" "FEATURES=$FEATURES" "MSRV=$MSRV")"
         export EXTRA_ENV
         seal_run bash /cicd/msrv.sh
