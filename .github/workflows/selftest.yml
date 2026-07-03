@@ -261,11 +261,13 @@ jobs:
 
       # msrv: build an image at the fixture's DECLARED rust-version and cargo check there.
       # Exercises the Cargo.toml extraction, the image-at-MSRV build, and the sealed check.
+      # locked: true takes the committed-lockfile path — the fixture pins one.
       - name: msrv (image at the declared MSRV, sealed check)
         uses: ./.github/actions/msrv
         with:
           working-directory: fixtures/sample-crate
           package: cicd-rust-selftest-fixture
+          locked: "true"
 
       # Negative control: a non-numeric rust-version is rejected before it can reach a docker
       # tag or shell (proves the input validation; the smuggled command must not run).
@@ -284,6 +286,98 @@ jobs:
           fi
           test ! -e fixtures/sample-crate/pwned
           echo "✓ msrv rejected a non-numeric rust-version"
+
+      # A crate with NO committed lockfile must still work: the source is mounted read-only for the
+      # sealed check, so the action resolves the lock up front rather than failing to write it there.
+      - name: stage a copy of the fixture with no Cargo.lock
+        run: |
+          rm -rf "$RUNNER_TEMP/fixture-nolock"
+          mkdir -p "$RUNNER_TEMP/fixture-nolock"
+          rsync -a --exclude='target*' --exclude='Cargo.lock' fixtures/sample-crate/ "$RUNNER_TEMP/fixture-nolock/"
+          test ! -e "$RUNNER_TEMP/fixture-nolock/Cargo.lock"
+
+      # Negative control: locked: true demands a committed lockfile, so a crate without one fails
+      # with a clear up-front error — not the cryptic read-only-filesystem failure of writing it in-container.
+      - name: msrv (locked true) rejects a crate with no committed lockfile
+        id: msrv_nolock_locked
+        continue-on-error: true
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: ${{ runner.temp }}/fixture-nolock
+          package: cicd-rust-selftest-fixture
+          locked: "true"
+      - name: assert the missing lockfile was rejected
+        run: |
+          if [ "${{ steps.msrv_nolock_locked.outcome }}" != "failure" ]; then
+            echo "::error::msrv locked:true accepted a crate with no Cargo.lock"; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/fixture-nolock/Cargo.lock"
+          echo "✓ msrv locked:true requires a committed lockfile"
+
+      # Default (locked: false): resolve a fresh lockfile at the MSRV up front, then check it sealed.
+      - name: msrv (locked false) resolves a lockfile when none is committed
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: ${{ runner.temp }}/fixture-nolock
+          package: cicd-rust-selftest-fixture
+
+      # The resolution happens in a disposable copy, so the lockless checkout must STAY lockless —
+      # the action may not leave an untracked Cargo.lock behind.
+      - name: assert the lockless checkout stayed lockless
+        run: |
+          test ! -e "$RUNNER_TEMP/fixture-nolock/Cargo.lock"
+          echo "✓ msrv locked:false left no Cargo.lock behind"
+
+      # locked: false must not rewrite a committed lockfile either: fresh resolution happens in
+      # the disposable copy while the checkout's Cargo.lock stays byte-identical.
+      - name: snapshot the committed lockfile
+        run: cp fixtures/sample-crate/Cargo.lock "$RUNNER_TEMP/Cargo.lock.before"
+      - name: msrv (locked false) resolves fresh without touching the committed lockfile
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: fixtures/sample-crate
+          package: cicd-rust-selftest-fixture
+      - name: assert the committed lockfile is byte-identical
+        run: |
+          cmp "$RUNNER_TEMP/Cargo.lock.before" fixtures/sample-crate/Cargo.lock
+          echo "✓ msrv locked:false preserved the committed Cargo.lock byte-for-byte"
+
+      # Regression: a consumer's build.rs may read git metadata (git describe, the commit
+      # hash), so the disposable copy must preserve it — here in the plain .git DIRECTORY
+      # form. The fixture's build.rs asserts `git rev-parse HEAD` succeeds whenever
+      # FIXTURE_REQUIRE_GIT is set (forwarded into the container via the literal env input).
+      - name: stage a git-repo fixture with no Cargo.lock (.git directory)
+        run: |
+          rm -rf "$RUNNER_TEMP/fixture-gitdir"
+          mkdir -p "$RUNNER_TEMP/fixture-gitdir"
+          rsync -a --exclude='target*' --exclude='Cargo.lock' fixtures/sample-crate/ "$RUNNER_TEMP/fixture-gitdir/"
+          git -C "$RUNNER_TEMP/fixture-gitdir" init -q -b main
+          git -C "$RUNNER_TEMP/fixture-gitdir" -c user.name=selftest -c user.email=selftest@invalid add -A
+          git -C "$RUNNER_TEMP/fixture-gitdir" -c user.name=selftest -c user.email=selftest@invalid commit -q -m fixture
+          test -d "$RUNNER_TEMP/fixture-gitdir/.git"
+      - name: msrv (locked false) preserves git metadata in the copy (.git directory)
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: ${{ runner.temp }}/fixture-gitdir
+          package: cicd-rust-selftest-fixture
+          env: |
+            FIXTURE_REQUIRE_GIT=1
+
+      # The same guarantee for the .git FILE form: a linked worktree of that repo (the
+      # form submodules use as well).
+      - name: stage a linked-worktree fixture (.git file)
+        run: |
+          rm -rf "$RUNNER_TEMP/fixture-gitfile"
+          git -C "$RUNNER_TEMP/fixture-gitdir" worktree add -q -b wt "$RUNNER_TEMP/fixture-gitfile"
+          test -f "$RUNNER_TEMP/fixture-gitfile/.git"
+          test ! -e "$RUNNER_TEMP/fixture-gitfile/Cargo.lock"
+      - name: msrv (locked false) preserves git metadata in the copy (.git file / worktree)
+        uses: ./.github/actions/msrv
+        with:
+          working-directory: ${{ runner.temp }}/fixture-gitfile
+          package: cicd-rust-selftest-fixture
+          env: |
+            FIXTURE_REQUIRE_GIT=1
 
   # install-toolchain must also work on Windows. windows-latest exercises the rustup-present path;
   # windows-11-arm ships no Rust at all, exercising the rustup-init.exe bootstrap. Building the
