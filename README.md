@@ -53,6 +53,7 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
 Caches cargo for CI and **defaults** incremental compilation off — pure cost in CI (no edit→recompile loop), and the main thing that balloons `target/`.
 An explicit `CARGO_INCREMENTAL` (set at the workflow/job level) is obeyed — for the occasional variant build that is faster with it on — and flows through to the Docker actions via their `CARGO_.*` forwarding. The action imposes no build profile; set `CARGO_*` vars to tune the build.
 Caches the cargo download cache (registry index + `.crate` tarballs + git db) via the first-party `actions/cache`; optionally caches `target/` too, kept bounded by the `Cargo.lock` key (no restore-key ratchet).
+The cargo home is resolved from `CARGO_HOME` when set — container images that bake the toolchain outside `$HOME/.cargo` (e.g. `/opt/cargo`) are cached correctly.
 Place it before your build/test steps.
 
 ```yaml
@@ -60,7 +61,10 @@ Place it before your build/test steps.
   with:
     prefix: build            # cache family — use a distinct one per job
     cache-target: "true"     # also cache target/ (off by default)
+    # save: "false"          # restore-only, for jobs consuming a warmup-maintained cache
 ```
+
+`save: "false"` restores without writing a cache at job end — for PR jobs that read a cache a default-branch warmup job maintains, where per-branch saves would only burn quota and job minutes.
 
 ### `build-image`
 
