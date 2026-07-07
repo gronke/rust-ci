@@ -417,3 +417,64 @@ jobs:
           prefix: passthrough
       - name: explicit CARGO_INCREMENTAL is preserved
         run: test "$CARGO_INCREMENTAL" = "1"
+
+  # rust-cache must resolve the cargo home from CARGO_HOME (container images bake the
+  # toolchain outside $HOME/.cargo): seed a sentinel under a custom CARGO_HOME, let the
+  # post step save it, and prove a second job restores it into the same custom location.
+  selftest-cache-cargo-home-save:
+    name: rust-cache honors CARGO_HOME (save)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /tmp/cargo-home
+    steps:
+      - uses: actions/checkout@v6
+      - name: seed a sentinel in the custom cargo home
+        run: |
+          mkdir -p "$CARGO_HOME/registry/index" "$CARGO_HOME/registry/cache" "$CARGO_HOME/git/db"
+          echo "${{ github.run_id }}" > "$CARGO_HOME/registry/cache/selftest-sentinel"
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: cargohome-${{ github.run_id }}
+
+  selftest-cache-cargo-home-restore:
+    name: rust-cache honors CARGO_HOME (restore)
+    needs: selftest-cache-cargo-home-save
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /tmp/cargo-home
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: cargohome-${{ github.run_id }}
+          save: "false"
+      - name: sentinel came back into the custom cargo home
+        run: test "$(cat "$CARGO_HOME/registry/cache/selftest-sentinel")" = "${{ github.run_id }}"
+
+  # save:"false" must not create a cache entry: run restore-only under a unique prefix,
+  # then assert no entry with that prefix exists.
+  selftest-cache-no-save:
+    name: rust-cache save:false saves nothing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: nosave-${{ github.run_id }}
+          save: "false"
+
+  selftest-cache-no-save-assert:
+    name: rust-cache save:false left no entry
+    needs: selftest-cache-no-save
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: no cache entry exists for the nosave prefix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
+            --jq '[.[] | select(.key | startswith("nosave-${{ github.run_id }}-"))] | length')
+          test "$COUNT" -eq 0

@@ -14,6 +14,13 @@ inputs:
     description: Cache-family name, so independent jobs (build, tauri, …) keep separate caches.
     required: false
     default: rust
+  save:
+    description: >-
+      Also save the cache at job end (the actions/cache post step). Set "false" for restore-only
+      consumers — e.g. PR jobs reading a cache that a default-branch warmup job maintains, where
+      per-branch saves would only burn quota and job minutes.
+    required: false
+    default: "true"
   cache-target:
     description: >-
       Also cache the build target/ directory (keeps compiled dependencies between runs). Off by
@@ -66,12 +73,15 @@ runs:
 
         # Cache cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never
         # registry/src: cargo re-extracts it from the tarballs, so caching it is pure duplication
-        # (it roughly doubles the registry footprint for no benefit).
+        # (it roughly doubles the registry footprint for no benefit). The cargo home comes from
+        # CARGO_HOME when set — container images that bake the toolchain elsewhere (e.g.
+        # /opt/cargo) rely on it, and $HOME/.cargo would cache a directory cargo never touches.
+        CARGO_DIR="${CARGO_HOME:-$HOME/.cargo}"
         {
           echo 'paths<<__PATHS__'
-          echo "$HOME/.cargo/registry/index"
-          echo "$HOME/.cargo/registry/cache"
-          echo "$HOME/.cargo/git/db"
+          echo "$CARGO_DIR/registry/index"
+          echo "$CARGO_DIR/registry/cache"
+          echo "$CARGO_DIR/git/db"
           if [ "$CACHE_TARGET" = "true" ]; then echo "$TARGET_DIR"; fi
           if [ -n "$EXTRA_DIRS" ]; then printf '%s\n' "$EXTRA_DIRS"; fi
           echo '__PATHS__'
@@ -80,8 +90,20 @@ runs:
     # actions/cache restores here and auto-saves at job end (its post step runs even when nested in a
     # composite action). An exact-key save is skipped on a hit, so an unchanged Cargo.lock never grows
     # the cache; a changed lock seeds a fresh entry and the stale one is LRU-evicted — no ratchet.
+    # `save: "false"` swaps in the restore-only variant of the same first-party action.
     - name: Cache cargo registry/git (+ target)
+      if: inputs.save == 'true'
       uses: actions/cache@v5
+      with:
+        path: ${{ steps.meta.outputs.paths }}
+        key: ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        restore-keys: |
+          ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-
+          ${{ inputs.prefix }}-${{ runner.os }}-rust-
+
+    - name: Restore cargo registry/git (+ target) without saving
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@v5
       with:
         path: ${{ steps.meta.outputs.paths }}
         key: ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
