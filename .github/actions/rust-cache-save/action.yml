@@ -11,7 +11,7 @@ description: >-
 inputs:
   save:
     description: >-
-      Upload the pruned target. Pass `${{ github.ref == 'refs/heads/main' }}` for the
+      Upload the pruned target. Pass the expression "github.ref == 'refs/heads/main'" for the
       restore-everywhere/save-on-main pattern.
     required: false
     default: "true"

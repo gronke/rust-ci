@@ -7,7 +7,14 @@
 # DRY_RUN=1 prints what would go instead of removing it, for local runs.
 set -euo pipefail
 
+# RUST_CI_TARGET_DIR is workspace-relative (the same string the cache paths
+# use), while this script may run in a nested working-directory for cargo
+# metadata — resolve against the workspace, not the cwd.
 target="${RUST_CI_TARGET_DIR:?rust-cache did not export RUST_CI_TARGET_DIR}"
+case "$target" in
+  /*) ;;
+  *) target="${GITHUB_WORKSPACE:-$PWD}/$target" ;;
+esac
 if [ ! -d "$target" ]; then
   echo "no $target directory; nothing to prune"
   exit 0
