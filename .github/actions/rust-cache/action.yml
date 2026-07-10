@@ -4,9 +4,18 @@ description: >-
   CI (no edit→recompile loop) and the main thing that balloons target/ — while OBEYING an explicit
   CARGO_INCREMENTAL the consumer sets (some matrix/variant builds are faster with it on). It does not
   impose a build profile: the build stays cargo's default unless the consumer sets CARGO_* vars, which
-  flow through unchanged (incl. into the Docker actions via their CARGO_.* forwarding). Caches cargo's
-  download cache (registry index + .crate tarballs + git db) via the first-party actions/cache;
-  optionally caches target/ too, kept bounded by the Cargo.lock-based key (no restore-key ratchet).
+  flow through unchanged (incl. into the Docker actions via their CARGO_.* forwarding).
+
+  Two independent cache entries, split by churn rate. The REGISTRY entry (index + .crate tarballs +
+  git db, never registry/src — cargo re-extracts it, caching it is pure duplication) is small,
+  toolchain-independent and bounded by the Cargo.lock key; it restores here and saves at job end
+  unless `save: "false"`. The TARGET entry (opt-in via cache-target) is restore-ONLY here: a
+  restore-key fallback plus save-on-new-key would accrete every generation's stale artifacts into
+  the next one, so the save lives in the paired `rust-cache-save` action, which prunes target/ down
+  to dependency artifacts first and runs as the consumer's LAST job step (composite actions have no
+  post hooks, so an auto-save could not run after the build). Jobs that should only consume — PR
+  jobs reading what a default-branch warmup maintains — simply omit the save step.
+
   Avoids third-party cache actions whose behaviour drifts with the runner image.
 
 inputs:
@@ -16,31 +25,39 @@ inputs:
     default: rust
   save:
     description: >-
-      Also save the cache at job end (the actions/cache post step). Set "false" for restore-only
-      consumers — e.g. PR jobs reading a cache that a default-branch warmup job maintains, where
-      per-branch saves would only burn quota and job minutes.
+      Also save the REGISTRY entry at job end (the actions/cache post step). Set "false" for
+      restore-only consumers — e.g. PR jobs reading a cache that a default-branch warmup job
+      maintains, where per-branch saves would only burn quota and job minutes. The target entry is
+      restore-only here regardless; its save belongs to `rust-cache-save`.
     required: false
     default: "true"
   cache-target:
     description: >-
-      Also cache the build target/ directory (keeps compiled dependencies between runs). Off by
+      Also RESTORE the build target/ directory (compiled dependencies between runs). Off by
       default — registry/git alone is small and always safe; turn it on for a heavy dependency tree
-      where recompiling every run is the bottleneck. Bounded by the Cargo.lock-based key (no
-      restore-key ratchet); leave CARGO_INCREMENTAL at its default (off) to keep it tight.
+      where recompiling every run is the bottleneck. Saving the target back is the paired
+      `rust-cache-save` action's job (typically only on the default branch).
     required: false
     default: "false"
   target-dir:
-    description: Workspace-relative target directory to cache when cache-target is true (e.g. an out-of-workspace crate's target).
+    description: Workspace-relative target directory to restore when cache-target is true (e.g. an out-of-workspace crate's target).
     required: false
     default: target
   lockfiles:
-    description: Glob of lockfile(s) whose hash keys the cache.
+    description: Glob of lockfile(s) whose hash keys the caches.
     required: false
     default: "**/Cargo.lock"
   cache-directories:
-    description: Extra newline-separated paths to add to the cache.
+    description: >-
+      Extra newline-separated paths to add to the registry entry (bounded, lockfile-keyed) — suited
+      to vendored/download caches that track the lockfiles.
     required: false
     default: ""
+
+outputs:
+  target-cache-hit:
+    description: '"true" when the target entry restored from its exact key.'
+    value: ${{ steps.target.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -49,12 +66,10 @@ runs:
     # — gigabytes of codegen units + dep-graph data that are never reused across runs. Defaulting it
     # off is the single biggest size reduction and is what makes caching target/ safe; a consumer who
     # knows a variant build benefits can still set CARGO_INCREMENTAL and have it honoured.
-    - name: Configure cargo for CI + compute cache key
+    - name: Configure cargo for CI + compute cache keys
       id: meta
       shell: bash
       env:
-        CACHE_TARGET: ${{ inputs.cache-target }}
-        TARGET_DIR: ${{ inputs.target-dir }}
         EXTRA_DIRS: ${{ inputs.cache-directories }}
       run: |
         set -euo pipefail
@@ -63,7 +78,8 @@ runs:
         if [ -z "${CARGO_INCREMENTAL:-}" ]; then echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"; fi
         if [ -z "${CARGO_TERM_COLOR:-}" ]; then echo "CARGO_TERM_COLOR=always" >> "$GITHUB_ENV"; fi
 
-        # Fold the toolchain into the key so a rustc bump can't reuse incompatible artifacts.
+        # Fold the toolchain into the TARGET key so a rustc bump can't reuse incompatible
+        # artifacts. The registry (downloads only) is toolchain-independent.
         if command -v rustc >/dev/null 2>&1; then
           rust=$(rustc -V | sha256sum | cut -c1-12)
         else
@@ -71,42 +87,67 @@ runs:
         fi
         echo "rust=$rust" >> "$GITHUB_OUTPUT"
 
-        # Cache cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never
-        # registry/src: cargo re-extracts it from the tarballs, so caching it is pure duplication
-        # (it roughly doubles the registry footprint for no benefit). The cargo home comes from
-        # CARGO_HOME when set — container images that bake the toolchain elsewhere (e.g.
-        # /opt/cargo) rely on it, and $HOME/.cargo would cache a directory cargo never touches.
+        # Cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never registry/src:
+        # cargo re-extracts it from the tarballs, so caching it is pure duplication (it roughly
+        # doubles the registry footprint for no benefit). The cargo home comes from CARGO_HOME when
+        # set — container images that bake the toolchain elsewhere (e.g. /opt/cargo) rely on it,
+        # and $HOME/.cargo would cache a directory cargo never touches.
         CARGO_DIR="${CARGO_HOME:-$HOME/.cargo}"
         {
-          echo 'paths<<__PATHS__'
+          echo 'registry_paths<<__PATHS__'
           echo "$CARGO_DIR/registry/index"
           echo "$CARGO_DIR/registry/cache"
           echo "$CARGO_DIR/git/db"
-          if [ "$CACHE_TARGET" = "true" ]; then echo "$TARGET_DIR"; fi
           if [ -n "$EXTRA_DIRS" ]; then printf '%s\n' "$EXTRA_DIRS"; fi
           echo '__PATHS__'
         } >> "$GITHUB_OUTPUT"
 
-    # actions/cache restores here and auto-saves at job end (its post step runs even when nested in a
-    # composite action). An exact-key save is skipped on a hit, so an unchanged Cargo.lock never grows
-    # the cache; a changed lock seeds a fresh entry and the stale one is LRU-evicted — no ratchet.
-    # `save: "false"` swaps in the restore-only variant of the same first-party action.
-    - name: Cache cargo registry/git (+ target)
+    # Registry: restores here and auto-saves at job end (its post step runs even when nested in a
+    # composite action). An exact-key save is skipped on a hit, so an unchanged Cargo.lock never
+    # grows the cache; a changed lock seeds a fresh entry and the stale one is LRU-evicted — no
+    # ratchet. `save: "false"` swaps in the restore-only variant of the same first-party action.
+    - name: Cache cargo registry/git
       if: inputs.save == 'true'
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
-        path: ${{ steps.meta.outputs.paths }}
-        key: ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        path: ${{ steps.meta.outputs.registry_paths }}
+        key: ${{ inputs.prefix }}-${{ runner.os }}-registry-${{ hashFiles(inputs.lockfiles) }}
         restore-keys: |
-          ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-
-          ${{ inputs.prefix }}-${{ runner.os }}-rust-
+          ${{ inputs.prefix }}-${{ runner.os }}-registry-
 
-    - name: Restore cargo registry/git (+ target) without saving
+    - name: Restore cargo registry/git without saving
       if: inputs.save != 'true'
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@v6
       with:
-        path: ${{ steps.meta.outputs.paths }}
-        key: ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        path: ${{ steps.meta.outputs.registry_paths }}
+        key: ${{ inputs.prefix }}-${{ runner.os }}-registry-${{ hashFiles(inputs.lockfiles) }}
         restore-keys: |
-          ${{ inputs.prefix }}-${{ runner.os }}-rust-${{ steps.meta.outputs.rust }}-
-          ${{ inputs.prefix }}-${{ runner.os }}-rust-
+          ${{ inputs.prefix }}-${{ runner.os }}-registry-
+
+    # Target: restore-only (see the action description); `rust-cache-save` prunes and uploads under
+    # the same key, handed over via $GITHUB_ENV so the two halves can never diverge.
+    - name: Restore target
+      if: inputs.cache-target == 'true'
+      id: target
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ inputs.target-dir }}
+        key: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        restore-keys: |
+          ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-
+          ${{ inputs.prefix }}-${{ runner.os }}-target-
+
+    - name: Hand the target key to rust-cache-save
+      if: inputs.cache-target == 'true'
+      shell: bash
+      env:
+        KEY: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        HIT: ${{ steps.target.outputs.cache-hit }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+      run: |
+        set -euo pipefail
+        {
+          echo "RUST_CI_TARGET_KEY=$KEY"
+          echo "RUST_CI_TARGET_DIR=$TARGET_DIR"
+          echo "RUST_CI_TARGET_HIT=${HIT:-false}"
+        } >> "$GITHUB_ENV"

@@ -52,19 +52,38 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
 
 Caches cargo for CI and **defaults** incremental compilation off — pure cost in CI (no edit→recompile loop), and the main thing that balloons `target/`.
 An explicit `CARGO_INCREMENTAL` (set at the workflow/job level) is obeyed — for the occasional variant build that is faster with it on — and flows through to the Docker actions via their `CARGO_.*` forwarding. The action imposes no build profile; set `CARGO_*` vars to tune the build.
-Caches the cargo download cache (registry index + `.crate` tarballs + git db) via the first-party `actions/cache`; optionally caches `target/` too, kept bounded by the `Cargo.lock` key (no restore-key ratchet).
 The cargo home is resolved from `CARGO_HOME` when set — container images that bake the toolchain outside `$HOME/.cargo` (e.g. `/opt/cargo`) are cached correctly.
 Place it before your build/test steps.
+
+Two independent cache entries, split by churn rate:
+
+- The **registry** entry (index + `.crate` tarballs + git db — never `registry/src`, cargo re-extracts it) is small, toolchain-independent and bounded by the `Cargo.lock` key.
+  It restores and saves here (`actions/cache`'s post step); `save: "false"` makes it restore-only.
+- The **target** entry (opt-in via `cache-target`) is **restore-only in this action**: a restore-key fallback plus save-on-new-key would accrete every generation's stale artifacts into the next.
+  Saving it back is [`rust-cache-save`](#rust-cache-save)'s job.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/rust-cache@main
   with:
     prefix: build            # cache family — use a distinct one per job
-    cache-target: "true"     # also cache target/ (off by default)
-    # save: "false"          # restore-only, for jobs consuming a warmup-maintained cache
+    cache-target: "true"     # also restore target/ (off by default)
+    # save: "false"          # registry restore-only, for pure consumers
 ```
 
-`save: "false"` restores without writing a cache at job end — for PR jobs that read a cache a default-branch warmup job maintains, where per-branch saves would only burn quota and job minutes.
+### `rust-cache-save`
+
+The save half of `rust-cache`'s target entry: prunes `target/` down to **dependency artifacts** — workspace-member objects, final binaries, examples, incremental state and docs are rebuilt or relinked on any commit, so caching them only grows the archive and the tar/zstd staging that can fill the runner disk at save time — then uploads under the exact key the restore computed (handed over via `$GITHUB_ENV`, so the halves cannot diverge).
+Call it as the **last step of the job**; composite actions have no post hooks, so this is what runs "after the build, before the upload".
+An exact restore hit skips prune and save (the stored entry is already pruned and current).
+The restore-everywhere/save-on-main pattern: PR jobs omit this action (or pass `save: "false"`) and read what the default branch's warmup maintains — per-branch target saves are multi-gigabyte duplicates nobody else can restore.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/rust-cache-save@main
+  if: always()               # optional: save even when a test step failed
+  with:
+    save: ${{ github.ref == 'refs/heads/main' }}
+    # working-directory: .   # where `cargo metadata` names the members to prune
+```
 
 ### `build-image`
 
@@ -180,6 +199,35 @@ The token must carry `contents: read` on every private dependency repository.
 The default `GITHUB_TOKEN` only grants access to the workflow's own repository, so a cross-repository dependency needs a fine-grained PAT or a GitHub App installation token, stored as a secret.
 See [docs/private-git-dependencies.md](docs/private-git-dependencies.md) for the GitHub App setup and an in-workflow minting example.
 The sealed `lint-and-test-docker` passes run `--offline` against the cache `cargo-fetch` populated, so they need no token.
+
+## Cache-size operations
+
+GitHub grants each repository 10 GB of cache before least-recently-used eviction starts; entries also expire seven days after their last access.
+Generations pile up (one target entry per `Cargo.lock` state, plus PR-scoped duplicates that only the same PR can restore), so an occasional look pays off.
+
+Inventory, largest first:
+
+```sh
+gh cache list -R <owner>/<repo> --limit 100 \
+  --json key,sizeInBytes,ref,lastAccessedAt \
+  --jq 'sort_by(-.sizeInBytes)[] | "\(.sizeInBytes/1048576|floor) MB  \(.ref)  \(.key)"'
+```
+
+Delete superseded default-branch generations of one family, keeping the newest:
+
+```sh
+gh cache list -R <owner>/<repo> --ref refs/heads/main \
+  --json id,key,createdAt \
+  --jq '[.[] | select(.key | startswith("<prefix>-"))] | sort_by(.createdAt) | .[:-1][].id' \
+  | xargs -rn1 gh cache delete -R <owner>/<repo>
+```
+
+Drop a pull request's leftovers (also auto-cleaned about two weeks after the PR closes):
+
+```sh
+gh cache list -R <owner>/<repo> --ref refs/pull/<n>/merge --json id --jq '.[].id' \
+  | xargs -rn1 gh cache delete -R <owner>/<repo>
+```
 
 ## Self-test
 
