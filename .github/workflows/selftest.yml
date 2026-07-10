@@ -84,6 +84,33 @@ jobs:
           fi
           echo "✓ malicious tool name rejected; no injection"
 
+      # The save half of rust-cache: prune target/ to dependency artifacts,
+      # upload under the restore's key. Runs as (nearly) the last step, the
+      # position consumers use; a fresh key exercises prune + upload, an
+      # exact-hit re-run skips both (the stored entry is already pruned).
+      - name: rust-cache-save (fixture; prune + upload)
+        uses: ./.github/actions/rust-cache-save
+        with:
+          working-directory: fixtures/sample-crate
+
+      - name: prune kept the dependency and dropped the member
+        if: env.RUST_CI_TARGET_HIT != 'true'
+        run: |
+          deps=fixtures/sample-crate/target/debug/deps
+          ls "$deps" | grep -q '^liblibc-' || {
+            echo "::error::dependency artifacts missing after prune"; exit 1; }
+          if ls "$deps" | grep -q '^cicd_rust_selftest_fixture-'; then
+            echo "::error::workspace member artifacts survived the prune"; exit 1
+          fi
+          echo "✓ prune kept libc, dropped the member"
+
+      # save: false is the pull-request mode — the step must no-op.
+      - name: rust-cache-save honours save=false (no-op control)
+        uses: ./.github/actions/rust-cache-save
+        with:
+          save: "false"
+          working-directory: fixtures/sample-crate
+
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.

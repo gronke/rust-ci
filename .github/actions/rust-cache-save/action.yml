@@ -1,0 +1,39 @@
+name: Rust cache save
+description: >-
+  The save half of `rust-cache` for the target/ entry: prune target/ down to dependency artifacts,
+  then upload under the exact key the restore computed (handed over via $GITHUB_ENV, so the halves
+  cannot diverge). Call it as the LAST step of the job — composite actions have no post hooks, so
+  this is what runs "after the build, before the upload". An exact restore hit skips both prune and
+  save (the stored entry is already pruned and current). Jobs that should only consume — pull
+  requests, with the default branch's warmup feeding them — omit this action or pass save: false;
+  to also save when a build step failed, put `if: always()` on this step in the workflow.
+
+inputs:
+  save:
+    description: >-
+      Upload the pruned target. Pass `${{ github.ref == 'refs/heads/main' }}` for the
+      restore-everywhere/save-on-main pattern.
+    required: false
+    default: "true"
+  working-directory:
+    description: Workspace directory whose `cargo metadata` names the members to prune.
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    # Dependency artifacts are the cache's value; everything else is rebuilt or relinked on any
+    # commit and only grows the archive plus the tar/zstd staging that can fill the runner disk.
+    - name: Prune target to dependency artifacts
+      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bash "$GITHUB_ACTION_PATH/prune-target.sh"
+
+    - name: Save target
+      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ env.RUST_CI_TARGET_DIR }}
+        key: ${{ env.RUST_CI_TARGET_KEY }}
