@@ -34,6 +34,21 @@ Call it once per universe for a default / all-features / no-default-features mat
     fmt: "true"
 ```
 
+### `cargo-out-dir`
+
+Builds a package and exposes its build script's `OUT_DIR` — where `build.rs` bakes generated assets — as the `out-dir` output.
+It is the build producer itself: the directory comes from its own `cargo build`, matched against the exact `cargo pkgid` of the requested package (dependencies' build scripts emit the same message reason, so exactness matters), and an unresolvable package fails the step instead of emitting an empty path.
+Don't pair it as a cheap resolver after a differently-configured build — a different feature or profile set owns a different fingerprint directory; give it the same `profile`/`args` instead.
+For sealed container builds, `cargo-docker` carries the same resolution via `out-dir-package`.
+
+```yaml
+- id: bake
+  uses: gronke/rust-ci/.github/actions/cargo-out-dir@main
+  with:
+    package: my-app            # required only for a workspace with >1 member
+- run: cp -r "${{ steps.bake.outputs.out-dir }}/dist"/. site/
+```
+
 ### `check-release-readiness`
 
 Verifies a crate is ready to release.
