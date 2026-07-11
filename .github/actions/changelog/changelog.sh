@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Keep a "Keep a Changelog" CHANGELOG.md coherent with the crate's declared
+# version. Inputs arrive as env vars from action.yml; cargo and git run in the
+# step's working-directory.
+#   INPUT_MODE              "check" (pull-request gate) or "cut" (release the section)
+#   INPUT_PACKAGE           package name (required for a multi-member workspace)
+#   INPUT_CHANGELOG         changelog path, relative to the working directory
+#   INPUT_BASELINE_VERSION  check: version the crate must exceed (else greatest vX.Y.Z tag)
+#   INPUT_DATE              cut: date stamped on the released section (else today, UTC)
+set -euo pipefail
+
+source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
+
+CHANGELOG="${INPUT_CHANGELOG:-CHANGELOG.md}"
+if [ ! -f "$CHANGELOG" ]; then
+  echo "::error::no changelog at $CHANGELOG"
+  exit 1
+fi
+
+resolve_crate "${INPUT_PACKAGE:-}"
+VERSION="$CRATE_VERSION"
+
+# The [Unreleased] section body: everything between its heading and the next
+# section heading or the link-definition block.
+unreleased_body() {
+  awk '/^## \[Unreleased\]/{grab=1; next} /^## /{grab=0} /^\[[^]]+\]: /{grab=0} grab' "$CHANGELOG"
+}
+
+# Version helpers: sort -V decides order; numeric components feed the
+# breaking-bump rule (a prerelease suffix on a component is ignored there).
+ver_gt() {
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+}
+ver_part() {
+  local part
+  part="$(printf '%s' "$1" | cut -d. -f"$2" | grep -o '^[0-9]*' || true)"
+  printf '%s' "${part:-0}"
+}
+
+case "${INPUT_MODE:-}" in
+  check)
+    if ! grep -q '^## \[Unreleased\]' "$CHANGELOG"; then
+      echo "✓ no [Unreleased] section in $CHANGELOG; nothing to check"
+      exit 0
+    fi
+    BODY="$(unreleased_body)"
+    if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
+      echo "✓ [Unreleased] is empty; nothing to check"
+      exit 0
+    fi
+    BASE="${INPUT_BASELINE_VERSION:-}"
+    if [ -z "$BASE" ]; then
+      BASE="$(git tag -l 'v*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+      BASE="${BASE#v}"
+    fi
+    if [ -z "$BASE" ]; then
+      BASE="0.0.0"
+      echo "::notice::no baseline-version input and no vX.Y.Z tag in the checkout; using 0.0.0"
+    fi
+    if ! ver_gt "$VERSION" "$BASE"; then
+      echo "::error::[Unreleased] carries entries, but the crate version ($VERSION) does not exceed the last release ($BASE) — bump the version in Cargo.toml"
+      exit 1
+    fi
+    if printf '%s' "$BODY" | grep -q '\*\*Breaking'; then
+      base_major="$(ver_part "$BASE" 1)"; base_minor="$(ver_part "$BASE" 2)"
+      major="$(ver_part "$VERSION" 1)"; minor="$(ver_part "$VERSION" 2)"
+      bumped=false
+      if [ "$major" -gt "$base_major" ]; then
+        bumped=true
+      elif [ "$major" -eq "$base_major" ] && [ "$major" -eq 0 ] && [ "$minor" -gt "$base_minor" ]; then
+        bumped=true
+      fi
+      if [ "$bumped" != "true" ]; then
+        echo "::error::[Unreleased] marks a breaking change; $VERSION over $BASE needs at least a minor bump (0.x) or a major bump (1.x and up)"
+        exit 1
+      fi
+    fi
+    echo "✓ changelog and version are coherent ($VERSION over $BASE)"
+    ;;
+
+  cut)
+    HEADINGS="$(grep -c '^## \[Unreleased\]' "$CHANGELOG" || true)"
+    if [ "$HEADINGS" -eq 0 ]; then
+      echo "::error::no [Unreleased] section to cut in $CHANGELOG"
+      exit 1
+    fi
+    if [ "$HEADINGS" -ne 1 ]; then
+      echo "::error::$CHANGELOG carries $HEADINGS [Unreleased] headings; expected exactly one"
+      exit 1
+    fi
+    BODY="$(unreleased_body)"
+    if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
+      echo "::error::[Unreleased] is empty; nothing to release"
+      exit 1
+    fi
+    if grep -q "^## \[$VERSION\]" "$CHANGELOG"; then
+      echo "::error::$CHANGELOG already carries a [$VERSION] section"
+      exit 1
+    fi
+    DATE="${INPUT_DATE:-$(date -u +%F)}"
+    sed -i "s|^## \[Unreleased\].*|## [$VERSION] - $DATE|" "$CHANGELOG"
+    # Link block: the [Unreleased] compare link becomes the released one.
+    if grep -qE '^\[Unreleased\]: ' "$CHANGELOG"; then
+      LINK="$(grep -E '^\[Unreleased\]: ' "$CHANGELOG" | head -n1)"
+      if [[ "$LINK" =~ ^\[Unreleased\]:\ (.*)/compare/(.*)\.\.\.HEAD$ ]]; then
+        base="${BASH_REMATCH[1]}"
+        prev="${BASH_REMATCH[2]}"
+        sed -i "s|^\[Unreleased\]: .*|[$VERSION]: $base/compare/$prev...v$VERSION|" "$CHANGELOG"
+      else
+        echo "::error::the [Unreleased] link is not a .../compare/<prev>...HEAD URL; fix or drop it"
+        exit 1
+      fi
+    else
+      echo "::notice::no [Unreleased] link line; only the heading was rewritten"
+    fi
+    if [ -n "${GITHUB_ENV:-}" ]; then
+      echo "CHANGELOG_VERSION=$VERSION" >> "$GITHUB_ENV"
+    fi
+    echo "✓ cut [$VERSION] - $DATE from [Unreleased]"
+    ;;
+
+  *)
+    echo "::error::mode must be 'check' or 'cut' (got '${INPUT_MODE:-}')"
+    exit 1
+    ;;
+esac

@@ -111,6 +111,106 @@ jobs:
           save: "false"
           working-directory: fixtures/sample-crate
 
+  # The changelog action, both modes, against the fixture crate: the check gate
+  # (bump present, bump missing, breaking without more than a patch bump) and
+  # the cut (heading + compare link rewritten, the version exported, a second
+  # cut refused once nothing is unreleased).
+  selftest-changelog:
+    name: exercise the changelog action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # cargo metadata resolves the crate version; the runner's default toolchain suffices.
+      - name: install-toolchain
+        uses: ./.github/actions/install-toolchain
+
+      - name: check passes with a bumped version
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: fixtures/sample-crate
+          baseline-version: "0.0.9"
+
+      - name: check fails without a bump (negative control)
+        id: nobump
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: fixtures/sample-crate
+          baseline-version: "0.1.0"
+
+      - name: stage a breaking entry on a patch bump
+        run: |
+          rm -rf "$RUNNER_TEMP/breaking"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/breaking/"
+          sed -i 's/^version = "0.1.0"/version = "0.1.1"/' "$RUNNER_TEMP/breaking/Cargo.toml"
+          awk '{print} /^## \[Unreleased\]/{print ""; print "- **Breaking:** a sample breaking entry."}' \
+            "$RUNNER_TEMP/breaking/CHANGELOG.md" > "$RUNNER_TEMP/breaking/CHANGELOG.md.new"
+          mv "$RUNNER_TEMP/breaking/CHANGELOG.md.new" "$RUNNER_TEMP/breaking/CHANGELOG.md"
+
+      - name: check refuses a breaking entry on a patch bump (negative control)
+        id: breaking_patch
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/breaking
+          baseline-version: "0.1.0"
+
+      - name: check accepts a breaking entry with a minor bump
+        run: sed -i 's/^version = "0.1.1"/version = "0.2.0"/' "$RUNNER_TEMP/breaking/Cargo.toml"
+      - uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/breaking
+          baseline-version: "0.1.0"
+
+      - name: stage a copy for the cut
+        run: |
+          rm -rf "$RUNNER_TEMP/cut"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/cut/"
+
+      - name: cut releases the [Unreleased] section
+        uses: ./.github/actions/changelog
+        with:
+          mode: cut
+          working-directory: ${{ runner.temp }}/cut
+          date: "2026-02-02"
+
+      - name: the cut rewrote the heading and link and exported the version
+        run: |
+          grep -q '^## \[0.1.0\] - 2026-02-02$' "$RUNNER_TEMP/cut/CHANGELOG.md"
+          grep -q '^\[0.1.0\]: https://example.invalid/sample/compare/v0.0.9\.\.\.v0.1.0$' \
+            "$RUNNER_TEMP/cut/CHANGELOG.md"
+          if grep -q 'Unreleased' "$RUNNER_TEMP/cut/CHANGELOG.md"; then
+            echo "::error::an [Unreleased] remnant survived the cut"; exit 1
+          fi
+          test "$CHANGELOG_VERSION" = "0.1.0"
+          echo "✓ cut rewrote the section, the link, and exported CHANGELOG_VERSION"
+
+      - name: a second cut is refused (negative control)
+        id: cut_again
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: cut
+          working-directory: ${{ runner.temp }}/cut
+
+      - name: assert the negative controls failed
+        run: |
+          if [ "${{ steps.nobump.outcome }}" != "failure" ]; then
+            echo "::error::a missing bump was not refused"; exit 1
+          fi
+          if [ "${{ steps.breaking_patch.outcome }}" != "failure" ]; then
+            echo "::error::a breaking entry on a patch bump was not refused"; exit 1
+          fi
+          if [ "${{ steps.cut_again.outcome }}" != "failure" ]; then
+            echo "::error::a second cut was not refused"; exit 1
+          fi
+          echo "✓ all changelog negative controls refused"
+
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.
