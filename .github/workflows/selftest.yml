@@ -286,13 +286,53 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
 
-      # cargo-docker: a sealed build off the warmed cache (exercises the low-level wrapper).
+      # cargo-docker: a sealed build off the warmed cache (exercises the low-level
+      # wrapper; no out-dir-package also proves the resolve step skips cleanly).
       - name: cargo-docker (sealed build)
         uses: ./.github/actions/cargo-docker
         with:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
           args: "build --locked"
+
+      # cargo-docker resolves a build script's OUT_DIR as a HOST path (the sealed
+      # replay + the /work/target → target-dir translation).
+      - name: cargo-docker (sealed build + out-dir)
+        id: docker_out_dir
+        uses: ./.github/actions/cargo-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          args: "build --locked"
+          out-dir-package: cicd-rust-selftest-fixture
+          out-dir-args: "--locked"
+
+      - name: cargo-docker translated the fixture's OUT_DIR to the host
+        run: |
+          dir="${{ steps.docker_out_dir.outputs.out-dir }}"
+          test -d "$dir" || { echo "::error::out-dir is not a host directory: $dir"; exit 1; }
+          case "$dir" in
+            "$PWD"/fixtures/sample-crate/target/*/build/cicd-rust-selftest-fixture-*/out)
+              echo "✓ host path under the mounted target dir" ;;
+            *) echo "::error::not a translated host path: $dir"; exit 1 ;;
+          esac
+
+      - name: cargo-docker rejects an unknown out-dir-package (negative control)
+        id: docker_bogus_out_dir
+        continue-on-error: true
+        uses: ./.github/actions/cargo-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          args: "build --locked"
+          out-dir-package: no-such-package
+
+      - name: assert the unknown out-dir-package failed
+        run: |
+          if [ "${{ steps.docker_bogus_out_dir.outcome }}" != "failure" ]; then
+            echo "::error::unknown out-dir-package did not fail"; exit 1
+          fi
+          echo "✓ unknown out-dir-package rejected"
 
       - name: lint-and-test (sealed, --network none) + env passthrough
         uses: ./.github/actions/lint-and-test-docker

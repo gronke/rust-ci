@@ -142,6 +142,19 @@ The low-level primitive for a network-isolated build: dependency `build.rs` and 
     # offline: "false"   # opt out to fetch-as-it-builds (networked)
 ```
 
+`out-dir-package` additionally resolves that package's build-script `OUT_DIR` (a sealed `cargo build --message-format=json` replay — give `out-dir-args` the main build's profile/features so the replay is free; other flags still resolve correctly, against their own configuration) and exposes it as the `out-dir` output, translated from the container's `/work/target` to the host side of `target-dir` so later steps can copy from it.
+Exact package-id matching needs the image's cargo ≥1.77; older images fail loudly with "no build-script OUT_DIR".
+
+```yaml
+- id: bake
+  uses: gronke/rust-ci/.github/actions/cargo-docker@main
+  with:
+    args: "build --release --locked"
+    out-dir-package: my-app
+    out-dir-args: "--release --locked"
+- run: cp -r "${{ steps.bake.outputs.out-dir }}/dist"/. site/
+```
+
 ### `msrv`
 
 Compiles a crate on its **declared MSRV** (`rust-version` in `Cargo.toml`) inside a container built at exactly that toolchain, so a dependency that raises its own MSRV is caught on the PR that pulls it in — not only at release time.
