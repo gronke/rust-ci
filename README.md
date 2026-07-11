@@ -48,6 +48,21 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
     # expected-version: 1.2.3  # defaults to the pushed v* tag
 ```
 
+### `changelog`
+
+Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent with the crate's declared version.
+`mode: check` gates a pull request: entries under `[Unreleased]` require the crate version to exceed the last released baseline (the greatest `vX.Y.Z` tag by default, so fetch tags), and a `**Breaking:**` entry requires more than a patch bump.
+`mode: cut` turns `[Unreleased]` into the released section for the crate's version, rewrites the `.../compare/<prev>...HEAD` link, and exports `CHANGELOG_VERSION` for later steps.
+
+```yaml
+- uses: actions/checkout@v6
+  with:
+    fetch-depth: 0             # the check derives its baseline from the tags
+- uses: gronke/rust-ci/.github/actions/changelog@main
+  with:
+    mode: check                # or: cut (stamps today's date unless `date` is set)
+```
+
 ### `rust-cache`
 
 Caches cargo for CI and **defaults** incremental compilation off — pure cost in CI (no edit→recompile loop), and the main thing that balloons `target/`.
@@ -237,7 +252,7 @@ The actions are therefore exercised end-to-end before any consumer relies on the
 
 ## Motivation
 
-GitHub Actions have huge potential for supply-chain attacks. Repeating the same setup across repositories was tedious or required using and combining various other third-party actions, none of which is hardened against malicious build.rs scripts in test-dependencies, that potentially receive less attention than the release dependency tree. What purpose does it have to execute both in the same job context? As Archer would say: "That's how you get ants". Given how quick Rust build caches can grow and how time-consuming it can be to pass artifcats between jobs, Docker is available in GitHub Actions and provides easier means of compartmentalization.
+GitHub Actions have huge potential for supply-chain attacks. Repeating the same setup across repositories was tedious or required using and combining various other third-party actions, none of which is hardened against malicious build.rs scripts in test-dependencies, that potentially receive less attention than the release dependency tree. What purpose does it have to execute both in the same job context? As Archer would say: "That's how you get ants". Given how quick Rust build caches can grow and how time-consuming it can be to pass artifacts between jobs, Docker is available in GitHub Actions and provides easier means of compartmentalization.
 The Docker actions take that further: a build runs sealed — non-root, all capabilities dropped, no privilege escalation, and `--network=none` against a cache a separate `cargo-fetch` warmed — so a dependency `build.rs` or proc-macro compiles but cannot reach the network. `cargo-fetch` is the one networked step; `publish-dry-run` keeps that same seal around the verify-build (`cargo package`), where dependency code is otherwise executed during a release — while the publish checks, which run no build, keep the network.
 
 ## Status and licence
