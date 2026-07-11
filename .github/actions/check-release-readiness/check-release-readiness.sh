@@ -7,22 +7,9 @@
 set -euo pipefail
 
 # --- select the package from cargo metadata ----------------------------------
-META=$(cargo metadata --no-deps --format-version 1)
-SUMMARY=$(printf '%s' "$META" | jq -r --arg name "$INPUT_PACKAGE" '
-  (if $name == "" then
-     (if (.packages | length) == 1 then .packages[0]
-      else error("multiple packages; set the package input") end)
-   else (.packages[] | select(.name == $name))
-   end) as $p
-  | ($p.publish == null
-     or (($p.publish | type) == "array" and ($p.publish | any(. == "crates-io")))) as $pub
-  | "\($p.name)\t\($p.version)\t\($pub)"
-')
-IFS=$'\t' read -r NAME VERSION PUBLISHABLE <<< "$SUMMARY"
-if [ -z "${NAME:-}" ]; then
-  echo "::error::package '${INPUT_PACKAGE}' not found in cargo metadata"
-  exit 1
-fi
+source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
+resolve_crate "$INPUT_PACKAGE"
+NAME="$CRATE_NAME" VERSION="$CRATE_VERSION" PUBLISHABLE="$CRATE_PUBLISHABLE"
 echo "crate: $NAME  version: $VERSION  publishable-to-crates.io: $PUBLISHABLE"
 
 # --- tag <-> version coherence -----------------------------------------------
