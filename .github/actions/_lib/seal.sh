@@ -106,3 +106,29 @@ seal_run() {
 seal_run_rw_lockresolve() {
   _seal_run rw "$@"
 }
+
+# Translates a container path under the RW target mount back to its host
+# location, mirroring the mount expression above (`$PWD/$TARGET_DIR` ↔
+# /work/target) — this file owns the mount, so it owns the translation.
+# Call it from the same $PWD as the `seal_run` that created the mount, and
+# call it directly (not in `$(...)`), so `::error::` annotations surface;
+# the result lands in HOST_PATH. Paths outside the target mount are
+# refused — nothing else the container sees is writable, so nothing else
+# can be a build output.
+seal_host_path() {
+  local p="$1"
+  : "${TARGET_DIR:?seal_host_path: TARGET_DIR required}"
+  # shellcheck disable=SC2034  # out-var: read by callers after sourcing
+  case "$p" in
+    /work/target)
+      HOST_PATH="$PWD/$TARGET_DIR"
+      ;;
+    /work/target/*)
+      HOST_PATH="$PWD/$TARGET_DIR/${p#/work/target/}"
+      ;;
+    *)
+      echo "::error::seal_host_path: '$p' is outside the target mount"
+      return 1
+      ;;
+  esac
+}

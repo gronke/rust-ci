@@ -35,6 +35,22 @@ inputs:
       Default "true".
     required: false
     default: "true"
+  out-dir-package:
+    description: >-
+      When set, additionally resolve this package's build-script OUT_DIR
+      (a sealed `cargo build --message-format=json` replay) and expose it,
+      translated to the host side of `target-dir`, as the `out-dir` output.
+      Needs a non-empty `target-dir` and an image with cargo ≥1.77.
+    required: false
+    default: ""
+  out-dir-args:
+    description: >-
+      Extra args for the resolve build. Mirror the main args' profile and
+      features so the replay is free; an empty value after a `--release`
+      main build correctly resolves the DEV profile's directory instead.
+      Do NOT include --offline — the `offline` input controls it.
+    required: false
+    default: ""
   env-include:
     description: >-
       Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
@@ -54,6 +70,13 @@ inputs:
       regardless of env-include/env-exclude.
     required: false
     default: ""
+
+outputs:
+  out-dir:
+    description: >-
+      Host path of the out-dir-package build script's OUT_DIR; empty when
+      out-dir-package is unset.
+    value: ${{ steps.resolve.outputs.out-dir }}
 
 runs:
   using: composite
@@ -80,3 +103,20 @@ runs:
         EXTRA_ENV="$(printf '%s\n%s' "ARGS=$ARGS" "OFFLINE=$OFFLINE")"
         export EXTRA_ENV
         seal_run bash /cicd/cargo-docker.sh
+
+    - name: Resolve OUT_DIR (sealed)
+      id: resolve
+      if: inputs.out-dir-package != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        OFFLINE: ${{ inputs.offline }}
+        ENV_INCLUDE: ${{ inputs.env-include }}
+        ENV_EXCLUDE: ${{ inputs.env-exclude }}
+        INPUT_ENV: ${{ inputs.env }}
+        OUT_DIR_PACKAGE: ${{ inputs.out-dir-package }}
+        OUT_DIR_ARGS: ${{ inputs.out-dir-args }}
+      run: bash "$GITHUB_ACTION_PATH/cargo-docker-out-dir.sh"
