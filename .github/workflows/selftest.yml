@@ -40,6 +40,45 @@ jobs:
         with:
           working-directory: fixtures/sample-crate
 
+      # cargo-out-dir: resolve the fixture build script's OUT_DIR.
+      # Dependencies' build scripts emit the same cargo message, so the
+      # assertion pins the PACKAGE filter: the resolved path must be the
+      # fixture's own build dir. (Deliberately no content assert — a
+      # restored target cache legitimately replays an earlier build-script
+      # execution.)
+      - name: cargo-out-dir (fixture)
+        id: fixture_out_dir
+        uses: ./.github/actions/cargo-out-dir
+        with:
+          working-directory: fixtures/sample-crate
+          package: cicd-rust-selftest-fixture
+
+      - name: cargo-out-dir resolved the fixture's build dir
+        run: |
+          dir="${{ steps.fixture_out_dir.outputs.out-dir }}"
+          test -d "$dir" || { echo "::error::out-dir is not a directory: $dir"; exit 1; }
+          case "$dir" in
+            */cicd-rust-selftest-fixture-*/out) echo "✓ resolved the fixture's OUT_DIR" ;;
+            *) echo "::error::resolved a foreign build dir: $dir"; exit 1 ;;
+          esac
+
+      # Negative control: an unknown package must fail loudly instead of
+      # emitting an empty path for a later step to copy from.
+      - name: cargo-out-dir rejects an unknown package (negative control)
+        id: bogus_out_dir
+        continue-on-error: true
+        uses: ./.github/actions/cargo-out-dir
+        with:
+          working-directory: fixtures/sample-crate
+          package: no-such-package
+
+      - name: assert the unknown package failed
+        run: |
+          if [ "${{ steps.bogus_out_dir.outcome }}" != "failure" ]; then
+            echo "::error::unknown package did not fail"; exit 1
+          fi
+          echo "✓ unknown package rejected"
+
       - name: check-release-readiness (fixture)
         uses: ./.github/actions/check-release-readiness
         with:
