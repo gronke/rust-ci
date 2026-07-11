@@ -142,7 +142,7 @@ The low-level primitive for a network-isolated build: dependency `build.rs` and 
     # offline: "false"   # opt out to fetch-as-it-builds (networked)
 ```
 
-`out-dir-package` additionally resolves that package's build-script `OUT_DIR` (a sealed `cargo build --message-format=json` replay — give `out-dir-args` the main build's profile/features so the replay is free; other flags still resolve correctly, against their own configuration) and exposes it as the `out-dir` output, translated from the container's `/work/target` to the host side of `target-dir` so later steps can copy from it.
+`out-dir-package` additionally resolves that package's build-script `OUT_DIR` (a sealed JSON-messages `cargo build` replay — give `out-dir-args` the main build's profile/features so the replay is free; other flags still resolve correctly, against their own configuration) and exposes it as the `out-dir` output, translated from the container's `/work/target` to the host side of `target-dir` so later steps can copy from it.
 Exact package-id matching needs the image's cargo ≥1.77; older images fail loudly with "no build-script OUT_DIR".
 
 ```yaml

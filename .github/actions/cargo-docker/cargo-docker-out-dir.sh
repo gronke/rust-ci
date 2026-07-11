@@ -2,7 +2,7 @@
 # Resolve a build script's OUT_DIR from a sealed build and translate it to
 # the host — the runner-side companion of cargo-docker.sh. It runs two extra
 # sealed invocations against the warm target: the exact package id, then a
-# `cargo build --message-format=json` replay of the out-dir-package. The
+# JSON-messages `cargo build` replay of the out-dir-package. The
 # JSON parsing is host-side (_lib/out-dir.sh); the container only ever runs
 # plain cargo, and the spec and the messages both carry /work-form paths, so
 # host paths never enter the comparison.
@@ -41,11 +41,16 @@ fi
 
 messages="$(mktemp)"
 trap 'rm -f "$messages"' EXIT
-EXTRA_ENV="$(printf '%s\n%s' "ARGS=build -p $OUT_DIR_PACKAGE $OUT_DIR_ARGS --message-format=json" "OFFLINE=${OFFLINE:-true}")"
+EXTRA_ENV="$(printf '%s\n%s' "ARGS=build -p $OUT_DIR_PACKAGE $OUT_DIR_ARGS --message-format=json-diagnostic-rendered-ansi" "OFFLINE=${OFFLINE:-true}")"
 export EXTRA_ENV
-if ! seal_run bash /cicd/cargo-docker.sh > "$messages"; then
-  echo "::error::the resolve build failed (diagnostics ride inside the JSON stream)"
-  exit 1
+rc=0
+seal_run bash /cicd/cargo-docker.sh > "$messages" || rc=$?
+# The JSON stream claims stdout and carries the rendered compiler output;
+# replay it to the log so warnings and build failures stay readable.
+jq -rj 'select(.reason == "compiler-message") | .message.rendered // empty' "$messages" >&2 || true
+if [ "$rc" -ne 0 ]; then
+  echo "::error::the resolve build failed"
+  exit "$rc"
 fi
 
 resolve_out_dir "$spec" "$messages"

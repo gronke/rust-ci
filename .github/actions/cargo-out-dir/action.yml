@@ -2,8 +2,8 @@ name: Cargo build-script OUT_DIR
 description: >-
   Build a package and expose its build script's OUT_DIR — the directory
   where build.rs bakes generated assets. This action IS the build step that
-  produces what it resolves: it runs `cargo build --message-format=json`
-  and selects the build-script-executed message whose package id equals
+  produces what it resolves: it runs a JSON-messages `cargo build` and
+  selects the build-script-executed message whose package id equals
   `cargo pkgid` exactly. Don't pair it as a resolver after a
   differently-configured build — a different feature or profile set owns a
   different fingerprint directory; give it the same `profile`/`args`
