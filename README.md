@@ -7,6 +7,28 @@ Each action is a composite action under [`.github/actions/`](.github/actions/).
 A repository consumes one with `uses: gronke/rust-ci/.github/actions/<name>@<ref>`.
 During bring-up, pin `@main`; once the interface is stable we cut a `v1` tag plus a moving major tag, and consumers pin `@v1`.
 
+## Umbrella workflow
+
+For the standard sealed pipeline — build the toolchain image, warm the cache once, then `fmt` + `clippy` + `test`, an optional cross-target check, and an optional MSRV build, all sealed (`--network=none`, `--offline`) — a consumer's whole CI is one reusable-workflow call:
+
+```yaml
+jobs:
+  ci:
+    uses: gronke/rust-ci/.github/workflows/ci.yml@v1
+    with:
+      targets: wasm32-unknown-unknown   # optional: sealed cross-checks
+```
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `rust-version` | `latest` | `rust:<tag>` base for the image (or `msrv`). |
+| `targets` | `""` | Space-separated rustup targets to cross-check (empty runs none). |
+| `features` | `""` | Feature flag for the sealed lint-and-test leg. |
+| `msrv` | `true` | Also verify the crate on its declared MSRV. |
+| `working-directory` | `.` | Crate directory. |
+
+The individual actions below remain for pipelines that compose their own flow.
+
 ## Actions
 
 ### `install-toolchain`
