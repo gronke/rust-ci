@@ -264,11 +264,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: build-image (local, cached)
+      - name: build-image (local, cached, with a cross target)
         uses: ./.github/actions/build-image
         with:
           tag: rust-ci:selftest
           cache: "true"
+          targets: wasm32-unknown-unknown
+
+      # build-image `targets`: the requested cross target must land in the image, so
+      # the sealed Docker actions can later cargo-check against it.
+      - name: build-image added the requested target (targets input)
+        run: |
+          if docker run --rm rust-ci:selftest rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+            echo "✓ wasm32-unknown-unknown present in the image"
+          else
+            echo "::error::build-image did not add the requested target"; exit 1
+          fi
 
       # Negative control: the sealing flag seal_run applies (--network=none) really
       # blocks egress — a curl from inside a sealed container must fail.

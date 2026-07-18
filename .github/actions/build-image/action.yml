@@ -27,6 +27,13 @@ inputs:
       (ignored for any other rust-version).
     required: false
     default: "."
+  targets:
+    description: >-
+      Space-separated rustup targets to add to the image (e.g.
+      "wasm32-unknown-unknown"), so the sealed Docker actions can cross-check /
+      cross-compile against them. Empty (default) adds none.
+    required: false
+    default: ""
 
 outputs:
   image:
@@ -54,5 +61,6 @@ runs:
         TAG: ${{ inputs.tag }}
         CACHE: ${{ inputs.cache }}
         WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        TARGETS: ${{ inputs.targets }}
         ACTIONS_CACHE_SERVICE_V2: "true"
       run: bash "$GITHUB_ACTION_PATH/build-image.sh"
