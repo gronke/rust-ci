@@ -6,6 +6,7 @@
 #   WORKING_DIRECTORY  crate dir read for the `msrv` sentinel (default ".")
 #   TAG                tag for the built image
 #   CACHE              "true" → buildx with the GitHub Actions cache (type=gha,mode=min)
+#   TARGETS            space-separated rustup targets to add to the image (may be empty)
 # The buildx cache scope is derived per resolved Rust version (rust-ci-<version>).
 set -euo pipefail
 
@@ -34,12 +35,13 @@ if [ "${CACHE:-false}" = "true" ]; then
          --driver-opt image=moby/buildkit:latest >/dev/null
   docker buildx build --builder rust-ci-builder \
     --build-arg "RUST_VERSION=$RUST_VERSION" \
+    --build-arg "RUST_TARGETS=${TARGETS:-}" \
     --cache-from "type=gha,scope=$SCOPE" \
     --cache-to "type=gha,mode=min,scope=$SCOPE,ignore-error=true" \
     --load -t "$TAG" "$context"
   echo "::endgroup::"
 else
   echo "::group::docker build"
-  docker build --build-arg "RUST_VERSION=$RUST_VERSION" -t "$TAG" "$context"
+  docker build --build-arg "RUST_VERSION=$RUST_VERSION" --build-arg "RUST_TARGETS=${TARGETS:-}" -t "$TAG" "$context"
   echo "::endgroup::"
 fi
