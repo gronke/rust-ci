@@ -1,0 +1,95 @@
+name: Rust CI (sealed)
+
+# Reusable, sealed Rust CI in one hardened Docker pipeline: fmt + clippy + test,
+# an optional cross-target check, and an optional MSRV build — all run --offline
+# under --network=none against a cache that a single networked cargo-fetch warmed.
+# A consumer's whole CI becomes:
+#
+#   jobs:
+#     ci:
+#       uses: gronke/rust-ci/.github/workflows/ci.yml@v1
+#       with:
+#         targets: wasm32-unknown-unknown
+
+on:
+  workflow_call:
+    inputs:
+      rust-version:
+        description: The rust:<tag> base for the image (or `msrv`). Default `latest`.
+        type: string
+        default: latest
+      targets:
+        description: >-
+          Space-separated rustup targets to cross-check (e.g. "wasm32-unknown-unknown").
+          Empty runs no cross-check.
+        type: string
+        default: ""
+      features:
+        description: Feature flag for the sealed lint-and-test leg (e.g. "--all-features").
+        type: string
+        default: ""
+      msrv:
+        description: Also verify the crate builds on its declared MSRV (Cargo.toml `rust-version`).
+        type: boolean
+        default: true
+      working-directory:
+        description: Crate directory.
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  sealed:
+    name: sealed lint, test, cross-check, msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The toolchain image, with any requested cross targets baked in.
+      - uses: gronke/rust-ci/.github/actions/build-image@v1
+        with:
+          rust-version: ${{ inputs.rust-version }}
+          targets: ${{ inputs.targets }}
+          tag: rust-ci:ci
+          cache: "true"
+
+      # The one networked step — warm the cache so everything below runs sealed.
+      - uses: gronke/rust-ci/.github/actions/cargo-fetch@v1
+        with:
+          image: rust-ci:ci
+          working-directory: ${{ inputs.working-directory }}
+
+      # fmt + clippy (-D warnings) + test, sealed (--network=none, --offline).
+      - uses: gronke/rust-ci/.github/actions/lint-and-test-docker@v1
+        with:
+          image: rust-ci:ci
+          working-directory: ${{ inputs.working-directory }}
+          features: ${{ inputs.features }}
+
+      # cargo accepts repeated --target, so one sealed check covers every target.
+      - name: build cross-target flags
+        if: ${{ inputs.targets != '' }}
+        id: xt
+        shell: bash
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          flags=""
+          for t in $TARGETS; do flags="$flags --target $t"; done
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+      - name: cross-target check (sealed)
+        if: ${{ inputs.targets != '' }}
+        uses: gronke/rust-ci/.github/actions/cargo-docker@v1
+        with:
+          image: rust-ci:ci
+          working-directory: ${{ inputs.working-directory }}
+          args: "check --workspace${{ steps.xt.outputs.flags }} --locked"
+
+      # MSRV: builds an image at the crate's declared rust-version and cargo-checks on it.
+      - uses: gronke/rust-ci/.github/actions/msrv@v1
+        if: ${{ inputs.msrv }}
+        with:
+          working-directory: ${{ inputs.working-directory }}
