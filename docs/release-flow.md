@@ -1,0 +1,211 @@
+# The release flow
+
+How a crate goes from `[Unreleased]` entries to a published GitHub release sealed by a signed tag, composed from the release actions in this repository:
+[`changelog`](../README.md#changelog), [`cut-release`](../README.md#cut-release), [`check-release-readiness`](../README.md#check-release-readiness), [`require-signed-tag`](../README.md#require-signed-tag), and [`release-guidance`](../README.md#release-guidance).
+
+The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a **draft** pre-release, and the signed `vX.Y.Z` tag publishes that draft, exactly once.
+Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the whole loop can run, fail, and be deleted without consequence.
+Publication is the one irreversible step: a published release is immutable — assets frozen, tag locked, and the tag name permanently consumed even if the release is deleted afterwards.
+
+## Versions come from Cargo.toml
+
+Every stage reads the version the manifest declares (through `cargo metadata`); nothing else names a version.
+The first change after a release bumps the version; later pull requests in the same window ride along without bumping again.
+The `changelog` check enforces this on every pull request: while `CHANGELOG.md` carries `[Unreleased]` entries, the crate version must exceed the last released baseline by SemVer precedence, and a `**Breaking:**` entry demands more than a patch bump.
+
+### Release-candidate versions
+
+A manifest version with a pre-release suffix (`1.0.0-rc1`) declares a release candidate, and the candidate is a release: it gets the full flow below, a signed `v1.0.0-rc1` tag, and a GitHub release flagged as a pre-release.
+`-rc` versions are reserved for stabilizing exactly that release: the check refuses a pre-release version whose `[Unreleased]` carries feature content (`### Added`, `### Removed`, or a `**Breaking:**` entry) — feature work resets the version to the next regular release, while `### Fixed` and `### Security` entries iterate `rc2`, `rc3`, ….
+SemVer orders `1.0.0-rc1 < 1.0.0` and the baseline scan sees pre-release tags, so the final release exceeds its candidates and its compare link starts at the last one.
+Number candidates `-rc.9`, `-rc.10` (numeric identifiers) when double digits are in reach: the spec compares `rc9`/`rc10` lexically, so `rc10` would order below `rc9`.
+
+## Cutting the release branch
+
+Dispatch a workflow that runs `cut-release` on the default branch.
+It rewrites `[Unreleased]` into `[X.Y.Z] - <date>` for the version Cargo.toml declares, pushes that as `release/vX.Y.Z`, opens the merge-back pull request, and dispatches the release pipeline on the branch — explicitly, because pushes made with the workflow token trigger no workflows.
+The cut refuses an empty `[Unreleased]` section and an existing release branch.
+
+```yaml
+name: Cut release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write        # push the release branch
+  pull-requests: write   # open the merge-back pull request
+  actions: write         # dispatch the release pipeline
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the changelog baseline and the merge-back need history and tags
+      - uses: gronke/rust-ci/.github/actions/install-toolchain@v1
+      - uses: gronke/rust-ci/.github/actions/cut-release@v1
+```
+
+## The candidate loop
+
+Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit, and the guidance summary for the release manager.
+Fixes land as ordinary pushes to the branch; rc2, rc3, … refresh the same draft.
+Marker tags append one `-rcN` to the version's tag name — including on a release-candidate version, where `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
+
+## What to do with the draft pre-release
+
+The `release-guidance` step writes these answers into every candidate build's step summary; this is the same content in prose.
+
+### Accept — seal and publish
+
+Whoever holds a release-signing key registered with their GitHub account:
+
+```sh
+git fetch origin 'refs/tags/vX.Y.Z-rc*:refs/tags/vX.Y.Z-rc*'
+git tag -s vX.Y.Z <marker-commit>
+git push origin vX.Y.Z
+```
+
+The tag must be annotated, signed with a key GitHub can verify, and point at exactly the commit the newest marker sealed — the pipeline refuses anything else.
+Push the tag by name; never `git push --tags`, which pushes every local tag along.
+A repository tagging script (announced through the guidance step's `tag-script` input) can wrap the tag creation, for example to build the message from the released changelog section.
+
+### Reject — nothing to unwind
+
+Delete the draft release and the release branch; the marker tags reserve nothing and can stay or be deleted.
+Or push a fix to the release branch instead: the next build refreshes the same draft as the following candidate.
+A rejected version number is only consumed if the draft was published — an unpublished draft's name is free to reuse on the next cut.
+
+### What the tag push triggers
+
+The pipeline's final path runs the signature gate, asserts the tag seals the newest marker commit, attests and signs the assets where the repository is public, and the publish job flips the draft live.
+After publication: registry publishing (`cargo publish`) stays a manual, deliberate step; promote the pre-release flag and merge the merge-back pull request per your process.
+
+## The reference pipeline
+
+The consumer-specific parts are marked as slots: what you build into the draft (SBOMs, binaries, provenance) and any extra gates (license sweeps, policy checks) are yours.
+
+```yaml
+name: Release
+on:
+  push:
+    branches: ["release/v**"]
+    tags: ["v*"]
+  workflow_dispatch: # cut-release dispatches the first run explicitly
+
+permissions:
+  contents: write
+
+jobs:
+  gate:
+    name: release readiness gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.expect.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Derive the expected version from the ref
+        id: expect
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
+            branch:release/v*) version="${GITHUB_REF_NAME#release/v}" ;;
+            tag:v*-rc*)        version="${GITHUB_REF_NAME#v}"; version="${version%-rc*}" ;;
+            tag:v*)            version="${GITHUB_REF_NAME#v}" ;;
+            *)                 version="" ;;
+          esac
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Require a verified signed tag (final path only)
+        if: github.ref_type == 'tag'
+        uses: gronke/rust-ci/.github/actions/require-signed-tag@v1
+      - uses: gronke/rust-ci/.github/actions/install-toolchain@v1
+      - uses: gronke/rust-ci/.github/actions/check-release-readiness@v1
+        with:
+          expected-version: ${{ steps.expect.outputs.version }}
+      # SLOT: extra gates (license sweep, policy checks) run here.
+
+  draft:
+    name: build the draft pre-release (candidate path)
+    needs: gate
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      # SLOT: build the release assets (SBOMs, binaries, …) into ./dist.
+      - name: Create or refresh the draft pre-release
+        run: |
+          set -euo pipefail
+          if ! gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release create "v${VERSION}" --draft --prerelease \
+              --title "v${VERSION}" --notes-file release-notes.md # SLOT: e.g. the changelog section
+          fi
+          gh release upload "v${VERSION}" dist/* --clobber
+      - name: Advance the candidate marker tag
+        id: marker
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          n=1
+          while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" >/dev/null 2>&1; do
+            n=$((n + 1))
+          done
+          git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
+          git push origin "refs/tags/v${VERSION}-rc${n}"
+          echo "marker=v${VERSION}-rc${n}" >> "$GITHUB_OUTPUT"
+      - uses: gronke/rust-ci/.github/actions/release-guidance@v1
+        with:
+          version: ${{ env.VERSION }}
+          marker-tag: ${{ steps.marker.outputs.marker }}
+          commit: ${{ github.sha }}
+          # tag-script: scripts/tag-release.sh
+
+  publish:
+    name: publish the release (final path)
+    needs: gate
+    if: github.ref_type == 'tag' && !contains(github.ref_name, '-rc')
+    runs-on: ubuntu-latest
+    environment: release # add required reviewers here for a human pause
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag must seal the newest candidate marker
+        run: |
+          set -euo pipefail
+          n=1
+          while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc$((n + 1))" >/dev/null 2>&1; do
+            n=$((n + 1))
+          done
+          marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" --jq '.object.sha')"
+          marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" --jq '.object.sha' 2>/dev/null || printf '%s' "$marker_commit")"
+          if [ "$marker_commit" != "$GITHUB_SHA" ]; then
+            echo "::error::v${VERSION} points at ${GITHUB_SHA} but the last build (v${VERSION}-rc${n}) is ${marker_commit}"
+            exit 1
+          fi
+      # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
+      - name: Publish
+        run: gh release edit "v${VERSION}" --draft=false
+```
+
+## Repository configuration the flow relies on
+
+- **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
+- **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
+  `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.
+- **Branch ruleset**: restrict `release/v*` creation and pushes to release managers and Actions.
+- **A `release` environment** on the publish job; add required reviewers where a human pause before publication is wanted.
+- The merge-back pull request's CI needs one "Approve and run" click when the cut ran with the workflow token: workflows do not start on pull requests authored by `github-actions`.
+  A machine-user or App identity (the `cut-release` `token` and `git-user-*` inputs) removes that click.
+
+## When a gate refuses
+
+- *Lightweight tag* or *not a verified signed tag* — recreate the tag annotated (`git tag -s`) with a key your GitHub account knows, and force-push it by name.
+- *The tag points at X but the last build is Y* — the branch moved after the candidate you meant to seal; re-tag the newest marker commit, or push the branch and let a new candidate build first.
+- *Expected version != Cargo.toml version* — the ref name, the crate version, and the changelog section must agree; fix the branch content.
+- *already published on crates.io* / *a published release exists* — immutable names cannot be reused, not even after deleting the release; bump the version and cut again.
+- *The cut refuses* — `[Unreleased]` is empty, or the release branch already exists.
+- *feature content on a pre-release version* — the changelog check found `### Added`, `### Removed`, or `**Breaking:**` while Cargo.toml declares `-rcN`; move the version to the next regular release.

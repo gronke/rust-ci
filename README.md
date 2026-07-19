@@ -88,7 +88,7 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
 ### `changelog`
 
 Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent with the crate's declared version.
-`mode: check` gates a pull request: entries under `[Unreleased]` require the crate version to exceed the last released baseline (the greatest `vX.Y.Z` tag by default, so fetch tags), and a `**Breaking:**` entry requires more than a patch bump.
+`mode: check` gates a pull request: entries under `[Unreleased]` require the crate version to exceed the last released baseline by SemVer precedence (the greatest release tag, pre-release tags included — so fetch tags), a `**Breaking:**` entry requires more than a patch bump, and a pre-release version (`1.0.0-rc1`) tolerates only stabilization content — feature entries reset the version to the next regular release (see [docs/release-flow.md](docs/release-flow.md)).
 `mode: cut` turns `[Unreleased]` into the released section for the crate's version, rewrites the `.../compare/<prev>...HEAD` link, and exports `CHANGELOG_VERSION` for later steps.
 
 ```yaml
@@ -98,6 +98,44 @@ Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent w
 - uses: gronke/rust-ci/.github/actions/changelog@main
   with:
     mode: check                # or: cut (stamps today's date unless `date` is set)
+```
+
+### `cut-release`
+
+Starts a release for the version Cargo.toml declares: runs the [changelog](#changelog) cut, pushes the `release/vX.Y.Z` branch with the release commit, opens the merge-back pull request, and dispatches the release pipeline on the branch (explicitly — pushes made with the workflow token trigger no workflows).
+Refuses an existing release branch before the changelog is touched; `dry-run` derives the `version`/`branch` outputs and cuts only the working tree.
+The job needs `contents`, `pull-requests`, and `actions` write permissions, and the repository setting that allows Actions to create pull requests.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/cut-release@main
+  # with:
+  #   pipeline-workflow: release.yml   # dispatched on the new branch; empty skips
+  #   git-user-name / git-user-email   # a machine-user or App identity lets the
+  #                                    # merge-back pull request trigger CI
+```
+
+### `require-signed-tag`
+
+Gates a release pipeline on a verified signed tag: the ref must be an annotated tag object whose signature GitHub verifies, read through the API — no keyring on the runner; lightweight tags refuse.
+Requiring the signature is the workflow's preference: the gate refuses builds, only a repository tag ruleset prevents the tag — so the action warns when no active tag ruleset requires signatures, and `warn-only` turns refusals into warnings.
+Outputs: `verified`, `commit` (what the tag seals), `reason`.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/require-signed-tag@main
+  if: github.ref_type == 'tag'
+```
+
+### `release-guidance`
+
+Writes the release manager's next steps into the run's step summary, as the last step of a candidate build: accept (fetch the markers, sign exactly the marker commit, push the tag by name — never `--tags`), reject (delete the draft and branch; nothing is consumed), and what the tag push triggers.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/release-guidance@main
+  with:
+    version: ${{ env.VERSION }}
+    marker-tag: v${{ env.VERSION }}-rc${{ env.RC }}
+    commit: ${{ github.sha }}
+    # tag-script: scripts/tag-release.sh  # featured in the accept commands
 ```
 
 ### `rust-cache`
@@ -217,6 +255,12 @@ Then the **verify-build runs sealed**: `cargo package --offline` under `--networ
 ```
 
 The runner-based `check-release-readiness` above runs the same checks without Docker (networked, on the runner) for repositories not using the sealed flow.
+
+## Release flow
+
+The release actions compose into a branch-based flow: [`changelog`](#changelog) gates every pull request, [`cut-release`](#cut-release) starts the release, [`check-release-readiness`](#check-release-readiness) and the draft/marker loop build candidates, [`require-signed-tag`](#require-signed-tag) gates the final tag, and [`release-guidance`](#release-guidance) tells the release manager what to do next — accept, reject, and what follows.
+Release-candidate manifest versions (`1.0.0-rc1`) are first-class: the candidate is a release, and `-rc` stays reserved for stabilization.
+[docs/release-flow.md](docs/release-flow.md) carries the full guide: the candidate loop, the signed final tag, the reference workflows, and the repository configuration the flow relies on.
 
 ## Passing env into the container (Docker actions)
 
