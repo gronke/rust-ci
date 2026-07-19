@@ -698,6 +698,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/fixture-gitdir"
           rsync -a --exclude='target*' --exclude='Cargo.lock' fixtures/sample-crate/ "$RUNNER_TEMP/fixture-gitdir/"
           git -C "$RUNNER_TEMP/fixture-gitdir" init -q -b main
+          # gc/maintenance off: a detached repack racing the action's .git copy is
+          # the action's retry path, not this test's subject.
+          git -C "$RUNNER_TEMP/fixture-gitdir" config gc.auto 0
+          git -C "$RUNNER_TEMP/fixture-gitdir" config maintenance.auto false
           git -C "$RUNNER_TEMP/fixture-gitdir" -c user.name=selftest -c user.email=selftest@invalid add -A
           git -C "$RUNNER_TEMP/fixture-gitdir" -c user.name=selftest -c user.email=selftest@invalid commit -q -m fixture
           test -d "$RUNNER_TEMP/fixture-gitdir/.git"
