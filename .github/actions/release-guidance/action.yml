@@ -1,0 +1,42 @@
+name: Release guidance
+description: >-
+  Tell the release manager what to do with the draft pre-release, in the
+  place they are already looking: the run's step summary. Three blocks —
+  accept (fetch the markers, sign exactly the marker commit, push the tag by
+  name), reject (delete the draft and branch; nothing is consumed), and what
+  the tag push triggers next. Run it as the last step of a successful
+  candidate build.
+
+inputs:
+  version:
+    description: The version the draft pre-release carries (no leading "v").
+    required: true
+  marker-tag:
+    description: The candidate marker tag this build created (e.g. v1.2.3-rc2).
+    required: true
+  commit:
+    description: The commit the marker sealed — the only commit the final tag may point at.
+    required: true
+  tag-script:
+    description: >-
+      Repository-relative tagging helper to feature in the accept commands
+      (called as `<tag-script> <commit> -s`); plain git commands when empty.
+    required: false
+    default: ""
+  draft-url:
+    description: URL of the draft release, linked from the summary when set.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Write the release guidance
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_MARKER_TAG: ${{ inputs.marker-tag }}
+        INPUT_COMMIT: ${{ inputs.commit }}
+        INPUT_TAG_SCRIPT: ${{ inputs.tag-script }}
+        INPUT_DRAFT_URL: ${{ inputs.draft-url }}
+      run: bash "$GITHUB_ACTION_PATH/release-guidance.sh"
