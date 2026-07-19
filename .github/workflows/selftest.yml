@@ -322,6 +322,63 @@ jobs:
           fi
           echo "✓ all changelog negative controls refused"
 
+  selftest-cut-release:
+    name: exercise the cut-release action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # cargo metadata resolves the crate version; the runner's default toolchain suffices.
+      - name: install-toolchain
+        uses: ./.github/actions/install-toolchain
+
+      - name: stage a crate with a scratch origin
+        run: |
+          rm -rf "$RUNNER_TEMP/cut-release" "$RUNNER_TEMP/cut-release-origin.git"
+          git init -q --bare "$RUNNER_TEMP/cut-release-origin.git"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/cut-release/"
+          git -C "$RUNNER_TEMP/cut-release" init -q
+          git -C "$RUNNER_TEMP/cut-release" remote add origin "$RUNNER_TEMP/cut-release-origin.git"
+          git -C "$RUNNER_TEMP/cut-release" add -A
+          git -C "$RUNNER_TEMP/cut-release" -c user.name=selftest -c user.email=selftest@invalid.example commit -qm fixture
+
+      - name: dry run derives the version and branch and cuts the changelog
+        id: dry
+        uses: ./.github/actions/cut-release
+        with:
+          working-directory: ${{ runner.temp }}/cut-release
+          date: "2026-02-02"
+          dry-run: "true"
+
+      - name: the dry run produced outputs and touched no remote
+        run: |
+          test "${{ steps.dry.outputs.version }}" = "0.1.0"
+          test "${{ steps.dry.outputs.branch }}" = "release/v0.1.0"
+          grep -q '^## \[0.1.0\] - 2026-02-02$' "$RUNNER_TEMP/cut-release/CHANGELOG.md"
+          test -z "$(git -C "$RUNNER_TEMP/cut-release" ls-remote origin | head -1)"
+          echo "✓ dry run derived the version and branch, cut the tree, pushed nothing"
+
+      - name: stage an existing release branch
+        run: |
+          git -C "$RUNNER_TEMP/cut-release" checkout -q -- CHANGELOG.md
+          git -C "$RUNNER_TEMP/cut-release" push -q origin HEAD:refs/heads/release/v0.1.0
+
+      - name: an existing release branch is refused (negative control)
+        id: branch_exists
+        continue-on-error: true
+        uses: ./.github/actions/cut-release
+        with:
+          working-directory: ${{ runner.temp }}/cut-release
+          dry-run: "true"
+
+      - name: assert the negative control failed before touching the tree
+        run: |
+          if [ "${{ steps.branch_exists.outcome }}" != "failure" ]; then
+            echo "::error::an existing release branch was not refused"; exit 1
+          fi
+          grep -q '^## \[Unreleased\]' "$RUNNER_TEMP/cut-release/CHANGELOG.md"
+          echo "✓ existing branch refused before the changelog was touched"
+
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.
