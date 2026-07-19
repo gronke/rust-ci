@@ -1,0 +1,82 @@
+name: Cut release
+description: >-
+  Start a release for the version Cargo.toml declares: cut the changelog's
+  [Unreleased] section (the sibling changelog action's cut mode), push the
+  release branch, open the merge-back pull request, and dispatch the release
+  pipeline on the branch — a push made with the workflow token triggers no
+  workflows by itself, so the dispatch is explicit. Refuses when the release
+  branch already exists. The job needs `contents: write` (push the branch),
+  `pull-requests: write` (the merge-back), and `actions: write` (the
+  dispatch), and the repository setting "Allow GitHub Actions to create and
+  approve pull requests" for the merge-back to open.
+
+inputs:
+  branch-prefix:
+    description: The release branch name is this prefix plus the version.
+    required: false
+    default: "release/v"
+  base:
+    description: Base branch of the merge-back pull request (defaults to the repository's default branch).
+    required: false
+    default: ""
+  pipeline-workflow:
+    description: Workflow file to dispatch on the release branch; empty skips the dispatch.
+    required: false
+    default: "release.yml"
+  merge-back:
+    description: Open the merge-back pull request.
+    required: false
+    default: "true"
+  package:
+    description: Package name (required for a workspace with more than one member).
+    required: false
+    default: ""
+  working-directory:
+    description: Directory containing the crate or workspace.
+    required: false
+    default: "."
+  changelog:
+    description: Changelog path, relative to the working directory.
+    required: false
+    default: "CHANGELOG.md"
+  date:
+    description: The date stamped on the released section (defaults to today, UTC).
+    required: false
+    default: ""
+  token:
+    description: Token for the push, the merge-back pull request, and the dispatch.
+    required: false
+    default: ${{ github.token }}
+  dry-run:
+    description: >-
+      Derive the version and branch and cut the changelog in the working tree,
+      but push nothing, open nothing, and dispatch nothing.
+    required: false
+    default: "false"
+
+outputs:
+  version:
+    description: The released version, from Cargo.toml.
+    value: ${{ steps.cut.outputs.version }}
+  branch:
+    description: The release branch name.
+    value: ${{ steps.cut.outputs.branch }}
+
+runs:
+  using: composite
+  steps:
+    - name: Cut the release branch
+      id: cut
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_BRANCH_PREFIX: ${{ inputs.branch-prefix }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_PIPELINE_WORKFLOW: ${{ inputs.pipeline-workflow }}
+        INPUT_MERGE_BACK: ${{ inputs.merge-back }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_DATE: ${{ inputs.date }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/cut-release.sh"
