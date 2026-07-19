@@ -4,21 +4,41 @@ description: >-
   annotated tag object whose signature GitHub verifies (a signature from a
   key the pushing account has not registered fails). Lightweight tags are
   refused. The check reads GitHub's own verification through the API, so it
-  needs no keyring on the runner.
+  needs no keyring on the runner. Requiring signatures is the workflow's
+  preference, opted into by including this step — the gate refuses builds,
+  it cannot prevent an unsigned tag from existing; only a repository tag
+  ruleset enforces that, so the action warns when the preference is not
+  backed by an active tag ruleset with required signatures. `warn-only`
+  turns refusals into warnings for consumers who want the signal without
+  the gate.
 
 inputs:
   tag:
     description: The tag to verify (defaults to the pushed tag when the ref is refs/tags/*).
     required: false
     default: ""
+  warn-only:
+    description: Emit a warning instead of failing when the tag is lightweight or unverified.
+    required: false
+    default: "false"
+  check-ruleset:
+    description: >-
+      When enforcing, warn if no active tag ruleset requires signatures — the
+      workflow preference without the repository rule is advisory. Skipped
+      quietly when the token cannot read the rulesets.
+    required: false
+    default: "true"
   token:
     description: Token for the API reads.
     required: false
     default: ${{ github.token }}
 
 outputs:
+  verified:
+    description: '"true" when the tag is annotated and GitHub verifies its signature.'
+    value: ${{ steps.verify.outputs.verified }}
   commit:
-    description: The commit the verified tag points at.
+    description: The commit the tag points at.
     value: ${{ steps.verify.outputs.commit }}
   reason:
     description: GitHub's verification reason (e.g. "valid").
@@ -32,5 +52,7 @@ runs:
       shell: bash
       env:
         INPUT_TAG: ${{ inputs.tag }}
+        INPUT_WARN_ONLY: ${{ inputs.warn-only }}
+        INPUT_CHECK_RULESET: ${{ inputs.check-ruleset }}
         GH_TOKEN: ${{ inputs.token }}
       run: bash "$GITHUB_ACTION_PATH/require-signed-tag.sh"

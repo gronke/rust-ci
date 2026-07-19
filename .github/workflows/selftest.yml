@@ -416,12 +416,24 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/require-signed-tag
 
-      - name: assert the negative control failed
+      # A non-tag ref is a wiring mistake, not a signature preference: warn-only
+      # does not soften it.
+      - name: warn-only still refuses a non-tag ref (negative control)
+        id: no_tag_warn
+        continue-on-error: true
+        uses: ./.github/actions/require-signed-tag
+        with:
+          warn-only: "true"
+
+      - name: assert the negative controls failed
         run: |
           if [ "${{ steps.no_tag.outcome }}" != "failure" ]; then
             echo "::error::a non-tag ref was not refused"; exit 1
           fi
-          echo "✓ the signed-tag gate refused a non-tag ref"
+          if [ "${{ steps.no_tag_warn.outcome }}" != "failure" ]; then
+            echo "::error::warn-only softened a non-tag ref"; exit 1
+          fi
+          echo "✓ the signed-tag gate refused the non-tag refs"
 
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
