@@ -11,6 +11,8 @@
 #   INPUT_CHANGELOG         changelog path, relative to the working directory
 #   INPUT_DATE              date stamped on the released section (else today, UTC)
 #   INPUT_DRY_RUN           "true" cuts the working tree but touches no remote
+#   INPUT_GIT_USER_NAME     committer identity for the release commit
+#   INPUT_GIT_USER_EMAIL    committer email (default: the github-actions bot)
 set -euo pipefail
 
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
@@ -43,8 +45,12 @@ if [ "${INPUT_DRY_RUN:-false}" = "true" ]; then
   exit 0
 fi
 
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+# The default identity is the github-actions bot's canonical pair — 41898282
+# is that account's user id, so GitHub attributes the commit to the bot. A
+# machine-user or App identity (with a matching token) makes the merge-back
+# pull request trigger CI, which events from the workflow token do not.
+git config user.name "${INPUT_GIT_USER_NAME:-github-actions[bot]}"
+git config user.email "${INPUT_GIT_USER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
 git switch -c "${BRANCH}"
 git add "${INPUT_CHANGELOG:-CHANGELOG.md}"
 git commit -m "chore: release v${VERSION}"

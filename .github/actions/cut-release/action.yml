@@ -47,6 +47,20 @@ inputs:
     description: Token for the push, the merge-back pull request, and the dispatch.
     required: false
     default: ${{ github.token }}
+  git-user-name:
+    description: Committer identity for the release commit.
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: >-
+      Committer email for the release commit. The default is the
+      github-actions bot's canonical address (41898282 is that account's user
+      id), which GitHub attributes to the bot. Pass a machine-user or App
+      identity together with a matching token when the merge-back pull
+      request must trigger CI — events created with the workflow token do
+      not.
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
   dry-run:
     description: >-
       Derive the version and branch and cut the changelog in the working tree,
@@ -78,5 +92,7 @@ runs:
         INPUT_CHANGELOG: ${{ inputs.changelog }}
         INPUT_DATE: ${{ inputs.date }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
+        INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
         GH_TOKEN: ${{ inputs.token }}
       run: bash "$GITHUB_ACTION_PATH/cut-release.sh"
