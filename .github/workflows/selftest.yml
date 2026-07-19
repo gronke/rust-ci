@@ -237,6 +237,69 @@ jobs:
           mode: cut
           working-directory: ${{ runner.temp }}/cut
 
+      # Release-candidate semantics: SemVer precedence (an rc orders below its
+      # final, unlike `sort -V`), the feature-resets-rc rule, and rc-aware
+      # baselines from tags.
+      - name: stage a release-candidate crate
+        run: |
+          rm -rf "$RUNNER_TEMP/rc"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/rc/"
+          sed -i 's/^version = "0.1.0"/version = "1.0.0-rc1"/' "$RUNNER_TEMP/rc/Cargo.toml"
+
+      - name: check refuses a release candidate below its final (negative control)
+        id: rc_below_final
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+          baseline-version: "1.0.0"
+
+      - name: check refuses feature content on a release candidate (negative control)
+        id: rc_feature
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+          baseline-version: "0.9.9"
+
+      - name: a release candidate iterates on fixes
+        run: |
+          printf '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- A candidate stabilization fix.\n\n## [0.9.9] - 2026-01-01\n' \
+            > "$RUNNER_TEMP/rc/CHANGELOG.md"
+      - uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+          baseline-version: "0.9.9"
+
+      - name: stage tags — the baseline scan must rank the final over its rc
+        run: |
+          git -C "$RUNNER_TEMP/rc" init -q
+          git -C "$RUNNER_TEMP/rc" add -A
+          git -C "$RUNNER_TEMP/rc" -c user.name=selftest -c user.email=selftest@invalid.example commit -qm fixture
+          git -C "$RUNNER_TEMP/rc" tag v1.0.0-rc1
+          git -C "$RUNNER_TEMP/rc" tag v1.0.0
+          sed -i 's/^version = "1.0.0-rc1"/version = "1.0.0"/' "$RUNNER_TEMP/rc/Cargo.toml"
+
+      - name: check refuses a version equal to the tag baseline final (negative control)
+        id: rc_stale_final
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+
+      - name: a pre-release tag is a baseline of its own
+        run: |
+          git -C "$RUNNER_TEMP/rc" tag -d v1.0.0
+          sed -i 's/^version = "1.0.0"/version = "1.0.0-rc2"/' "$RUNNER_TEMP/rc/Cargo.toml"
+      - uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+
       - name: assert the negative controls failed
         run: |
           if [ "${{ steps.nobump.outcome }}" != "failure" ]; then
@@ -247,6 +310,15 @@ jobs:
           fi
           if [ "${{ steps.cut_again.outcome }}" != "failure" ]; then
             echo "::error::a second cut was not refused"; exit 1
+          fi
+          if [ "${{ steps.rc_below_final.outcome }}" != "failure" ]; then
+            echo "::error::a release candidate was not refused below its final"; exit 1
+          fi
+          if [ "${{ steps.rc_feature.outcome }}" != "failure" ]; then
+            echo "::error::feature content on a release candidate was not refused"; exit 1
+          fi
+          if [ "${{ steps.rc_stale_final.outcome }}" != "failure" ]; then
+            echo "::error::a version equal to the tag baseline was not refused"; exit 1
           fi
           echo "✓ all changelog negative controls refused"
 

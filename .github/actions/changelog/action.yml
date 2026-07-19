@@ -2,10 +2,13 @@ name: Changelog
 description: >-
   Keep a "Keep a Changelog" CHANGELOG.md coherent with the crate's declared
   version. `check` gates a pull request: entries under [Unreleased] require the
-  crate version to exceed the last released baseline, and a breaking entry
-  requires more than a patch bump. `cut` turns [Unreleased] into the released
-  section for the crate's version, rewrites the compare link, and exports
-  CHANGELOG_VERSION into the job environment.
+  crate version to exceed the last released baseline by SemVer precedence
+  (1.0.0-rc1 < 1.0.0), a breaking entry requires more than a patch bump, and a
+  pre-release version tolerates only stabilization content — feature entries
+  (### Added, ### Removed, **Breaking) reset the version to the next regular
+  release. `cut` turns [Unreleased] into the released section for the crate's
+  version, rewrites the compare link, and exports CHANGELOG_VERSION into the
+  job environment.
 
 inputs:
   mode:
@@ -26,9 +29,9 @@ inputs:
   baseline-version:
     description: >-
       check: the last released version the crate must exceed while [Unreleased]
-      carries entries. Defaults to the greatest vX.Y.Z tag in the checkout
-      (fetch tags for that — e.g. actions/checkout with fetch-depth 0), or
-      0.0.0 when there is none.
+      carries entries. Defaults to the greatest release tag in the checkout by
+      SemVer precedence, vX.Y.Z-prerelease tags included (fetch tags for that —
+      e.g. actions/checkout with fetch-depth 0), or 0.0.0 when there is none.
     required: false
     default: ""
   date:
