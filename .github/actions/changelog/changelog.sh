@@ -5,11 +5,13 @@
 #   INPUT_MODE              "check" (pull-request gate) or "cut" (release the section)
 #   INPUT_PACKAGE           package name (required for a multi-member workspace)
 #   INPUT_CHANGELOG         changelog path, relative to the working directory
-#   INPUT_BASELINE_VERSION  check: version the crate must exceed (else greatest vX.Y.Z tag)
+#   INPUT_BASELINE_VERSION  check: version the crate must exceed (else the greatest release
+#                           tag, pre-releases included, by SemVer precedence)
 #   INPUT_DATE              cut: date stamped on the released section (else today, UTC)
 set -euo pipefail
 
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
+source "$GITHUB_ACTION_PATH/../_lib/semver.sh"
 
 CHANGELOG="${INPUT_CHANGELOG:-CHANGELOG.md}"
 if [ ! -f "$CHANGELOG" ]; then
@@ -26,11 +28,8 @@ unreleased_body() {
   awk '/^## \[Unreleased\]/{grab=1; next} /^## /{grab=0} /^\[[^]]+\]: /{grab=0} grab' "$CHANGELOG"
 }
 
-# Version helpers: sort -V decides order; numeric components feed the
-# breaking-bump rule (a prerelease suffix on a component is ignored there).
-ver_gt() {
-  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
-}
+# SemVer precedence (semver_gt from _lib) decides order; the numeric components
+# feed the breaking-bump rule (a prerelease suffix on a component is ignored there).
 ver_part() {
   local part
   part="$(printf '%s' "$1" | cut -d. -f"$2" | grep -o '^[0-9]*' || true)"
@@ -48,18 +47,36 @@ case "${INPUT_MODE:-}" in
       echo "✓ [Unreleased] is empty; nothing to check"
       exit 0
     fi
+    if ! semver_valid "$VERSION"; then
+      echo "::error::the crate version ($VERSION) is not a MAJOR.MINOR.PATCH[-prerelease] version"
+      exit 1
+    fi
     BASE="${INPUT_BASELINE_VERSION:-}"
     if [ -z "$BASE" ]; then
-      BASE="$(git tag -l 'v*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
-      BASE="${BASE#v}"
+      # The greatest release tag by SemVer precedence, pre-release tags included —
+      # a v1.0.0 final outranks its v1.0.0-rcN candidates, unlike `sort -V`.
+      for TAG in $(git tag -l 'v*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' || true); do
+        TAG="${TAG#v}"
+        if [ -z "$BASE" ] || semver_gt "$TAG" "$BASE"; then
+          BASE="$TAG"
+        fi
+      done
     fi
     if [ -z "$BASE" ]; then
       BASE="0.0.0"
-      echo "::notice::no baseline-version input and no vX.Y.Z tag in the checkout; using 0.0.0"
+      echo "::notice::no baseline-version input and no release tag in the checkout; using 0.0.0"
     fi
-    if ! ver_gt "$VERSION" "$BASE"; then
+    if ! semver_gt "$VERSION" "$BASE"; then
       echo "::error::[Unreleased] carries entries, but the crate version ($VERSION) does not exceed the last release ($BASE) — bump the version in Cargo.toml"
       exit 1
+    fi
+    # A release-candidate version is for stabilizing exactly that release: feature
+    # content resets the version out of rc-space.
+    if [ -n "$(semver_prerelease "$VERSION")" ]; then
+      if printf '%s' "$BODY" | grep -Eq '^### (Added|Removed)|\*\*Breaking'; then
+        echo "::error::the crate version ($VERSION) is a pre-release, but [Unreleased] carries feature content (### Added, ### Removed, or a **Breaking entry) — feature work resets the version to the next regular release"
+        exit 1
+      fi
     fi
     if printf '%s' "$BODY" | grep -q '\*\*Breaking'; then
       base_major="$(ver_part "$BASE" 1)"; base_minor="$(ver_part "$BASE" 2)"
