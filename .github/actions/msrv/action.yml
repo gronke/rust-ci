@@ -154,18 +154,32 @@ runs:
           # SELF-CONTAINED .git directory, covering .git as a directory and as a file
           # (linked worktrees, submodules); skipped when the source is not a git repo.
           # The check mounts the copy read-only, so the metadata is read-only there.
+          # git's detached auto maintenance can repack loose objects while cp walks
+          # them ("cannot stat …/objects/xx"); the retry copies the settled state,
+          # and the rev-parse check below vouches for the result. The last attempt
+          # runs unmuted so a real copy failure surfaces.
+          copy_git_dir() {
+            local attempt
+            for attempt in 1 2; do
+              rm -rf "$2"
+              cp -a "$1" "$2" 2>/dev/null && return 0
+              sleep 1
+            done
+            rm -rf "$2"
+            cp -a "$1" "$2"
+          }
           if gd="$(git rev-parse --absolute-git-dir 2>/dev/null)"; then
             common="$(git rev-parse --git-common-dir)"
             case "$common" in /*) ;; *) common="$PWD/$common" ;; esac
             if [ "$gd" = "$common" ]; then
               # Plain repo (top-level or crate-in-subdir) or submodule: the git dir is
               # already self-contained.
-              cp -a "$gd" "$scratch/.git"
+              copy_git_dir "$gd" "$scratch/.git"
             else
               # Linked worktree: start from the shared metadata, drop the host-path
               # worktree references (they would dangle inside the container), then
               # overlay the per-worktree state so HEAD reflects THIS checkout.
-              cp -a "$common" "$scratch/.git"
+              copy_git_dir "$common" "$scratch/.git"
               rm -rf "$scratch/.git/worktrees"
               for f in HEAD index config.worktree; do
                 [ -e "$gd/$f" ] && cp -a "$gd/$f" "$scratch/.git/$f"
