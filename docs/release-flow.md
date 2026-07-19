@@ -107,9 +107,12 @@ jobs:
         id: expect
         run: |
           set -euo pipefail
+          # A v* tag keeps its full version. A release-candidate manifest
+          # (1.0.0-rc1) is a first-class release whose final tag is v1.0.0-rc1 —
+          # not a marker to strip. Only human-pushed final tags reach the pipeline;
+          # workflow-token marker pushes trigger nothing.
           case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
             branch:release/v*) version="${GITHUB_REF_NAME#release/v}" ;;
-            tag:v*-rc*)        version="${GITHUB_REF_NAME#v}"; version="${version%-rc*}" ;;
             tag:v*)            version="${GITHUB_REF_NAME#v}" ;;
             *)                 version="" ;;
           esac
@@ -141,7 +144,11 @@ jobs:
             gh release create "v${VERSION}" --draft --prerelease \
               --title "v${VERSION}" --notes-file release-notes.md # SLOT: e.g. the changelog section
           fi
-          gh release upload "v${VERSION}" dist/* --clobber
+          # SLOT: upload build assets, if any. A library / publish = false crate
+          # produces none, so guard the glob — an unguarded dist/* fails when empty.
+          if compgen -G 'dist/*' >/dev/null; then
+            gh release upload "v${VERSION}" dist/* --clobber
+          fi
       - name: Advance the candidate marker tag
         id: marker
         run: |
@@ -165,7 +172,11 @@ jobs:
   publish:
     name: publish the release (final path)
     needs: gate
-    if: github.ref_type == 'tag' && !contains(github.ref_name, '-rc')
+    # Any tag reaching the pipeline is a human-pushed final tag: marker tags are
+    # pushed with the workflow token and trigger nothing, and require-signed-tag
+    # rejects unsigned tags. A first-class rc-manifest release (v1.0.0-rc1)
+    # publishes here too.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment: release # add required reviewers here for a human pause
     env:
