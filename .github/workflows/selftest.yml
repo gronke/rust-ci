@@ -379,6 +379,50 @@ jobs:
           grep -q '^## \[Unreleased\]' "$RUNNER_TEMP/cut-release/CHANGELOG.md"
           echo "✓ existing branch refused before the changelog was touched"
 
+  selftest-release-helpers:
+    name: exercise the release guidance and the signed-tag gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The action wiring writes the real step summary of this run.
+      - name: release-guidance renders into the step summary
+        uses: ./.github/actions/release-guidance
+        with:
+          version: "0.1.0"
+          marker-tag: "v0.1.0-rc1"
+          commit: "0000000000000000000000000000000000000000"
+
+      - name: the guidance carries the accept, reject, and next blocks
+        run: |
+          S="$RUNNER_TEMP/guidance.md"
+          GITHUB_STEP_SUMMARY="$S" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc2 \
+            INPUT_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+            INPUT_TAG_SCRIPT=scripts/tag-release.sh INPUT_DRAFT_URL=https://example.invalid/v1.2.3 \
+            bash .github/actions/release-guidance/release-guidance.sh >/dev/null
+          test "$(grep -c '^### ' "$S")" = "3"
+          grep -q 'scripts/tag-release.sh 0123456789abcdef0123456789abcdef01234567 -s' "$S"
+          grep -q '^git push origin v1.2.3$' "$S"
+          grep -q 'never `git push --tags`' "$S"
+          grep -q 'the draft release](https://example.invalid/v1.2.3)' "$S"
+          GITHUB_STEP_SUMMARY="$S.plain" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc1 \
+            INPUT_COMMIT=abc0123 INPUT_TAG_SCRIPT= INPUT_DRAFT_URL= \
+            bash .github/actions/release-guidance/release-guidance.sh >/dev/null
+          grep -q 'git tag -s v1.2.3 abc0123' "$S.plain"
+          echo "✓ guidance blocks, commands, and the tag-script variant render"
+
+      - name: require-signed-tag refuses a non-tag ref (negative control)
+        id: no_tag
+        continue-on-error: true
+        uses: ./.github/actions/require-signed-tag
+
+      - name: assert the negative control failed
+        run: |
+          if [ "${{ steps.no_tag.outcome }}" != "failure" ]; then
+            echo "::error::a non-tag ref was not refused"; exit 1
+          fi
+          echo "✓ the signed-tag gate refused a non-tag ref"
+
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.

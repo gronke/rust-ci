@@ -1,0 +1,36 @@
+name: Require signed tag
+description: >-
+  Gate a release pipeline on a verified signed tag: the ref must be an
+  annotated tag object whose signature GitHub verifies (a signature from a
+  key the pushing account has not registered fails). Lightweight tags are
+  refused. The check reads GitHub's own verification through the API, so it
+  needs no keyring on the runner.
+
+inputs:
+  tag:
+    description: The tag to verify (defaults to the pushed tag when the ref is refs/tags/*).
+    required: false
+    default: ""
+  token:
+    description: Token for the API reads.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  commit:
+    description: The commit the verified tag points at.
+    value: ${{ steps.verify.outputs.commit }}
+  reason:
+    description: GitHub's verification reason (e.g. "valid").
+    value: ${{ steps.verify.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require a verified signed tag
+      id: verify
+      shell: bash
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/require-signed-tag.sh"
