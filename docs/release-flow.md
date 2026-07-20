@@ -129,7 +129,9 @@ jobs:
   draft:
     name: build the draft pre-release (candidate path)
     needs: gate
-    if: github.ref_type == 'branch'
+    # Only release branches build candidates: a workflow_dispatch from any other
+    # branch derives no version and must not create a draft.
+    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release/v')
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.gate.outputs.version }}
