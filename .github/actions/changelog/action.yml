@@ -8,11 +8,13 @@ description: >-
   (### Added, ### Removed, **Breaking) reset the version to the next regular
   release. `cut` turns [Unreleased] into the released section for the crate's
   version, rewrites the compare link, and exports CHANGELOG_VERSION into the
-  job environment.
+  job environment. `notes` renders a released section as plain text — inline
+  Markdown stripped, optionally led by a `title` subject line — for a git tag
+  message or a GitHub release body.
 
 inputs:
   mode:
-    description: "`check` (pull-request gate) or `cut` (release the [Unreleased] section)."
+    description: "`check` (PR gate), `cut` (release [Unreleased]), or `notes` (render a released section as plain text)."
     required: true
   package:
     description: Package name (required for a workspace with more than one member).
@@ -26,6 +28,18 @@ inputs:
     description: Changelog path, relative to the working directory.
     required: false
     default: "CHANGELOG.md"
+  version:
+    description: "notes: the version to render (defaults to the crate's declared version)."
+    required: false
+    default: ""
+  out:
+    description: "notes: file the rendered notes are written to, relative to the working directory."
+    required: false
+    default: "release-notes.md"
+  title:
+    description: "notes: optional subject line led before the section (e.g. a git tag subject like v1.2.3)."
+    required: false
+    default: ""
   baseline-version:
     description: >-
       check: the last released version the crate must exceed while [Unreleased]
@@ -49,6 +63,9 @@ runs:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_OUT: ${{ inputs.out }}
+        INPUT_TITLE: ${{ inputs.title }}
         INPUT_BASELINE_VERSION: ${{ inputs.baseline-version }}
         INPUT_DATE: ${{ inputs.date }}
       run: bash "$GITHUB_ACTION_PATH/changelog.sh"

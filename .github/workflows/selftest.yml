@@ -322,6 +322,64 @@ jobs:
           fi
           echo "✓ all changelog negative controls refused"
 
+  # changelog `notes` mode renders a released section as plaintext (awk extract +
+  # a mechanical de-Markdown). Stage a Markdown-rich section and assert the strip.
+  selftest-changelog-notes:
+    name: exercise the changelog notes mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: stage a changelog with a Markdown-rich section
+        run: |
+          set -euo pipefail
+          mkdir -p nt
+          {
+            echo '# Changelog'
+            echo
+            echo '## [1.2.3] - 2026-01-01'
+            echo
+            echo 'A release with `code`, **bold**, and a provider-* glob.'
+            echo
+            echo '### Added'
+            echo
+            echo '- The **thing** with `session_auth` support.'
+            echo
+            echo '[1.2.3]: https://example.invalid/x/releases/tag/v1.2.3'
+          } > nt/CHANGELOG.md
+      - name: render the notes
+        uses: ./.github/actions/changelog
+        with:
+          mode: notes
+          version: "1.2.3"
+          title: "v1.2.3"
+          working-directory: nt
+      - name: assert Markdown stripped, structure and identifiers kept
+        run: |
+          set -euo pipefail
+          out=nt/release-notes.md
+          test -f "$out"
+          [ "$(head -1 "$out")" = "v1.2.3" ] || { echo "::error::subject line is not the title (v1.2.3)"; exit 1; }
+          if grep -q '`' "$out"; then echo "::error::backticks survived"; exit 1; fi
+          if grep -q '\*\*' "$out"; then echo "::error::bold markers survived"; exit 1; fi
+          if grep -q 'example.invalid' "$out"; then echo "::error::reference-link definition survived"; exit 1; fi
+          grep -qx 'Added:' "$out" || { echo "::error::### Added not converted"; exit 1; }
+          grep -q 'provider-\* glob' "$out" || { echo "::error::single * dropped"; exit 1; }
+          grep -q 'session_auth' "$out" || { echo "::error::identifier dropped"; exit 1; }
+          echo "✓ changelog notes rendered plaintext"
+      - name: notes refuses a version absent from the changelog (negative control)
+        id: notes_absent
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: notes
+          version: "9.9.9"
+          working-directory: nt
+      - name: assert the absent-version render failed
+        run: |
+          set -euo pipefail
+          [ "${{ steps.notes_absent.outcome }}" = "failure" ] || { echo "::error::notes did not refuse an absent version"; exit 1; }
+          echo "✓ notes refused an absent version"
+
   selftest-cut-release:
     name: exercise the cut-release action
     runs-on: ubuntu-latest
@@ -408,7 +466,7 @@ jobs:
           GITHUB_STEP_SUMMARY="$S.plain" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc1 \
             INPUT_COMMIT=abc0123 INPUT_TAG_SCRIPT= INPUT_DRAFT_URL= \
             bash .github/actions/release-guidance/release-guidance.sh >/dev/null
-          grep -q 'git tag -s v1.2.3 abc0123' "$S.plain"
+          grep -qF "git tag -s -F <(git tag -l --format='%(contents)' v1.2.3-rc1) v1.2.3 abc0123" "$S.plain"
           echo "✓ guidance blocks, commands, and the tag-script variant render"
 
       - name: require-signed-tag refuses a non-tag ref (negative control)

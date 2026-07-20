@@ -90,14 +90,15 @@ A crate with `publish = false` is validated for tag/version coherence only, so t
 Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent with the crate's declared version.
 `mode: check` gates a pull request: entries under `[Unreleased]` require the crate version to exceed the last released baseline by SemVer precedence (the greatest release tag, pre-release tags included — so fetch tags), a `**Breaking:**` entry requires more than a patch bump, and a pre-release version (`1.0.0-rc1`) tolerates only stabilization content — feature entries reset the version to the next regular release (see [docs/release-flow.md](docs/release-flow.md)).
 `mode: cut` turns `[Unreleased]` into the released section for the crate's version, rewrites the `.../compare/<prev>...HEAD` link, and exports `CHANGELOG_VERSION` for later steps.
+`mode: notes` renders a released version's section as plain text — inline Markdown stripped (`**`, backticks), `### Group` → `Group:`, reference-link definitions dropped, an optional `title` led as a subject line — into `out` (default `release-notes.md`), for a git tag message or release body.
 
 ```yaml
-- uses: actions/checkout@v6
+- uses: actions/checkout@v7
   with:
     fetch-depth: 0             # the check derives its baseline from the tags
 - uses: gronke/rust-ci/.github/actions/changelog@main
   with:
-    mode: check                # or: cut (stamps today's date unless `date` is set)
+    mode: check                # or: cut / notes (notes takes `version`, writes release-notes.md)
 ```
 
 ### `cut-release`
