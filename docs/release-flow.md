@@ -47,7 +47,7 @@ jobs:
 
 ## The candidate loop
 
-Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit, and the guidance summary for the release manager.
+Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit — carrying `release-notes.md` as its message, or a bare candidate label when there is none — and the guidance summary for the release manager.
 Fixes land as ordinary pushes to the branch; rc2, rc3, … refresh the same draft.
 Marker tags append one `-rcN` to the version's tag name — including on a release-candidate version, where `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
 
@@ -61,13 +61,14 @@ Whoever holds a release-signing key registered with their GitHub account:
 
 ```sh
 git fetch origin 'refs/tags/vX.Y.Z-rc*:refs/tags/vX.Y.Z-rc*'
-git tag -s vX.Y.Z <marker-commit>
+git tag -s -F <(git tag -l --format='%(contents)' vX.Y.Z-rcN) vX.Y.Z vX.Y.Z-rcN^{commit}
 git push origin vX.Y.Z
 ```
 
 The tag must be annotated, signed with a key GitHub can verify, and point at exactly the commit the newest marker sealed — the pipeline refuses anything else.
+Its message is copied from the marker (your `release-notes.md`, when you produced one), so there is nothing to retype; the `release-guidance` step prints this command with the newest `rcN` filled in.
 Push the tag by name; never `git push --tags`, which pushes every local tag along.
-A repository tagging script (announced through the guidance step's `tag-script` input) can wrap the tag creation, for example to build the message from the released changelog section.
+A repository tagging script can still override the message via the guidance step's `tag-script` input.
 
 ### Reject — nothing to unwind
 
@@ -138,13 +139,23 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+      # SLOT: produce release-notes.md — the draft body and the marker/tag message.
+      # Optional: without it the draft gets a minimal note and the marker a bare
+      # candidate label. A Keep a Changelog file renders with the changelog action:
+      #   - uses: gronke/rust-ci/.github/actions/changelog@v1
+      #     with: { mode: notes, version: ${{ env.VERSION }}, title: v${{ env.VERSION }} }
+      # The title leads the message so the signed tag's subject is the version, not
+      # the section's first group heading. Other formats write release-notes.md any way.
       # SLOT: build the release assets (SBOMs, binaries, …) into ./dist.
       - name: Create or refresh the draft pre-release
         run: |
           set -euo pipefail
-          if ! gh release view "v${VERSION}" >/dev/null 2>&1; then
-            gh release create "v${VERSION}" --draft --prerelease \
-              --title "v${VERSION}" --notes-file release-notes.md # SLOT: e.g. the changelog section
+          notes=(--notes "Release v${VERSION}.")
+          [ -s release-notes.md ] && notes=(--notes-file release-notes.md)
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release edit "v${VERSION}" "${notes[@]}"
+          else
+            gh release create "v${VERSION}" --draft --prerelease --title "v${VERSION}" "${notes[@]}"
           fi
           # SLOT: upload build assets, if any. A library / publish = false crate
           # produces none, so guard the glob — an unguarded dist/* fails when empty.
@@ -161,7 +172,13 @@ jobs:
           while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" >/dev/null 2>&1; do
             n=$((n + 1))
           done
-          git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
+          # The marker's message is release-notes.md when present (so promoting a
+          # candidate copies it into the signed tag), else a bare candidate label.
+          if [ -s release-notes.md ]; then
+            git tag -a -F release-notes.md "v${VERSION}-rc${n}" "${GITHUB_SHA}"
+          else
+            git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
+          fi
           git push origin "refs/tags/v${VERSION}-rc${n}"
           echo "marker=v${VERSION}-rc${n}" >> "$GITHUB_OUTPUT"
       - uses: gronke/rust-ci/.github/actions/release-guidance@v1
@@ -169,7 +186,6 @@ jobs:
           version: ${{ env.VERSION }}
           marker-tag: ${{ steps.marker.outputs.marker }}
           commit: ${{ github.sha }}
-          # tag-script: scripts/tag-release.sh
 
   publish:
     name: publish the release (final path)

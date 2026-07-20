@@ -17,7 +17,9 @@ TAG="v${VERSION}"
 if [ -n "${INPUT_TAG_SCRIPT:-}" ]; then
   SIGN_COMMAND="${INPUT_TAG_SCRIPT} ${COMMIT} -s"
 else
-  SIGN_COMMAND="git tag -s ${TAG} ${COMMIT}"
+  # Copy the candidate marker's message (the rendered changelog section) into the
+  # signed final tag, so promoting is a pure-git two-liner — no message to retype.
+  SIGN_COMMAND="git tag -s -F <(git tag -l --format='%(contents)' ${MARKER}) ${TAG} ${COMMIT}"
 fi
 
 DRAFT_LINE=""
@@ -43,6 +45,7 @@ git push origin ${TAG}
 \`\`\`
 
 The tag must be annotated, signed with a key GitHub can verify, and point at exactly \`${COMMIT}\` — the pipeline refuses anything else.
+Its message is copied from the marker \`${MARKER}\` — the changelog section rendered for ${TAG}.
 Push the tag by name; never \`git push --tags\`, which pushes every local tag along.
 
 ### Reject — nothing to unwind

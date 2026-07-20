@@ -2,9 +2,13 @@
 # Keep a "Keep a Changelog" CHANGELOG.md coherent with the crate's declared
 # version. Inputs arrive as env vars from action.yml; cargo and git run in the
 # step's working-directory.
-#   INPUT_MODE              "check" (pull-request gate) or "cut" (release the section)
+#   INPUT_MODE              "check" (PR gate), "cut" (release the section), or "notes"
+#                           (render a released section as plain text for a tag/release)
 #   INPUT_PACKAGE           package name (required for a multi-member workspace)
 #   INPUT_CHANGELOG         changelog path, relative to the working directory
+#   INPUT_VERSION           notes: the version to render (else the crate's declared version)
+#   INPUT_OUT               notes: file the rendered notes are written to (default release-notes.md)
+#   INPUT_TITLE             notes: optional subject line led before the section (e.g. a git tag subject)
 #   INPUT_BASELINE_VERSION  check: version the crate must exceed (else the greatest release
 #                           tag, pre-releases included, by SemVer precedence)
 #   INPUT_DATE              cut: date stamped on the released section (else today, UTC)
@@ -19,8 +23,12 @@ if [ ! -f "$CHANGELOG" ]; then
   exit 1
 fi
 
-resolve_crate "${INPUT_PACKAGE:-}"
-VERSION="$CRATE_VERSION"
+# notes may name the version explicitly (no cargo needed); check/cut derive it.
+VERSION="${INPUT_VERSION:-}"
+if [ -z "$VERSION" ]; then
+  resolve_crate "${INPUT_PACKAGE:-}"
+  VERSION="$CRATE_VERSION"
+fi
 
 # The [Unreleased] section body: everything between its heading and the next
 # section heading or the link-definition block.
@@ -136,8 +144,37 @@ case "${INPUT_MODE:-}" in
     echo "✓ cut [$VERSION] - $DATE from [Unreleased]"
     ;;
 
+  notes)
+    OUT="${INPUT_OUT:-release-notes.md}"
+    if ! grep -q "^## \[$VERSION\]" "$CHANGELOG"; then
+      echo "::error::no [$VERSION] section in $CHANGELOG"
+      exit 1
+    fi
+    # The [VERSION] section body — heading and link block excluded, like
+    # unreleased_body — de-Markdowned for a plain-text tag message or release body:
+    # ** and backticks dropped, ### Group -> Group:, single * / _ and the wrapping
+    # left alone; the trailing awk trims leading and trailing blank lines.
+    SECTION="$(awk -v h="## [$VERSION]" 'index($0, h) == 1 {grab=1; next} /^## /{grab=0} /^\[[^]]+\]: /{grab=0} grab' "$CHANGELOG" \
+      | sed -E 's/`//g; s/\*\*//g; s/^### (.+)/\1:/' \
+      | awk 'NF && !first {first=NR} NF{last=NR} {line[NR]=$0} END{for (i = first; i <= last; i++) print line[i]}')"
+    if [ -z "${SECTION//[[:space:]]/}" ]; then
+      echo "::error::rendered notes for $VERSION are empty"
+      exit 1
+    fi
+    # An optional title leads as the first line (a git tag subject), then a blank
+    # line, then the section — so the section's first group heading is not the subject.
+    if [ -n "${INPUT_TITLE:-}" ]; then
+      printf '%s\n\n%s\n' "$INPUT_TITLE" "$SECTION" > "$OUT"
+    else
+      printf '%s\n' "$SECTION" > "$OUT"
+    fi
+    echo "::group::rendered notes → $OUT"
+    cat "$OUT"
+    echo "::endgroup::"
+    ;;
+
   *)
-    echo "::error::mode must be 'check' or 'cut' (got '${INPUT_MODE:-}')"
+    echo "::error::mode must be 'check', 'cut', or 'notes' (got '${INPUT_MODE:-}')"
     exit 1
     ;;
 esac
