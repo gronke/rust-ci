@@ -179,7 +179,10 @@ jobs:
           else
             git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
           fi
-          git push origin "refs/tags/v${VERSION}-rc${n}"
+          git push origin "refs/tags/v${VERSION}-rc${n}" || {
+            echo "::error::the marker push was rejected (GH013) — the tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting and signature-requiring tag rules. See “Repository configuration the flow relies on”."
+            exit 1
+          }
           echo "marker=v${VERSION}-rc${n}" >> "$GITHUB_OUTPUT"
       - uses: gronke/rust-ci/.github/actions/release-guidance@v1
         with:
@@ -224,6 +227,7 @@ jobs:
 
 - **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
 - **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
+  The markers are pushed unsigned with the workflow token, so a rule covering all tags blocks the candidate loop: exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule, and give the release managers a bypass on the final `v*` restriction so the signed tag can be pushed at all.
   `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.
 - **Branch ruleset**: restrict `release/v*` creation and pushes to release managers and Actions.
 - **A `release` environment** on the publish job; add required reviewers where a human pause before publication is wanted.
@@ -236,5 +240,7 @@ jobs:
 - *The tag points at X but the last build is Y* — the branch moved after the candidate you meant to seal; re-tag the newest marker commit, or push the branch and let a new candidate build first.
 - *Expected version != Cargo.toml version* — the ref name, the crate version, and the changelog section must agree; fix the branch content.
 - *already published on crates.io* / *a published release exists* — immutable names cannot be reused, not even after deleting the release; bump the version and cut again.
+- *GH013 / Cannot create ref on the marker push* — a tag ruleset restricts `v*-rc*`: the markers are pushed unsigned with the workflow token, so exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule (the final `v*` rules stay).
+  `require-signed-tag`'s ruleset warning covers the final tag's signature rule, not the markers.
 - *The cut refuses* — `[Unreleased]` is empty, or the release branch already exists.
 - *feature content on a pre-release version* — the changelog check found `### Added`, `### Removed`, or `**Breaking:**` while Cargo.toml declares `-rcN`; move the version to the next regular release.
