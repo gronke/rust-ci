@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
-## [Unreleased]
+## [1.2.0] - 2026-07-23
 
 ### Added
 
@@ -80,7 +80,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - First release — reusable Rust CI/CD actions (bring-up baseline).
 
-[Unreleased]: https://github.com/gronke/rust-ci/compare/v1.1.0...HEAD
+[1.2.0]: https://github.com/gronke/rust-ci/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/gronke/rust-ci/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gronke/rust-ci/compare/v0.0.5...v1.0.0
 [0.0.5]: https://github.com/gronke/rust-ci/compare/v0.0.4...v0.0.5
