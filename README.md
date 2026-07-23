@@ -77,12 +77,14 @@ Verifies a crate is ready to release.
 On a `v*` tag it asserts the tag matches the crate version.
 For a publishable crate it runs `cargo publish --dry-run` and checks the version is not already on crates.io.
 A crate with `publish = false` is validated for tag/version coherence only, so the action is equally useful for internal crates.
+A repository without a Cargo.toml declares its version through the `version` input — or, absent both, through its changelog's newest released section — and is validated for coherence only.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/check-release-readiness@main
   with:
     package: my-crate          # required only for a workspace with >1 member
     # expected-version: 1.2.3  # defaults to the pushed v* tag
+    # version: 1.2.3           # non-crate repos: the declared version
 ```
 
 ### `changelog`
@@ -91,6 +93,7 @@ Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent w
 `mode: check` gates a pull request: entries under `[Unreleased]` require the crate version to exceed the last released baseline by SemVer precedence (the greatest release tag, pre-release tags included — so fetch tags), a `**Breaking:**` entry requires more than a patch bump, and a pre-release version (`1.0.0-rc1`) tolerates only stabilization content — feature entries reset the version to the next regular release (see [docs/release-flow.md](docs/release-flow.md)).
 `mode: cut` turns `[Unreleased]` into the released section for the crate's version, rewrites the `.../compare/<prev>...HEAD` link, and exports `CHANGELOG_VERSION` for later steps.
 `mode: notes` renders a released version's section as plain text — inline Markdown stripped (`**`, backticks), `### Group` → `Group:`, reference-link definitions dropped, an optional `title` led as a subject line — into `out` (default `release-notes.md`), for a git tag message or release body.
+The `version` input overrides Cargo.toml resolution in every mode; a repository without a crate names the version at cut time (`notes` falls back to the newest released section, and `check` degrades to section/tag coherence — the newest released section must be tagged).
 
 ```yaml
 - uses: actions/checkout@v7
@@ -103,13 +106,14 @@ Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent w
 
 ### `cut-release`
 
-Starts a release for the version Cargo.toml declares: runs the [changelog](#changelog) cut, pushes the `release/vX.Y.Z` branch with the release commit, opens the merge-back pull request, and dispatches the release pipeline on the branch (explicitly — pushes made with the workflow token trigger no workflows).
+Starts a release for the version Cargo.toml declares — or the `version` input where there is no crate: runs the [changelog](#changelog) cut, pushes the `release/vX.Y.Z` branch with the release commit, opens the merge-back pull request, and dispatches the release pipeline on the branch (explicitly — pushes made with the workflow token trigger no workflows).
 Refuses an existing release branch before the changelog is touched; `dry-run` derives the `version`/`branch` outputs and cuts only the working tree.
 The job needs `contents`, `pull-requests`, and `actions` write permissions, and the repository setting that allows Actions to create pull requests.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/cut-release@main
   # with:
+  #   version: 1.2.0                   # non-crate repos name the version to cut
   #   pipeline-workflow: release.yml   # dispatched on the new branch; empty skips
   #   git-user-name / git-user-email   # a machine-user or App identity lets the
   #                                    # merge-back pull request trigger CI
