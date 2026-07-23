@@ -437,6 +437,117 @@ jobs:
           grep -q '^## \[Unreleased\]' "$RUNNER_TEMP/cut-release/CHANGELOG.md"
           echo "✓ existing branch refused before the changelog was touched"
 
+  # The version ladder without Cargo.toml: the explicit input on cut-release
+  # and readiness, the changelog's newest released section as the fallback,
+  # and check's section/tag coherence. Staged in a crateless temp dir.
+  selftest-version-input:
+    name: exercise the no-crate version ladder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: stage a crateless repository with a changelog
+        run: |
+          rm -rf "$RUNNER_TEMP/no-crate"
+          mkdir -p "$RUNNER_TEMP/no-crate"
+          cd "$RUNNER_TEMP/no-crate"
+          git init -q
+          {
+            echo '# Changelog'
+            echo
+            echo '## [Unreleased]'
+            echo
+            echo '### Added'
+            echo
+            echo '- A pending feature.'
+            echo
+            echo '## [1.1.0] - 2026-01-01'
+            echo
+            echo '### Added'
+            echo
+            echo '- Something released.'
+            echo
+            echo '[Unreleased]: https://example.invalid/x/compare/v1.1.0...HEAD'
+            echo '[1.1.0]: https://example.invalid/x/releases/tag/v1.1.0'
+          } > CHANGELOG.md
+          git add -A
+          git -c user.name=selftest -c user.email=selftest@invalid.example commit -qm fixture
+          git tag v1.1.0
+
+      - name: check without a version passes on a tagged newest section
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: cut-release dry run with the explicit version
+        id: dry
+        uses: ./.github/actions/cut-release
+        with:
+          version: "1.2.0"
+          date: "2026-02-02"
+          dry-run: "true"
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: the dry run cut the named version
+        run: |
+          test "${{ steps.dry.outputs.version }}" = "1.2.0"
+          test "${{ steps.dry.outputs.branch }}" = "release/v1.2.0"
+          grep -q '^## \[1.2.0\] - 2026-02-02$' "$RUNNER_TEMP/no-crate/CHANGELOG.md"
+          echo "✓ the explicit version named the cut"
+
+      - name: readiness takes the explicit version
+        uses: ./.github/actions/check-release-readiness
+        with:
+          version: "1.2.0"
+          expected-version: "1.2.0"
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: readiness falls back to the changelog's newest section
+        uses: ./.github/actions/check-release-readiness
+        with:
+          expected-version: "1.2.0"
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: notes falls back to the newest section
+        uses: ./.github/actions/changelog
+        with:
+          mode: notes
+          title: v1.2.0
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: the rendered notes carry the cut section
+        run: |
+          test "$(head -1 "$RUNNER_TEMP/no-crate/release-notes.md")" = "v1.2.0"
+          grep -q 'A pending feature' "$RUNNER_TEMP/no-crate/release-notes.md"
+          echo "✓ notes rendered the newest section without a version input"
+
+      - name: cut without a version is refused (negative control)
+        id: no_version
+        continue-on-error: true
+        uses: ./.github/actions/cut-release
+        with:
+          dry-run: "true"
+          working-directory: ${{ runner.temp }}/no-crate
+
+      - name: assert the negative control failed
+        run: |
+          test "${{ steps.no_version.outcome }}" = "failure"
+          echo "✓ a versionless non-crate cut is refused"
+
+  # The repository's own changelog is release material — dogfood the check.
+  changelog-check:
+    name: changelog check (this repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The section/tag coherence derives from the tags.
+          fetch-depth: 0
+      - uses: ./.github/actions/changelog
+        with:
+          mode: check
+
   selftest-release-helpers:
     name: exercise the release guidance and the signed-tag gate
     runs-on: ubuntu-latest
