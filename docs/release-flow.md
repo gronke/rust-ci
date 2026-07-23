@@ -13,6 +13,13 @@ Every stage reads the version the manifest declares (through `cargo metadata`); 
 The first change after a release bumps the version; later pull requests in the same window ride along without bumping again.
 The `changelog` check enforces this on every pull request: while `CHANGELOG.md` carries `[Unreleased]` entries, the crate version must exceed the last released baseline by SemVer precedence, and a `**Breaking:**` entry demands more than a patch bump.
 
+### Repositories without a Cargo.toml
+
+The flow releases repositories that are not crates — this one dogfoods it.
+The version ladder everywhere is: the explicit `version` input, else Cargo.toml, else the changelog's newest released section (the manifest equivalent of a repository whose only version record is its changelog).
+The cut names the version as a `workflow_dispatch` input, `check-release-readiness` and `notes` fall back to the newest released section, and the pull-request `check` — with no next version to test — degrades to section/tag coherence: the newest released section must carry its tag, warning when it does not (a cut may be in flight before its merge-back).
+An empty `[Unreleased]` with the newest section untagged names the release in flight; with the tag present, nothing is left to release.
+
 ### Release-candidate versions
 
 A manifest version with a pre-release suffix (`1.0.0-rc1`) declares a release candidate, and the candidate is a release: it gets the full flow below, a signed `v1.0.0-rc1` tag, and a GitHub release flagged as a pre-release.
