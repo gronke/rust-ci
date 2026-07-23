@@ -2,15 +2,34 @@
 # Verify a cargo crate is ready to release. Inputs arrive as env vars from
 # action.yml; cargo runs in the step's working-directory.
 #   INPUT_PACKAGE           package name (required for a multi-member workspace)
+#   INPUT_VERSION           the declared version (skips cargo; for non-crate repositories)
+#   INPUT_CHANGELOG         changelog path for the no-crate fallback (default CHANGELOG.md)
 #   INPUT_EXPECTED_VERSION  version the crate must declare (else derived from a v* tag)
 #   INPUT_RUN_TESTS         "true" to also run cargo test --workspace
 set -euo pipefail
 
-# --- select the package from cargo metadata ----------------------------------
+# --- the declared version -----------------------------------------------------
+# The ladder: the explicit input, else Cargo.toml, else the changelog's newest
+# released section — the manifest equivalent of a repository without a crate.
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
-resolve_crate "$INPUT_PACKAGE"
-NAME="$CRATE_NAME" VERSION="$CRATE_VERSION" PUBLISHABLE="$CRATE_PUBLISHABLE"
-echo "crate: $NAME  version: $VERSION  publishable-to-crates.io: $PUBLISHABLE"
+source "$GITHUB_ACTION_PATH/../_lib/changelog-version.sh"
+NAME="" VERSION="" PUBLISHABLE="false"
+if [ -n "${INPUT_VERSION:-}" ]; then
+  VERSION="$INPUT_VERSION"
+  echo "declared version (input): $VERSION"
+elif [ -f Cargo.toml ]; then
+  resolve_crate "$INPUT_PACKAGE"
+  NAME="$CRATE_NAME" VERSION="$CRATE_VERSION" PUBLISHABLE="$CRATE_PUBLISHABLE"
+  echo "crate: $NAME  version: $VERSION  publishable-to-crates.io: $PUBLISHABLE"
+else
+  resolve_changelog_version "${INPUT_CHANGELOG:-CHANGELOG.md}"
+  VERSION="$CHANGELOG_LATEST"
+  if [ -z "$VERSION" ]; then
+    echo "::error::no Cargo.toml, no version input, and no released changelog section — nothing declares a version"
+    exit 1
+  fi
+  echo "declared version (the changelog's newest released section): $VERSION"
+fi
 
 # --- tag <-> version coherence -----------------------------------------------
 EXPECT="$INPUT_EXPECTED_VERSION"
@@ -19,7 +38,7 @@ if [ -z "$EXPECT" ] && [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
 fi
 if [ -n "$EXPECT" ]; then
   if [ "$EXPECT" != "$VERSION" ]; then
-    echo "::error::tag/expected version ($EXPECT) != Cargo.toml version ($VERSION)"
+    echo "::error::tag/expected version ($EXPECT) != declared version ($VERSION)"
     exit 1
   fi
   echo "✓ version matches ($VERSION)"
@@ -29,7 +48,7 @@ fi
 
 # --- publishable vs internal -------------------------------------------------
 if [ "$PUBLISHABLE" != "true" ]; then
-  echo "::notice::publish = false — internal crate; skipping crates.io checks"
+  echo "::notice::not publishable to crates.io (publish = false, or no crate); skipping crates.io checks"
 else
   echo "Running cargo publish --dry-run for $NAME"
   if [ -n "$INPUT_PACKAGE" ]; then
@@ -53,7 +72,11 @@ fi
 
 # --- optional test pass ------------------------------------------------------
 if [ "$INPUT_RUN_TESTS" = "true" ]; then
-  cargo test --workspace
+  if [ -f Cargo.toml ]; then
+    cargo test --workspace
+  else
+    echo "::notice::run-tests requested but there is no Cargo.toml; skipping"
+  fi
 fi
 
-echo "✓ release readiness checks passed for $NAME $VERSION"
+echo "✓ release readiness checks passed for ${NAME:+$NAME }$VERSION"

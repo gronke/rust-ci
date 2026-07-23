@@ -1,6 +1,7 @@
 name: Cut release
 description: >-
-  Start a release for the version Cargo.toml declares: cut the changelog's
+  Start a release for the version Cargo.toml declares — or the `version`
+  input where there is no crate: cut the changelog's
   [Unreleased] section (the sibling changelog action's cut mode), push the
   release branch, open the merge-back pull request, and dispatch the release
   pipeline on the branch — a push made with the workflow token triggers no
@@ -29,6 +30,12 @@ inputs:
     default: "true"
   package:
     description: Package name (required for a workspace with more than one member).
+    required: false
+    default: ""
+  version:
+    description: >-
+      The version to release, overriding Cargo.toml resolution. Required for a
+      repository without a Cargo.toml.
     required: false
     default: ""
   working-directory:
@@ -89,6 +96,7 @@ runs:
         INPUT_PIPELINE_WORKFLOW: ${{ inputs.pipeline-workflow }}
         INPUT_MERGE_BACK: ${{ inputs.merge-back }}
         INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_VERSION: ${{ inputs.version }}
         INPUT_CHANGELOG: ${{ inputs.changelog }}
         INPUT_DATE: ${{ inputs.date }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}

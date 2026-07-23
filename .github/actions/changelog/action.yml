@@ -29,7 +29,11 @@ inputs:
     required: false
     default: "CHANGELOG.md"
   version:
-    description: "notes: the version to render (defaults to the crate's declared version)."
+    description: >-
+      The version, overriding Cargo.toml resolution in every mode — for notes
+      the section to render, for check the version the bump rule tests, for
+      cut the released section's number. Required alternative for a repository
+      without a crate (check falls back to section/tag coherence without it).
     required: false
     default: ""
   out:

@@ -6,7 +6,8 @@
 #                           (render a released section as plain text for a tag/release)
 #   INPUT_PACKAGE           package name (required for a multi-member workspace)
 #   INPUT_CHANGELOG         changelog path, relative to the working directory
-#   INPUT_VERSION           notes: the version to render (else the crate's declared version)
+#   INPUT_VERSION           the version, any mode (else resolved from Cargo.toml; a repo
+#                           without a crate needs it for cut, and check degrades gracefully)
 #   INPUT_OUT               notes: file the rendered notes are written to (default release-notes.md)
 #   INPUT_TITLE             notes: optional subject line led before the section (e.g. a git tag subject)
 #   INPUT_BASELINE_VERSION  check: version the crate must exceed (else the greatest release
@@ -15,6 +16,7 @@
 set -euo pipefail
 
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
+source "$GITHUB_ACTION_PATH/../_lib/changelog-version.sh"
 source "$GITHUB_ACTION_PATH/../_lib/semver.sh"
 
 CHANGELOG="${INPUT_CHANGELOG:-CHANGELOG.md}"
@@ -23,9 +25,11 @@ if [ ! -f "$CHANGELOG" ]; then
   exit 1
 fi
 
-# notes may name the version explicitly (no cargo needed); check/cut derive it.
+# The version ladder: the explicit input, else Cargo.toml. A repository
+# without either still checks (section/tag coherence below) but cannot cut
+# or render a version it does not know.
 VERSION="${INPUT_VERSION:-}"
-if [ -z "$VERSION" ]; then
+if [ -z "$VERSION" ] && [ -f Cargo.toml ]; then
   resolve_crate "${INPUT_PACKAGE:-}"
   VERSION="$CRATE_VERSION"
 fi
@@ -55,8 +59,23 @@ case "${INPUT_MODE:-}" in
       echo "✓ [Unreleased] is empty; nothing to check"
       exit 0
     fi
+    if [ -z "$VERSION" ]; then
+      # No crate and no version input: the bump rule needs the next version,
+      # which only exists at dispatch time here. Check what the changelog
+      # itself declares instead — the newest released section must be tagged
+      # (a warning when not: a cut may be in flight before its merge-back).
+      resolve_changelog_version "$CHANGELOG"
+      if [ -z "$CHANGELOG_LATEST" ]; then
+        echo "✓ [Unreleased] carries entries and nothing is released yet; the version arrives at cut time"
+      elif [ -n "$(git tag -l "v${CHANGELOG_LATEST}" 2>/dev/null)" ]; then
+        echo "✓ [Unreleased] carries entries and the newest released section (v${CHANGELOG_LATEST}) is tagged; the version arrives at cut time"
+      else
+        echo "::warning::the newest released section (${CHANGELOG_LATEST}) has no v${CHANGELOG_LATEST} tag — a release may be in flight, or was never finished"
+      fi
+      exit 0
+    fi
     if ! semver_valid "$VERSION"; then
-      echo "::error::the crate version ($VERSION) is not a MAJOR.MINOR.PATCH[-prerelease] version"
+      echo "::error::the declared version ($VERSION) is not a MAJOR.MINOR.PATCH[-prerelease] version"
       exit 1
     fi
     BASE="${INPUT_BASELINE_VERSION:-}"
@@ -104,6 +123,10 @@ case "${INPUT_MODE:-}" in
     ;;
 
   cut)
+    if [ -z "$VERSION" ]; then
+      echo "::error::cut needs a version — none given and no Cargo.toml declares one"
+      exit 1
+    fi
     HEADINGS="$(grep -c '^## \[Unreleased\]' "$CHANGELOG" || true)"
     if [ "$HEADINGS" -eq 0 ]; then
       echo "::error::no [Unreleased] section to cut in $CHANGELOG"
@@ -145,6 +168,15 @@ case "${INPUT_MODE:-}" in
     ;;
 
   notes)
+    if [ -z "$VERSION" ]; then
+      # The newest released section is what a release branch renders.
+      resolve_changelog_version "$CHANGELOG"
+      VERSION="$CHANGELOG_LATEST"
+      if [ -z "$VERSION" ]; then
+        echo "::error::notes needs a version — none given, no Cargo.toml, and no released section"
+        exit 1
+      fi
+    fi
     OUT="${INPUT_OUT:-release-notes.md}"
     if ! grep -q "^## \[$VERSION\]" "$CHANGELOG"; then
       echo "::error::no [$VERSION] section in $CHANGELOG"
