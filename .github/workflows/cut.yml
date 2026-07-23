@@ -1,0 +1,29 @@
+name: Cut release
+
+# This repository has no Cargo.toml — the version arrives here, and the local
+# actions release the very commit that carries them.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to release (no leading v), e.g. 1.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write        # push the release branch
+  pull-requests: write   # open the merge-back pull request
+  actions: write         # dispatch the release pipeline
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The merge-back needs history; the changelog coherence needs tags.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/cut-release
+        with:
+          version: ${{ inputs.version }}
