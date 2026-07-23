@@ -221,6 +221,19 @@ jobs:
       # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
       - name: Publish
         run: gh release edit "v${VERSION}" --draft=false
+
+      # OPTIONAL: maintain a moving v<MAJOR> tag on the latest release, for
+      # consumers who pin the major (actions, not crates). Skips prereleases.
+      # Drop the step to keep re-tagging a manual, signed act.
+      - name: Advance the moving major tag
+        run: |
+          set -euo pipefail
+          case "$VERSION" in *-*) echo "prerelease; the moving major stays"; exit 0 ;; esac
+          MAJOR="v${VERSION%%.*}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f -a -m "${MAJOR} (moving major) -> v${VERSION}" "${MAJOR}" "${GITHUB_SHA}"
+          git push -f origin "refs/tags/${MAJOR}"
 ```
 
 ## Repository configuration the flow relies on
@@ -228,6 +241,7 @@ jobs:
 - **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
 - **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
   The markers are pushed unsigned with the workflow token, so a rule covering all tags blocks the candidate loop: exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule, and give the release managers a bypass on the final `v*` restriction so the signed tag can be pushed at all.
+  The optional moving-major step force-moves a bare `v<MAJOR>` tag unsigned, so automating it means excluding those names too; without the step, re-tagging the major stays a manual, signed act.
   `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.
 - **Branch ruleset**: restrict `release/v*` creation and pushes to release managers and Actions.
 - **A `release` environment** on the publish job; add required reviewers where a human pause before publication is wanted.
