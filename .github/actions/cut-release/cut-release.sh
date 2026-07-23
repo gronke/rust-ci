@@ -8,6 +8,7 @@
 #   INPUT_PIPELINE_WORKFLOW workflow file to dispatch (empty skips)
 #   INPUT_MERGE_BACK        "true" opens the merge-back pull request
 #   INPUT_PACKAGE           package name (required for a multi-member workspace)
+#   INPUT_VERSION           the version to release (else resolved from Cargo.toml)
 #   INPUT_CHANGELOG         changelog path, relative to the working directory
 #   INPUT_DATE              date stamped on the released section (else today, UTC)
 #   INPUT_DRY_RUN           "true" cuts the working tree but touches no remote
@@ -17,8 +18,17 @@ set -euo pipefail
 
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
 
-resolve_crate "${INPUT_PACKAGE:-}"
-VERSION="$CRATE_VERSION"
+# The version: the explicit input, else Cargo.toml. A repository without a
+# crate has nothing to resolve — the input is the only source.
+VERSION="${INPUT_VERSION:-}"
+if [ -z "$VERSION" ]; then
+  if [ ! -f Cargo.toml ]; then
+    echo "::error::no Cargo.toml here and no version input — a non-crate repository must name the version to cut"
+    exit 1
+  fi
+  resolve_crate "${INPUT_PACKAGE:-}"
+  VERSION="$CRATE_VERSION"
+fi
 BRANCH="${INPUT_BRANCH_PREFIX:-release/v}${VERSION}"
 
 # The branch guard runs first, before the changelog rewrite touches the tree.

@@ -4,11 +4,19 @@ description: >-
   version, and (for publishable crates) `cargo publish --dry-run` succeeds and
   the version is not already on crates.io. Crates with `publish = false` are
   validated for tag/version coherence only, so the action is equally useful for
-  internal crates.
+  internal crates. A repository without a Cargo.toml declares its version
+  through the `version` input — or, absent both, through its changelog's
+  newest released section — and is validated for tag/version coherence only.
 
 inputs:
   package:
     description: Package name to check (required for a workspace with more than one member).
+    required: false
+    default: ""
+  version:
+    description: >-
+      The declared version, overriding Cargo.toml resolution — for a repository
+      without a crate. Skips the crates.io checks (nothing is publishable).
     required: false
     default: ""
   working-directory:
@@ -22,6 +30,12 @@ inputs:
       the coherence check.
     required: false
     default: ""
+  changelog:
+    description: >-
+      Changelog path for the no-crate fallback (the newest released section
+      declares the version), relative to the working directory.
+    required: false
+    default: "CHANGELOG.md"
   run-tests:
     description: Also run `cargo test --workspace` (off by default; CI usually gated already).
     required: false
@@ -35,6 +49,8 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CHANGELOG: ${{ inputs.changelog }}
         INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
         INPUT_RUN_TESTS: ${{ inputs.run-tests }}
       run: bash "$GITHUB_ACTION_PATH/check-release-readiness.sh"
