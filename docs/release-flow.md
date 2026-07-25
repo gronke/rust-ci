@@ -72,7 +72,8 @@ git tag -s -F <(git tag -l --format='%(contents)' vX.Y.Z-rcN) vX.Y.Z vX.Y.Z-rcN^
 git push origin vX.Y.Z
 ```
 
-The tag must be annotated, signed with a key GitHub can verify, and point at exactly the commit the newest marker sealed — the pipeline refuses anything else.
+The tag must be annotated, signed with a key GitHub can verify, and carry exactly the content the newest marker sealed — the pipeline compares trees, so the marker's commit and a rebase-merged merge-back's tip (the identical patch under a new SHA) are both valid targets.
+On a rebase-only repository, merge the merge-back first and sign the rebased tip: the tag then lives on the default branch instead of an orphaned release commit.
 Its message is copied from the marker (your `release-notes.md`, when you produced one), so there is nothing to retype; the `release-guidance` step prints this command with the newest `rcN` filled in.
 Push the tag by name; never `git push --tags`, which pushes every local tag along.
 A repository tagging script can still override the message via the guidance step's `tag-script` input.
@@ -85,7 +86,7 @@ A rejected version number is only consumed if the draft was published — an unp
 
 ### What the tag push triggers
 
-The pipeline's final path runs the signature gate, asserts the tag seals the newest marker commit, attests and signs the assets where the repository is public, and the publish job flips the draft live.
+The pipeline's final path runs the signature gate, asserts the tag carries the newest marker's tree, attests and signs the assets where the repository is public, and the publish job flips the draft live.
 After publication: registry publishing (`cargo publish`) stays a manual, deliberate step; promote the pre-release flag and merge the merge-back pull request per your process.
 
 ## The reference pipeline
@@ -221,8 +222,13 @@ jobs:
           done
           marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" --jq '.object.sha')"
           marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" --jq '.object.sha' 2>/dev/null || printf '%s' "$marker_commit")"
-          if [ "$marker_commit" != "$GITHUB_SHA" ]; then
-            echo "::error::v${VERSION} points at ${GITHUB_SHA} but the last build (v${VERSION}-rc${n}) is ${marker_commit}"
+          # The seal is the content, not the commit: a rebase-merged merge-back
+          # rewrites the SHA but carries the identical tree, and that tip is a
+          # valid tag target. Trees resolve through the API — no history needed.
+          tag_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.tree.sha')"
+          marker_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${marker_commit}" --jq '.commit.tree.sha')"
+          if [ "$tag_tree" != "$marker_tree" ]; then
+            echo "::error::v${VERSION} (${GITHUB_SHA}, tree ${tag_tree}) does not carry the content the last build sealed (v${VERSION}-rc${n} at ${marker_commit}, tree ${marker_tree})"
             exit 1
           fi
       # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
@@ -258,7 +264,7 @@ jobs:
 ## When a gate refuses
 
 - *Lightweight tag* or *not a verified signed tag* — recreate the tag annotated (`git tag -s`) with a key your GitHub account knows, and force-push it by name.
-- *The tag points at X but the last build is Y* — the branch moved after the candidate you meant to seal; re-tag the newest marker commit, or push the branch and let a new candidate build first.
+- *The tag does not carry the content the last build sealed* — the branch moved after the candidate you meant to seal, or the merge-back rebase brought other changes along; re-tag the newest marker commit (or a tree-identical tip), or push the branch and let a new candidate build first.
 - *Expected version != Cargo.toml version* — the ref name, the crate version, and the changelog section must agree; fix the branch content.
 - *already published on crates.io* / *a published release exists* — immutable names cannot be reused, not even after deleting the release; bump the version and cut again.
 - *GH013 / Cannot create ref on the marker push* — a tag ruleset restricts `v*-rc*`: the markers are pushed unsigned with the workflow token, so exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule (the final `v*` rules stay).
