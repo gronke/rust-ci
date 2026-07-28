@@ -7,12 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- draft-release and publish-draft-release: the candidate and publish halves of the pipeline as single steps — notes render + draft create/refresh + marker push, and tree seal + draft flip + moving major. The reference pipeline and the dogfooded release.yml shrink to job scaffolding around them.
 - promote-release: candidate promotion governed by `sign-tags` — `manual` defers to the release manager (implied by an active signature-requiring tag ruleset, and by unreadable rulesets), `off` lets the pipeline tag with the marker's message, publish the draft, and advance the moving major in one job.
 - Importable tag rulesets under `.github/rulesets/` — `tags-signed.json` and `tags-maintainer-only.json` carry the marker and moving-major exclusions the flow relies on.
 - docs/release-flow.md: the release manager's runbook — the signed path start to finish, with the recovery moves for rejected markers and refused seals.
 
 ### Changed
 
+- The moving major advances to the highest stable release in its line and only onto a commit reachable from the default branch — publishing a backport patch no longer rewinds it. A stable version's publish also drops the draft's pre-release flag.
 - release-flow: the publish gate seals the tag against the newest marker's tree, not its commit — a rebase-merged merge-back rewrites the SHA but carries the identical content, so on rebase-only repositories the merge-back lands first and the signed tag points at the rebased tip.
 
 ## [1.2.0] - 2026-07-23

@@ -184,56 +184,33 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-      # SLOT: produce release-notes.md — the draft body and the marker/tag message.
-      # Optional: without it the draft gets a minimal note and the marker a bare
-      # candidate label. A Keep a Changelog file renders with the changelog action:
-      #   - uses: gronke/rust-ci/.github/actions/changelog@v1
-      #     with: { mode: notes, version: ${{ env.VERSION }}, title: v${{ env.VERSION }} }
-      # The title leads the message so the signed tag's subject is the version, not
-      # the section's first group heading. Other formats write release-notes.md any way.
-      # SLOT: build the release assets (SBOMs, binaries, …) into ./dist.
-      - name: Create or refresh the draft pre-release
+
+      # Notes render (Keep a Changelog), draft create/refresh, marker push — one
+      # step. The title leads the message so the signed tag's subject is the
+      # version. A repository with another notes format keeps the expanded steps
+      # this action grew from (the changelog action's `notes` mode shows the
+      # rendering contract).
+      - uses: gronke/rust-ci/.github/actions/draft-release@v1
+        id: draft
+        with:
+          version: ${{ env.VERSION }}
+
+      # SLOT: build the release assets (SBOMs, binaries, …) into ./dist and
+      # attach them to the draft. A library / publish = false crate produces
+      # none, so guard the glob — an unguarded dist/* fails when empty.
+      - name: Upload build assets
         run: |
           set -euo pipefail
-          notes=(--notes "Release v${VERSION}.")
-          [ -s release-notes.md ] && notes=(--notes-file release-notes.md)
-          if gh release view "v${VERSION}" >/dev/null 2>&1; then
-            gh release edit "v${VERSION}" "${notes[@]}"
-          else
-            gh release create "v${VERSION}" --draft --prerelease --title "v${VERSION}" "${notes[@]}"
-          fi
-          # SLOT: upload build assets, if any. A library / publish = false crate
-          # produces none, so guard the glob — an unguarded dist/* fails when empty.
           if compgen -G 'dist/*' >/dev/null; then
             gh release upload "v${VERSION}" dist/* --clobber
           fi
-      - name: Advance the candidate marker tag
-        id: marker
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          n=1
-          while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" >/dev/null 2>&1; do
-            n=$((n + 1))
-          done
-          # The marker's message is release-notes.md when present (so promoting a
-          # candidate copies it into the signed tag), else a bare candidate label.
-          if [ -s release-notes.md ]; then
-            git tag -a -F release-notes.md "v${VERSION}-rc${n}" "${GITHUB_SHA}"
-          else
-            git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
-          fi
-          git push origin "refs/tags/v${VERSION}-rc${n}" || {
-            echo "::error::the marker push was rejected (GH013) — the tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting and signature-requiring tag rules. See “Repository configuration the flow relies on”."
-            exit 1
-          }
-          echo "marker=v${VERSION}-rc${n}" >> "$GITHUB_OUTPUT"
+
       - uses: gronke/rust-ci/.github/actions/release-guidance@v1
         with:
           version: ${{ env.VERSION }}
-          marker-tag: ${{ steps.marker.outputs.marker }}
+          marker-tag: ${{ steps.draft.outputs.marker }}
           commit: ${{ github.sha }}
+          draft-url: ${{ steps.draft.outputs.url }}
 
       # sign-tags governs what happens next: an active signature-requiring tag
       # ruleset (or `sign-tags: manual`) defers to the release manager and the
@@ -242,7 +219,7 @@ jobs:
       - uses: gronke/rust-ci/.github/actions/promote-release@v1
         with:
           version: ${{ env.VERSION }}
-          marker-tag: ${{ steps.marker.outputs.marker }}
+          marker-tag: ${{ steps.draft.outputs.marker }}
           # sign-tags: manual        # explicit; empty auto-detects from the rulesets
           # moving-major: "true"     # advance v<MAJOR> on an off-mode promotion
 
@@ -256,45 +233,18 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment: release # add required reviewers here for a human pause
-    env:
-      VERSION: ${{ needs.gate.outputs.version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-      - name: The tag must seal the newest candidate marker
-        run: |
-          set -euo pipefail
-          n=1
-          while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc$((n + 1))" >/dev/null 2>&1; do
-            n=$((n + 1))
-          done
-          marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" --jq '.object.sha')"
-          marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" --jq '.object.sha' 2>/dev/null || printf '%s' "$marker_commit")"
-          # The seal is the content, not the commit: a rebase-merged merge-back
-          # rewrites the SHA but carries the identical tree, and that tip is a
-          # valid tag target. Trees resolve through the API — no history needed.
-          tag_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.tree.sha')"
-          marker_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${marker_commit}" --jq '.commit.tree.sha')"
-          if [ "$tag_tree" != "$marker_tree" ]; then
-            echo "::error::v${VERSION} (${GITHUB_SHA}, tree ${tag_tree}) does not carry the content the last build sealed (v${VERSION}-rc${n} at ${marker_commit}, tree ${marker_tree})"
-            exit 1
-          fi
       # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
-      - name: Publish
-        run: gh release edit "v${VERSION}" --draft=false
 
-      # OPTIONAL: maintain a moving v<MAJOR> tag on the latest release, for
-      # consumers who pin the major (actions, not crates). Skips prereleases.
-      # Drop the step to keep re-tagging a manual, signed act.
-      - name: Advance the moving major tag
-        run: |
-          set -euo pipefail
-          case "$VERSION" in *-*) echo "prerelease; the moving major stays"; exit 0 ;; esac
-          MAJOR="v${VERSION%%.*}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f -a -m "${MAJOR} (moving major) -> v${VERSION}" "${MAJOR}" "${GITHUB_SHA}"
-          git push -f origin "refs/tags/${MAJOR}"
+      # Tree seal against the newest marker, the draft flip (a stable version
+      # sheds the pre-release flag), and the moving major advancing to the
+      # highest stable release in its line — one step. Drop `moving-major` to
+      # keep re-tagging a manual, signed act.
+      - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
+        with:
+          version: ${{ needs.gate.outputs.version }}
+          moving-major: "true"
 ```
 
 ## Repository configuration the flow relies on

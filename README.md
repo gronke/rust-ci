@@ -143,6 +143,28 @@ Writes the release manager's next steps into the run's step summary, as the last
     # tag-script: scripts/tag-release.sh  # featured in the accept commands
 ```
 
+### `draft-release`
+
+Build the reviewable candidate in one step: render the changelog's released section into `release-notes.md`, create or refresh the draft pre-release it becomes the body of, and push the next unsigned `v<version>-rcN` marker carrying the same text. Outputs the marker tag and the draft URL — feed them to `release-guidance` (and `promote-release`).
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/draft-release@v1
+  id: draft
+  with:
+    version: ${{ needs.gate.outputs.version }}
+```
+
+### `publish-draft-release`
+
+Publish the reviewed candidate in one step: seal the human-pushed final tag against the newest marker by tree, flip the draft live (a stable version sheds the pre-release flag), and optionally advance the moving `v<MAJOR>` to the highest stable release in its line — only ever onto a commit on the default branch.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
+  with:
+    version: ${{ needs.gate.outputs.version }}
+    moving-major: "true"
+```
+
 ### `promote-release`
 
 Promotes a candidate from within the pipeline, or defers to the release manager — governed by `sign-tags`.
