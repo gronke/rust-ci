@@ -607,6 +607,85 @@ jobs:
   # The Docker action set: build the image locally (no GHCR dependency to prove)
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.
+  # promote-release: mode resolution against canned rulesets (a PATH-shimmed
+  # fake gh — no real releases touched) and the off-mode promotion end to end
+  # against a scratch origin.
+  selftest-promote-release:
+    name: exercise the promote-release modes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: stage a scratch repository with a marker, and a fake gh
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/promote" "$RUNNER_TEMP/promote-origin.git" "$RUNNER_TEMP/fakebin"
+          git init -q --bare "$RUNNER_TEMP/promote-origin.git"
+          mkdir -p "$RUNNER_TEMP/promote" "$RUNNER_TEMP/fakebin"
+          cd "$RUNNER_TEMP/promote"
+          git init -q
+          git remote add origin "$RUNNER_TEMP/promote-origin.git"
+          git -c user.name=selftest -c user.email=selftest@invalid.example commit -q --allow-empty -m release
+          git -c user.name=selftest -c user.email=selftest@invalid.example tag -a -m "v9.9.0
+
+          Added:
+
+          - The thing." v9.9.0-rc1
+          git push -q origin HEAD v9.9.0-rc1
+          cat > "$RUNNER_TEMP/fakebin/gh" <<'FAKE'
+          #!/usr/bin/env bash
+          case "$*" in
+            *"/rulesets "*|*"/rulesets") if [ "${FAKE_RULESETS_FAIL:-}" = "1" ]; then exit 1; fi; printf '%s' "${FAKE_RULESET_IDS:-}" ;;
+            *"/rulesets/"*) printf '%s\n' "${FAKE_RULESET_RULES:-}" ;;
+            "release edit"*) echo "FLIPPED: $*" >> "${FAKE_LOG:?}" ;;
+            *) echo "fake gh: unhandled: $*" >&2; exit 64 ;;
+          esac
+          FAKE
+          chmod +x "$RUNNER_TEMP/fakebin/gh"
+
+      - name: every manual road ends at the release manager
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/promote"
+          run_promote() {
+            PATH="$RUNNER_TEMP/fakebin:$PATH" FAKE_LOG="$RUNNER_TEMP/gh.log" \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/promote-release" \
+            GITHUB_REPOSITORY=selftest/promote GITHUB_SHA="$(git rev-parse HEAD)" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" GITHUB_STEP_SUMMARY="$RUNNER_TEMP/summary.md" \
+            INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_SIGN_TAGS="$1" \
+            INPUT_MOVING_MAJOR="$2" INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
+            FAKE_RULESET_IDS="$3" FAKE_RULESET_RULES="$4" FAKE_RULESETS_FAIL="$5" \
+            bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
+          }
+          : > "$RUNNER_TEMP/out.txt"; run_promote manual false "" "" ""
+          grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
+          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "required_signatures" ""
+          grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
+          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "" "" "1"
+          grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
+          test -z "$(git ls-remote origin refs/tags/v9.9.0)"
+          echo "✓ explicit, detected, and unreadable-ruleset roads all defer to the release manager"
+
+      - name: off promotes — tag with the marker message, flip, moving major
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/promote"
+          : > "$RUNNER_TEMP/out.txt"; : > "$RUNNER_TEMP/gh.log"
+          PATH="$RUNNER_TEMP/fakebin:$PATH" FAKE_LOG="$RUNNER_TEMP/gh.log" \
+          GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/promote-release" \
+          GITHUB_REPOSITORY=selftest/promote GITHUB_SHA="$(git rev-parse HEAD)" \
+          GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" \
+          INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_SIGN_TAGS="" \
+          INPUT_MOVING_MAJOR=true INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
+          FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
+          bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
+          grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
+          grep -q 'FLIPPED: release edit v9.9.0 --draft=false' "$RUNNER_TEMP/gh.log"
+          test -n "$(git ls-remote origin refs/tags/v9.9.0)"
+          test -n "$(git ls-remote origin refs/tags/v9)"
+          test "$(git tag -l --format='%(contents:subject)' v9.9.0)" = "v9.9.0"
+          echo "✓ off-mode promotion tagged, flipped, and advanced the major"
+
   selftest-docker:
     name: exercise the Docker actions
     runs-on: ubuntu-latest

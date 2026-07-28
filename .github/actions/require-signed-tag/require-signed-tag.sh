@@ -9,6 +9,8 @@
 #   INPUT_CHECK_RULESET  "true" warns when no active tag ruleset requires signatures
 set -euo pipefail
 
+source "$GITHUB_ACTION_PATH/../_lib/tag-rulesets.sh"
+
 TAG="${INPUT_TAG:-}"
 if [ -z "$TAG" ]; then
   case "${GITHUB_REF:-}" in
@@ -63,22 +65,15 @@ fi
 # warn-only), warn if no active tag ruleset requires signatures. A token that
 # cannot read the rulesets skips the check quietly.
 if [ "${INPUT_CHECK_RULESET:-true}" = "true" ] && [ "${INPUT_WARN_ONLY:-false}" != "true" ]; then
-  if RULESET_IDS="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets" \
-    --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id' 2>/dev/null)"; then
-    ALIGNED="false"
-    for ID in $RULESET_IDS; do
-      if gh api "repos/${GITHUB_REPOSITORY}/rulesets/${ID}" \
-        --jq '.rules[].type' 2>/dev/null | grep -qx 'required_signatures'; then
-        ALIGNED="true"
-        break
-      fi
-    done
-    if [ "$ALIGNED" != "true" ]; then
+  case "$(signature_tag_ruleset_active)" in
+    true) ;;
+    false)
       echo "::warning::the workflow requires a signed tag, but no active tag ruleset requires signatures — the gate refuses builds, it cannot prevent an unsigned tag from existing; add a tag ruleset with required signatures to align the repository with this preference"
-    fi
-  else
-    echo "::notice::could not read the repository rulesets to verify signature-rule alignment; skipping"
-  fi
+      ;;
+    *)
+      echo "::notice::could not read the repository rulesets to verify signature-rule alignment; skipping"
+      ;;
+  esac
 fi
 
 write_outputs "true" "$COMMIT" "$REASON"

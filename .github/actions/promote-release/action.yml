@@ -1,0 +1,74 @@
+name: Promote release
+description: >-
+  Promote a candidate from within the pipeline, or defer to the release
+  manager — governed by `sign-tags`. With `manual` (the mode a repository's
+  active signature-requiring tag ruleset implies when nothing is configured)
+  the step is a no-op beside the guidance summary: a human signs and pushes
+  the final tag. With `off` the pipeline creates the annotated final tag on
+  the built commit — carrying the newest marker's message — pushes it,
+  publishes the draft, and optionally advances the moving major, all in one
+  job: a workflow-token tag push triggers no second run. An unsigned
+  promotion binds the release's provenance to whoever holds the token; the
+  repository ruleset files under `.github/rulesets/` set up the signed
+  alternative.
+
+inputs:
+  version:
+    description: The version being released (no leading "v").
+    required: true
+  marker-tag:
+    description: The candidate marker tag this build created (e.g. v1.2.3-rc2).
+    required: true
+  sign-tags:
+    description: >-
+      "manual" defers to the release manager; "off" promotes from the
+      pipeline. Empty auto-detects: an active signature-requiring tag ruleset
+      means manual, none means off, unreadable rulesets mean manual (never
+      push an unsigned tag on a repository whose policy is unknown).
+    required: false
+    default: ""
+  moving-major:
+    description: Advance the moving v<MAJOR> tag after an `off`-mode promotion; prereleases skip.
+    required: false
+    default: "false"
+  token:
+    description: Token for the ruleset probe, the tag push, and the release edit.
+    required: false
+    default: ${{ github.token }}
+  git-user-name:
+    description: Committer identity for the promoted tag.
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: Committer email for the promoted tag.
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+  working-directory:
+    description: Directory of the checked-out repository.
+    required: false
+    default: "."
+
+outputs:
+  promoted:
+    description: '"true" when the pipeline created and published the final tag; "false" when deferred to the release manager.'
+    value: ${{ steps.promote.outputs.promoted }}
+  mode:
+    description: The effective sign-tags mode ("manual" or "off").
+    value: ${{ steps.promote.outputs.mode }}
+
+runs:
+  using: composite
+  steps:
+    - name: Promote or defer
+      id: promote
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_MARKER_TAG: ${{ inputs.marker-tag }}
+        INPUT_SIGN_TAGS: ${{ inputs.sign-tags }}
+        INPUT_MOVING_MAJOR: ${{ inputs.moving-major }}
+        INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
+        INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/promote-release.sh"

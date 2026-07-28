@@ -7,6 +7,23 @@ The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a **d
 Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the whole loop can run, fail, and be deleted without consequence.
 Publication is the one irreversible step: a published release is immutable — assets frozen, tag locked, and the tag name permanently consumed even if the release is deleted afterwards.
 
+## The release manager's runbook
+
+The signed path (`sign-tags: manual`, the mode an active signature-requiring tag ruleset implies), start to finish:
+
+1. Dispatch **Cut release** on the default branch — on a repository without a Cargo.toml, type the version into the dispatch form.
+2. Watch the candidate build on `release/vX.Y.Z`: it refreshes the draft pre-release with the rendered notes and seals a `vX.Y.Z-rcN` marker on the built commit.
+3. On a rebase-only repository, merge the merge-back pull request now (one "Approve and run" click on its CI when the cut ran with the workflow token) — the tree seal accepts the rebased tip, and your tag will live on the default branch.
+4. Run the two commands from the run's guidance summary: fetch the markers, then `git tag -s -F <(…marker message…) vX.Y.Z <commit>` on the marker's commit — or the rebase-merged tip — and push the tag by name.
+5. The tag push runs the final path: signature gate, tree seal, draft flip, and the moving major where enabled.
+6. For a crates.io crate, `cargo publish` stays a deliberate manual step; then delete the release branch.
+
+When something refuses:
+
+- The marker push is rejected (GH013) — the tag ruleset must let Actions create unsigned `v*-rc*`; import [`tags-signed.json`](../.github/rulesets/tags-signed.json) and [`tags-maintainer-only.json`](../.github/rulesets/tags-maintainer-only.json), which carry the exclusions.
+- The seal refuses your tag — the branch moved past the candidate, or the tag's tree differs from the newest marker's; push the intended tip as the release branch, let the candidate reseal it, and `gh run rerun <run-id> --failed` on the tag run.
+- The full refusal list is at the end of this guide.
+
 ## Versions come from Cargo.toml
 
 Every stage reads the version the manifest declares (through `cargo metadata`); nothing else names a version.
@@ -57,6 +74,26 @@ jobs:
 Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit — carrying `release-notes.md` as its message, or a bare candidate label when there is none — and the guidance summary for the release manager.
 Fixes land as ordinary pushes to the branch; rc2, rc3, … refresh the same draft.
 Marker tags append one `-rcN` to the version's tag name — including on a release-candidate version, where `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
+
+## Signing: the sign-tags mode
+
+Whether a human seals the release is a mode, resolved by the `promote-release` step at the end of every candidate build:
+
+- **`manual`** — the pipeline stops at the guidance summary and the release manager signs and pushes the final tag (the runbook above).
+  The signature binds the release's provenance to a human key that GitHub verifies; this is the mode for anything other people consume.
+- **`off`** — the pipeline promotes the candidate itself: an annotated, unsigned final tag on the built commit carrying the marker's message, the draft published, and optionally the moving major advanced — one job, no ceremony.
+  Provenance then rests on whoever holds the workflow token.
+- **Unconfigured** — the repository's own enforcement decides: an active signature-requiring tag ruleset resolves to `manual`, none resolves to `off`, and unreadable rulesets resolve to `manual` (never push an unsigned tag on a repository whose policy is unknown).
+
+Repositories that enforce signed tags apply the shipped ruleset files, so the enforcement and the detection agree:
+
+```sh
+gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-signed.json
+gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-maintainer-only.json
+```
+
+(Or Settings → Rules → Rulesets → New ruleset → Import a ruleset.)
+Both exclude the `v*-rc*` markers and the bare moving majors, and the maintainer rule carries a Repository-admin bypass for the final signed push.
 
 ## What to do with the draft pre-release
 
@@ -198,6 +235,17 @@ jobs:
           marker-tag: ${{ steps.marker.outputs.marker }}
           commit: ${{ github.sha }}
 
+      # sign-tags governs what happens next: an active signature-requiring tag
+      # ruleset (or `sign-tags: manual`) defers to the release manager and the
+      # guidance above; without one the pipeline promotes the candidate itself —
+      # unsigned final tag with the marker's message, draft published, one job.
+      - uses: gronke/rust-ci/.github/actions/promote-release@v1
+        with:
+          version: ${{ env.VERSION }}
+          marker-tag: ${{ steps.marker.outputs.marker }}
+          # sign-tags: manual        # explicit; empty auto-detects from the rulesets
+          # moving-major: "true"     # advance v<MAJOR> on an off-mode promotion
+
   publish:
     name: publish the release (final path)
     needs: gate
@@ -253,6 +301,7 @@ jobs:
 
 - **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
 - **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
+  The shipped [`tags-signed.json`](../.github/rulesets/tags-signed.json) and [`tags-maintainer-only.json`](../.github/rulesets/tags-maintainer-only.json) carry exactly this shape.
   The markers are pushed unsigned with the workflow token, so a rule covering all tags blocks the candidate loop: exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule, and give the release managers a bypass on the final `v*` restriction so the signed tag can be pushed at all.
   The optional moving-major step force-moves a bare `v<MAJOR>` tag unsigned, so automating it means excluding those names too; without the step, re-tagging the major stays a manual, signed act.
   `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.
