@@ -1,0 +1,54 @@
+name: Publish draft release
+description: >-
+  Publish the reviewed candidate GitHub Release in one step: seal the human-pushed final tag
+  against the newest `v<version>-rcN` marker by TREE (a rebase-merged
+  merge-back rewrites the commit but carries the identical content), flip the
+  draft live — dropping the pre-release flag for a stable version — and
+  optionally advance the moving `v<MAJOR>` tag to the highest stable release
+  in its line, only ever onto a commit reachable from the default branch.
+  Publishing the crate to crates.io is a separate step — see `cargo-publish`.
+
+inputs:
+  version:
+    description: The version being published (no leading "v").
+    required: true
+  moving-major:
+    description: Advance the moving v<MAJOR> tag after publishing; prereleases skip.
+    required: false
+    default: "false"
+  token:
+    description: Token for the seal probes, the release edit, and the major-tag push.
+    required: false
+    default: ${{ github.token }}
+  git-user-name:
+    description: Committer identity for the moving major tag.
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: Committer email for the moving major tag.
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+  working-directory:
+    description: Directory of the checked-out repository.
+    required: false
+    default: "."
+
+outputs:
+  marker:
+    description: The candidate marker tag the publish was sealed against.
+    value: ${{ steps.publish.outputs.marker }}
+
+runs:
+  using: composite
+  steps:
+    - name: Seal and publish
+      id: publish
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_MOVING_MAJOR: ${{ inputs.moving-major }}
+        INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
+        INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/publish-draft-release.sh"

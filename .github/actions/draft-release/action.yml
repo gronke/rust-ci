@@ -1,0 +1,66 @@
+name: Draft release
+description: >-
+  Build the reviewable candidate in one step: render the changelog's released
+  section into `release-notes.md`, create or refresh the draft pre-release
+  whose body it becomes, and push the next unsigned `v<version>-rcN` marker
+  carrying the same text as its tag message — so the runbook's signed tag and
+  the published Release all say exactly what the changelog says. Pair with
+  `release-guidance` (the runbook) and, optionally, `promote-release`.
+
+inputs:
+  version:
+    description: The version being drafted (no leading "v").
+    required: true
+  package:
+    description: Workspace member whose changelog section is rendered; empty resolves the sole package.
+    required: false
+    default: ""
+  changelog:
+    description: Path of the changelog, relative to working-directory.
+    required: false
+    default: "CHANGELOG.md"
+  title:
+    description: Subject line for the notes and the draft; empty means v<version>.
+    required: false
+    default: ""
+  token:
+    description: Token for the release create/edit and the marker push.
+    required: false
+    default: ${{ github.token }}
+  git-user-name:
+    description: Committer identity for the marker tag.
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: Committer email for the marker tag.
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+  working-directory:
+    description: Directory of the checked-out repository.
+    required: false
+    default: "."
+
+outputs:
+  marker:
+    description: The candidate marker tag this run pushed (e.g. v1.2.3-rc2).
+    value: ${{ steps.draft.outputs.marker }}
+  url:
+    description: URL of the draft release.
+    value: ${{ steps.draft.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Draft the candidate
+      id: draft
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
+        INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/draft-release.sh"
