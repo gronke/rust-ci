@@ -42,6 +42,16 @@ jobs:
         with:
           expected-version: ${{ steps.expect.outputs.version }}
 
+      # The seal is four API calls and no build, so it belongs here: a tag that
+      # does not carry the reviewed content fails in seconds, not after the
+      # artifact jobs.
+      - name: The tag must seal the newest candidate marker (early gate)
+        if: github.ref_type == 'tag'
+        uses: ./.github/actions/publish-draft-release
+        with:
+          version: ${{ steps.expect.outputs.version }}
+          seal-only: "true"
+
   draft:
     name: build the draft pre-release (candidate path)
     needs: gate

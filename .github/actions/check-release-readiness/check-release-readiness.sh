@@ -6,6 +6,9 @@
 #   INPUT_CHANGELOG         changelog path for the no-crate fallback (default CHANGELOG.md)
 #   INPUT_EXPECTED_VERSION  version the crate must declare (else derived from a v* tag)
 #   INPUT_RUN_TESTS         "true" to also run cargo test --workspace
+#   INPUT_VERIFY            "false" packages without the verify build (the tests
+#                           already proved the code compiles; this gate is about
+#                           packaging and the registry)
 set -euo pipefail
 
 # --- the declared version -----------------------------------------------------
@@ -50,11 +53,13 @@ fi
 if [ "$PUBLISHABLE" != "true" ]; then
   echo "::notice::not publishable to crates.io (publish = false, or no crate); skipping crates.io checks"
 else
-  echo "Running cargo publish --dry-run for $NAME"
+  dry=(--dry-run)
+  [ "${INPUT_VERIFY:-true}" = "false" ] && dry+=(--no-verify)
+  echo "Running cargo publish ${dry[*]} for $NAME"
   if [ -n "$INPUT_PACKAGE" ]; then
-    cargo publish --dry-run -p "$NAME"
+    cargo publish "${dry[@]}" -p "$NAME"
   else
-    cargo publish --dry-run
+    cargo publish "${dry[@]}"
   fi
   # Not-already-published guard (crates.io API; non-fatal on a network blip).
   CODE=$(curl -s -o /dev/null -w '%{http_code}' \

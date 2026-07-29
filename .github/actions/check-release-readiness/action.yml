@@ -36,6 +36,13 @@ inputs:
       declares the version), relative to the working directory.
     required: false
     default: "CHANGELOG.md"
+  verify:
+    description: >-
+      "false" packages with `--no-verify`, skipping the verify build the test
+      suite already performed — the gate still checks packaging, tag/version
+      coherence and that the version is not on crates.io.
+    required: false
+    default: "true"
   run-tests:
     description: Also run `cargo test --workspace` (off by default; CI usually gated already).
     required: false
@@ -53,4 +60,5 @@ runs:
         INPUT_CHANGELOG: ${{ inputs.changelog }}
         INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
         INPUT_RUN_TESTS: ${{ inputs.run-tests }}
+        INPUT_VERIFY: ${{ inputs.verify }}
       run: bash "$GITHUB_ACTION_PATH/check-release-readiness.sh"

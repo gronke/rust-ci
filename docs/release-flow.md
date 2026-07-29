@@ -170,6 +170,16 @@ jobs:
       - uses: gronke/rust-ci/.github/actions/check-release-readiness@v1
         with:
           expected-version: ${{ steps.expect.outputs.version }}
+          # verify: "false"   # the tests already compiled it; keep the packaging checks
+      # The seal costs four API calls and no build, so gate on it here: a tag
+      # that does not carry the reviewed content fails in seconds rather than
+      # after the artifact jobs below.
+      - name: The tag must seal the newest candidate marker (early gate)
+        if: github.ref_type == 'tag'
+        uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
+        with:
+          version: ${{ steps.expect.outputs.version }}
+          seal-only: "true"
       # SLOT: extra gates (license sweep, policy checks) run here.
 
   draft:
