@@ -2,6 +2,7 @@
 # Publish the crate to crates.io, or rehearse with --dry-run. Inputs arrive as
 # env vars from action.yml; cargo runs in the step's working-directory.
 #   INPUT_PUBLISH                  "true" uploads; anything else is a dry run
+#   INPUT_TAG_PATTERN              regex v<version> must match to be published (empty ⇒ any)
 #   INPUT_REGISTRY_TOKEN           crates.io API token (empty ⇒ use the environment's)
 #   INPUT_PACKAGE                  package name (required for a multi-member workspace)
 #   INPUT_LOCKED                   "true" passes --locked
@@ -49,6 +50,19 @@ case "${INPUT_PUBLISH:-false}" in
     exit 0
     ;;
 esac
+
+# --- what may be published ---------------------------------------------------
+# The dry run above is deliberately exempt: a candidate still rehearses
+# packaging in full. This governs what reaches the registry. The pattern is
+# tested against v<version> — the release gate has already asserted the tag is
+# exactly that — so the check needs no ref context and works on a `release`
+# event, a tag push and a dispatch alike.
+PATTERN="${INPUT_TAG_PATTERN-}"
+if [ -n "$PATTERN" ] && ! printf 'v%s' "$VERSION" | grep -Eq "$PATTERN"; then
+  echo "::notice::v${VERSION} does not match ${PATTERN}; not publishing (prereleases and bare majors are excluded by the default pattern)"
+  write_outputs false "$VERSION" false
+  exit 0
+fi
 
 # --- the credential -----------------------------------------------------------
 # Trusted Publishing (rust-lang/crates-io-auth-action) exports a short-lived

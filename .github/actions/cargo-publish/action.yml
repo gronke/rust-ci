@@ -8,6 +8,9 @@ description: >-
   behind whatever human gate the repository uses — a signed tag, an
   environment with reviewers, or both.
 
+  Only releases matching `tag-pattern` are published — by default just stable
+  `vX.Y.Z`, so a prerelease can never reach the registry.
+
   Credentials: prefer crates.io Trusted Publishing — put
   `rust-lang/crates-io-auth-action` ahead of this step (with `id-token: write`)
   and it exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up, so
@@ -24,6 +27,16 @@ inputs:
       `cargo publish --dry-run` and touches no credential.
     required: false
     default: "false"
+  tag-pattern:
+    description: >-
+      Extended regex a release must match to be published, tested against
+      `v<version>` resolved from the manifest — which the release gate has
+      already asserted equals the tag. The default admits only stable releases,
+      excluding bare majors (v0) and every prerelease or build suffix
+      (v1.0.0-rc1, v1.0.0+build) by construction. A non-matching version is a
+      notice and a skip, not a failure. Empty disables the check.
+    required: false
+    default: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
   registry-token:
     description: >-
       crates.io API token, named after cargo's own CARGO_REGISTRY_TOKEN. Leave
@@ -70,6 +83,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         INPUT_PUBLISH: ${{ inputs.publish }}
+        INPUT_TAG_PATTERN: ${{ inputs.tag-pattern }}
         INPUT_REGISTRY_TOKEN: ${{ inputs.registry-token }}
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_LOCKED: ${{ inputs.locked }}
