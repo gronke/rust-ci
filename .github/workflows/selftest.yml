@@ -1132,3 +1132,37 @@ jobs:
           COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
             --jq '[.[] | select(.key | startswith("nosave-${{ github.run_id }}-"))] | length')
           test "$COUNT" -eq 0
+
+  # cargo-publish: the dry run is the default and reads no credential; an upload
+  # without one refuses. The upload path itself is exercised by real releases.
+  selftest-cargo-publish:
+    name: cargo-publish (dry run · refusal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Dry run (default)
+        id: dry
+        uses: ./.github/actions/cargo-publish
+        with:
+          working-directory: fixtures/sample-crate
+      - name: Assert nothing was published
+        env:
+          PUBLISHED: ${{ steps.dry.outputs.published }}
+          VERSION: ${{ steps.dry.outputs.version }}
+        run: |
+          [ "$PUBLISHED" = "false" ] || { echo "::error::dry run reported published=$PUBLISHED"; exit 1; }
+          [ -n "$VERSION" ] || { echo "::error::no version output"; exit 1; }
+          echo "dry run reported published=false for $VERSION"
+      - name: Upload without a credential
+        id: refuse
+        continue-on-error: true
+        uses: ./.github/actions/cargo-publish
+        with:
+          working-directory: fixtures/sample-crate
+          publish: "true"
+      - name: Assert it refused
+        env:
+          OUTCOME: ${{ steps.refuse.outcome }}
+        run: |
+          [ "$OUTCOME" = "failure" ] || { echo "::error::publish: true ran without a credential (outcome: $OUTCOME)"; exit 1; }
+          echo "correctly refused to upload without a credential"

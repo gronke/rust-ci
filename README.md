@@ -165,6 +165,20 @@ Publish the reviewed candidate in one step: seal the human-pushed final tag agai
     moving-major: "true"
 ```
 
+### `cargo-publish`
+
+Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
+
+```yaml
+permissions: { id-token: write, contents: write }
+steps:
+  - uses: rust-lang/crates-io-auth-action@v1        # short-lived token, no stored secret
+  - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
+    with:
+      publish: "true"                               # omit for a dry run
+      # registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}   # classic-token fallback
+```
+
 ### `promote-release`
 
 Promotes a candidate from within the pipeline, or defers to the release manager — governed by `sign-tags`.
