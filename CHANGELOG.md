@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- cargo-publish: publish the crate to crates.io, or rehearse it — `publish` defaults to `"false"`, which runs `cargo publish --dry-run` and reads no credential, so the step is safe anywhere in a pipeline. An upload resolves its token from `rust-lang/crates-io-auth-action` (crates.io Trusted Publishing, no stored secret) or the `registry-token` input, refuses without one, and checks crates.io first so a duplicate fails in one line instead of mid-upload
 - draft-release and publish-draft-release: the candidate and publish halves of the pipeline as single steps — notes render + draft create/refresh + marker push, and tree seal + draft flip + moving major. The reference pipeline and the dogfooded release.yml shrink to job scaffolding around them.
 - promote-release: candidate promotion governed by `sign-tags` — `manual` defers to the release manager (implied by an active signature-requiring tag ruleset, and by unreadable rulesets), `off` lets the pipeline tag with the marker's message, publish the draft, and advance the moving major in one job.
 - Importable tag rulesets under `.github/rulesets/` — `tags-signed.json` and `tags-maintainer-only.json` carry the marker and moving-major exclusions the flow relies on.

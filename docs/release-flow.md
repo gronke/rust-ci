@@ -233,6 +233,9 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment: release # add required reviewers here for a human pause
+    permissions:
+      contents: write # the draft flip and the moving major
+      id-token: write # the crates.io Trusted Publishing exchange
     steps:
       - uses: actions/checkout@v7
       # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
@@ -245,6 +248,15 @@ jobs:
         with:
           version: ${{ needs.gate.outputs.version }}
           moving-major: "true"
+
+      # The crate goes last: re-drafting a release is trivial, a crates.io
+      # upload can only be yanked. Trusted Publishing mints a short-lived token
+      # from the job's OIDC identity, so no registry secret is stored; bind the
+      # publisher to this workflow file (and this environment) on crates.io.
+      - uses: rust-lang/crates-io-auth-action@v1
+      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
+        with:
+          publish: "true"
 ```
 
 ## Repository configuration the flow relies on
