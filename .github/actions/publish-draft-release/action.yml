@@ -9,6 +9,19 @@ description: >-
   Publishing the crate to crates.io is a separate step — see `cargo-publish`.
 
 inputs:
+  seal-only:
+    description: >-
+      "true" verifies the seal and stops — no flip, no moving major. Run it in
+      the gate so a tag that does not carry the reviewed content fails in
+      seconds, before any artifact job.
+    required: false
+    default: "false"
+  tag-sha:
+    description: >-
+      Commit the tag points at, when the run's own GITHUB_SHA is not it (a
+      `release` event, a workflow_dispatch). Defaults to GITHUB_SHA.
+    required: false
+    default: ""
   version:
     description: The version being published (no leading "v").
     required: true
@@ -47,6 +60,8 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        INPUT_SEAL_ONLY: ${{ inputs.seal-only }}
+        INPUT_TAG_SHA: ${{ inputs.tag-sha }}
         INPUT_MOVING_MAJOR: ${{ inputs.moving-major }}
         INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
         INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}

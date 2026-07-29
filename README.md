@@ -156,7 +156,7 @@ Build the reviewable candidate in one step: render the changelog's released sect
 
 ### `publish-draft-release`
 
-Publish the reviewed candidate in one step: seal the human-pushed final tag against the newest marker by tree, flip the draft live (a stable version sheds the pre-release flag), and optionally advance the moving `v<MAJOR>` to the highest stable release in its line — only ever onto a commit on the default branch.
+`seal-only: "true"` verifies the seal and stops — run it in the release gate so a mis-pointed tag fails in seconds rather than after every artifact job. Otherwise: publish the reviewed candidate in one step — seal the human-pushed final tag against the newest marker by tree, flip the draft live (a stable version sheds the pre-release flag), and optionally advance the moving `v<MAJOR>` to the highest stable release in its line — only ever onto a commit on the default branch.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1

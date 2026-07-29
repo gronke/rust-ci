@@ -4,12 +4,15 @@
 # moving major. Inputs arrive as env vars from action.yml; git and gh run in
 # the step's working-directory.
 #   INPUT_VERSION        the version being published (no leading "v")
+#   INPUT_SEAL_ONLY      "true" verifies the seal and stops (a cheap early gate)
+#   INPUT_TAG_SHA        commit the tag points at (default: this run's GITHUB_SHA)
 #   INPUT_MOVING_MAJOR   "true" advances the moving v<MAJOR> tag
 #   INPUT_GIT_USER_NAME  committer identity for the moving major tag
 #   INPUT_GIT_USER_EMAIL committer email for the moving major tag
 set -euo pipefail
 
 VERSION="$INPUT_VERSION"
+TAG_SHA="${INPUT_TAG_SHA:-$GITHUB_SHA}"
 
 # --- the seal ------------------------------------------------------------------
 n=1
@@ -26,11 +29,21 @@ marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" -
 # The seal is the content, not the commit: a rebase-merged merge-back rewrites
 # the SHA but carries the identical tree, and that tip is a valid tag target.
 # Trees resolve through the API — no history needed.
-tag_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.tree.sha')"
+tag_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG_SHA}" --jq '.commit.tree.sha')"
 marker_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${marker_commit}" --jq '.commit.tree.sha')"
 if [ "$tag_tree" != "$marker_tree" ]; then
-  echo "::error::v${VERSION} (${GITHUB_SHA}, tree ${tag_tree}) does not carry the content the last build sealed (${MARKER} at ${marker_commit}, tree ${marker_tree})"
+  echo "::error::v${VERSION} (${TAG_SHA}, tree ${tag_tree}) does not carry the content the last build sealed (${MARKER} at ${marker_commit}, tree ${marker_tree})"
   exit 1
+fi
+
+# Seal-only: the early gate. Running this before the artifact jobs turns a
+# mis-pointed tag into a seconds-long failure instead of one that surfaces after
+# every binary has been built. The full call re-seals (four API calls), so the
+# action stays self-contained for pipelines without the early gate.
+if [ "${INPUT_SEAL_ONLY:-false}" = "true" ]; then
+  echo "seal-only: not flipping the draft, not touching the moving major"
+  echo "marker=${MARKER}" >>"$GITHUB_OUTPUT"
+  exit 0
 fi
 
 # --- the flip ------------------------------------------------------------------
