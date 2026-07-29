@@ -167,7 +167,7 @@ Build the reviewable candidate in one step: render the changelog's released sect
 
 ### `cargo-publish`
 
-Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
+Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Only releases matching `tag-pattern` are published — the default `^v[0-9]+\.[0-9]+\.[0-9]+$` admits stable releases only, so a prerelease or a bare major is a notice and a skip rather than an upload. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
 
 ```yaml
 permissions: { id-token: write, contents: write }

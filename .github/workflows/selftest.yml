@@ -1153,6 +1153,22 @@ jobs:
           [ "$PUBLISHED" = "false" ] || { echo "::error::dry run reported published=$PUBLISHED"; exit 1; }
           [ -n "$VERSION" ] || { echo "::error::no version output"; exit 1; }
           echo "dry run reported published=false for $VERSION"
+      # A release outside tag-pattern is a skip, not an upload — the policy that
+      # keeps prereleases and bare majors off the registry.
+      - name: Publish a version the pattern excludes
+        id: excluded
+        uses: ./.github/actions/cargo-publish
+        with:
+          working-directory: fixtures/sample-crate
+          publish: "true"
+          tag-pattern: "^v9\\."
+      - name: Assert the pattern skipped it
+        env:
+          PUBLISHED: ${{ steps.excluded.outputs.published }}
+        run: |
+          [ "$PUBLISHED" = "false" ] || { echo "::error::an excluded version reported published=$PUBLISHED"; exit 1; }
+          echo "a version outside tag-pattern skipped, with no credential in play"
+
       - name: Upload without a credential
         id: refuse
         continue-on-error: true
