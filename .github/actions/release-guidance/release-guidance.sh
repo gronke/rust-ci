@@ -44,7 +44,7 @@ ${SIGN_COMMAND}
 git push origin ${TAG}
 \`\`\`
 
-The tag must be annotated, signed with a key GitHub can verify, and point at exactly \`${COMMIT}\` — the pipeline refuses anything else.
+The tag must be annotated, signed with a key GitHub can verify, and carry exactly \`${COMMIT}\`'s content — a rebase-merged merge-back's tip has the identical tree and passes the seal too.
 Its message is copied from the marker \`${MARKER}\` — the changelog section rendered for ${TAG}.
 Push the tag by name; never \`git push --tags\`, which pushes every local tag along.
 
