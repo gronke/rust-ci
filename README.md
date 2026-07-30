@@ -143,6 +143,22 @@ Writes the release manager's next steps into the run's step summary, as the last
     # tag-script: scripts/tag-release.sh  # featured in the accept commands
 ```
 
+### `promote-release`
+
+Promotes a candidate from within the pipeline, or defers to the release manager — governed by `sign-tags`.
+`manual` (the mode an active signature-requiring tag ruleset implies when nothing is configured) is a no-op beside the guidance: a human signs.
+`off` creates the annotated, unsigned final tag on the built commit with the marker's message, publishes the draft, and optionally advances the moving major — one job, since a workflow-token tag push triggers no second run.
+Unreadable rulesets resolve to `manual`; the shipped [`/.github/rulesets/`](.github/rulesets) files set up the signed alternative.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/promote-release@main
+  with:
+    version: ${{ env.VERSION }}
+    marker-tag: ${{ steps.marker.outputs.marker }}
+    # sign-tags: manual    # explicit; empty auto-detects from the tag rulesets
+    # moving-major: "true" # advance v<MAJOR> on an off-mode promotion
+```
+
 ### `rust-cache`
 
 Caches cargo for CI and **defaults** incremental compilation off — pure cost in CI (no edit→recompile loop), and the main thing that balloons `target/`.

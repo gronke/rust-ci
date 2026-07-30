@@ -103,6 +103,14 @@ jobs:
           marker-tag: ${{ steps.marker.outputs.marker }}
           commit: ${{ github.sha }}
 
+      # The tags-signed ruleset resolves this to manual — the release manager
+      # signs — and every candidate run dogfoods the detection.
+      - uses: ./.github/actions/promote-release
+        with:
+          version: ${{ env.VERSION }}
+          marker-tag: ${{ steps.marker.outputs.marker }}
+          moving-major: "true"
+
   publish:
     name: publish the release (final path)
     needs: gate

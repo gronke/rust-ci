@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ## [Unreleased]
 
+### Added
+
+- promote-release: candidate promotion governed by `sign-tags` — `manual` defers to the release manager (implied by an active signature-requiring tag ruleset, and by unreadable rulesets), `off` lets the pipeline tag with the marker's message, publish the draft, and advance the moving major in one job.
+- Importable tag rulesets under `.github/rulesets/` — `tags-signed.json` and `tags-maintainer-only.json` carry the marker and moving-major exclusions the flow relies on.
+- docs/release-flow.md: the release manager's runbook — the signed path start to finish, with the recovery moves for rejected markers and refused seals.
+
 ### Changed
 
 - release-flow: the publish gate seals the tag against the newest marker's tree, not its commit — a rebase-merged merge-back rewrites the SHA but carries the identical content, so on rebase-only repositories the merge-back lands first and the signed tag points at the rebased tip.
