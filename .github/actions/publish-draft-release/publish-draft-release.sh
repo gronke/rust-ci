@@ -46,14 +46,11 @@ if [ "${INPUT_SEAL_ONLY:-false}" = "true" ]; then
   exit 0
 fi
 
-# --- the flip ------------------------------------------------------------------
-# A stable version sheds the --prerelease the draft was created with.
-case "$VERSION" in
-  *-*) gh release edit "v${VERSION}" --draft=false ;;
-  *) gh release edit "v${VERSION}" --draft=false --prerelease=false ;;
-esac
-
-# --- the moving major ----------------------------------------------------------
+# --- the moving major: resolve and validate -------------------------------------
+# Read-only, and BEFORE the flip: a refused move must fail the job while the
+# release is still a draft — with immutable releases a flipped release is
+# final, so a red run after the flip could not take it back.
+MAJOR="" MAJOR_HIGHEST="" MAJOR_TARGET=""
 if [ "$INPUT_MOVING_MAJOR" = "true" ]; then
   case "$VERSION" in
   *-*)
@@ -61,31 +58,45 @@ if [ "$INPUT_MOVING_MAJOR" = "true" ]; then
     ;;
   *)
     MAJOR="v${VERSION%%.*}"
-    git config user.name "$INPUT_GIT_USER_NAME"
-    git config user.email "$INPUT_GIT_USER_EMAIL"
     # The highest STABLE tag in this line — publishing an older patch (e.g. a
     # backport) must not rewind the major.
     git fetch --tags --force --quiet origin
-    highest="$(git tag --list "${MAJOR}.*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)" || true
-    test -n "$highest" || {
+    MAJOR_HIGHEST="$(git tag --list "${MAJOR}.*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)" || true
+    test -n "$MAJOR_HIGHEST" || {
       echo "::error::no stable ${MAJOR}.x tag found"
       exit 1
     }
-    target="$(git rev-list -n1 "$highest")"
+    MAJOR_TARGET="$(git rev-list -n1 "$MAJOR_HIGHEST")"
     # Defense-in-depth: only ever point the major tag at a commit on the
     # default branch.
     default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
     git fetch --no-tags --quiet origin "$default_branch"
-    git merge-base --is-ancestor "$target" FETCH_HEAD || {
-      echo "::error::${highest} (${target}) is not on ${default_branch}; refusing to move ${MAJOR}"
+    git merge-base --is-ancestor "$MAJOR_TARGET" FETCH_HEAD || {
+      echo "::error::${MAJOR_HIGHEST} (${MAJOR_TARGET}) is not on ${default_branch}; refusing to move ${MAJOR}"
       exit 1
     }
-    git push origin ":refs/tags/${MAJOR}" || true # delete the old tag (ignore if absent)
-    git tag -f -a -m "${MAJOR} (moving major) -> ${highest}" "${MAJOR}" "${target}"
-    git push -f origin "refs/tags/${MAJOR}"
-    echo "moving major: ${MAJOR} -> ${highest} (${target})"
     ;;
   esac
+fi
+
+# --- the flip ------------------------------------------------------------------
+# A stable version sheds the --prerelease the draft was created with. Stable
+# means no semver prerelease hyphen; build metadata (+…) counts as stable here,
+# while cargo-publish's default tag-pattern still keeps such a version off the
+# registry.
+case "$VERSION" in
+  *-*) gh release edit "v${VERSION}" --draft=false ;;
+  *) gh release edit "v${VERSION}" --draft=false --prerelease=false ;;
+esac
+
+# --- the moving major: the committed tail ----------------------------------------
+if [ -n "$MAJOR_TARGET" ]; then
+  git config user.name "$INPUT_GIT_USER_NAME"
+  git config user.email "$INPUT_GIT_USER_EMAIL"
+  git push origin ":refs/tags/${MAJOR}" || true # delete the old tag (ignore if absent)
+  git tag -f -a -m "${MAJOR} (moving major) -> ${MAJOR_HIGHEST}" "${MAJOR}" "${MAJOR_TARGET}"
+  git push -f origin "refs/tags/${MAJOR}"
+  echo "moving major: ${MAJOR} -> ${MAJOR_HIGHEST} (${MAJOR_TARGET})"
 fi
 
 echo "marker=${MARKER}" >>"$GITHUB_OUTPUT"
