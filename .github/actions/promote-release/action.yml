@@ -28,7 +28,10 @@ inputs:
     required: false
     default: ""
   moving-major:
-    description: Advance the moving v<MAJOR> tag after an `off`-mode promotion; prereleases skip.
+    description: >-
+      Advance the moving v<MAJOR> tag after an `off`-mode promotion;
+      prereleases skip, and a backport (a higher stable exists in the line)
+      publishes without advancing it.
     required: false
     default: "false"
   token:

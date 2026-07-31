@@ -65,6 +65,29 @@ fi
 git config user.name "$INPUT_GIT_USER_NAME"
 git config user.email "$INPUT_GIT_USER_EMAIL"
 
+# --- the moving major, decided first ---------------------------------------------
+# Read-only, before anything is pushed: nothing about the decision can fail a
+# promotion that is already live. The major advances only when the promoted
+# version is the highest stable in its line — promoting a backport publishes
+# the release and leaves the major alone. The target is the very commit this
+# run promotes, so no separate provenance check applies.
+MOVE_MAJOR="false" MAJOR=""
+if [ "${INPUT_MOVING_MAJOR:-false}" = "true" ]; then
+  case "$VERSION" in
+    *-*) echo "prerelease; the moving major stays" ;;
+    *)
+      MAJOR="v${VERSION%%.*}"
+      git fetch --tags --force --quiet origin
+      MAJOR_HIGHEST="$({ git tag --list "${MAJOR}.*"; echo "v${VERSION}"; } | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+      if [ "$MAJOR_HIGHEST" = "v${VERSION}" ]; then
+        MOVE_MAJOR="true"
+      else
+        echo "::notice::${MAJOR_HIGHEST} is newer than v${VERSION}; ${MAJOR} stays — a backport publishes without advancing the major"
+      fi
+      ;;
+  esac
+fi
+
 # The final tag carries the marker's message (the rendered release notes).
 git fetch --quiet origin "refs/tags/${MARKER}:refs/tags/${MARKER}" --no-tags --force
 MESSAGE_FILE="$(mktemp)"
@@ -82,16 +105,11 @@ echo "✓ ${TAG} promoted on ${GITHUB_SHA} with the marker's message"
 gh release edit "$TAG" --draft=false
 echo "✓ the ${TAG} release is published"
 
-if [ "${INPUT_MOVING_MAJOR:-false}" = "true" ]; then
-  case "$VERSION" in
-    *-*) echo "prerelease; the moving major stays" ;;
-    *)
-      MAJOR="v${VERSION%%.*}"
-      git tag -f -a -m "${MAJOR} (moving major) -> ${TAG}" "$MAJOR" "$GITHUB_SHA"
-      git push -f origin "refs/tags/${MAJOR}"
-      echo "✓ ${MAJOR} advanced to ${TAG}"
-      ;;
-  esac
+if [ "$MOVE_MAJOR" = "true" ]; then
+  git push origin ":refs/tags/${MAJOR}" || true # delete the old tag (ignore if absent)
+  git tag -f -a -m "${MAJOR} (moving major) -> ${TAG}" "$MAJOR" "$GITHUB_SHA"
+  git push -f origin "refs/tags/${MAJOR}"
+  echo "✓ ${MAJOR} advanced to ${TAG}"
 fi
 
 write_outputs "true" "off"

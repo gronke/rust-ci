@@ -686,6 +686,32 @@ jobs:
           test "$(git tag -l --format='%(contents:subject)' v9.9.0)" = "v9.9.0"
           echo "✓ off-mode promotion tagged, flipped, and advanced the major"
 
+      # The decision is made before anything is pushed, and only the highest
+      # stable in the line advances the major: a backport publishes without
+      # touching it.
+      - name: a backport publishes without advancing the major
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/promote"
+          git -c user.name=selftest -c user.email=selftest@invalid.example commit -q --allow-empty -m backport
+          git -c user.name=selftest -c user.email=selftest@invalid.example tag -a -m "v9.8.1 backport" v9.8.1-rc1
+          git push -q origin HEAD v9.8.1-rc1
+          major_before="$(git ls-remote origin refs/tags/v9 | cut -f1)"
+          : > "$RUNNER_TEMP/out.txt"; : > "$RUNNER_TEMP/gh.log"
+          PATH="$RUNNER_TEMP/fakebin:$PATH" FAKE_LOG="$RUNNER_TEMP/gh.log" \
+          GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/promote-release" \
+          GITHUB_REPOSITORY=selftest/promote GITHUB_SHA="$(git rev-parse HEAD)" \
+          GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" \
+          INPUT_VERSION=9.8.1 INPUT_MARKER_TAG=v9.8.1-rc1 INPUT_SIGN_TAGS="" \
+          INPUT_MOVING_MAJOR=true INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
+          FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
+          bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
+          grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
+          grep -q 'FLIPPED: release edit v9.8.1 --draft=false' "$RUNNER_TEMP/gh.log"
+          test -n "$(git ls-remote origin refs/tags/v9.8.1)"
+          test "$(git ls-remote origin refs/tags/v9 | cut -f1)" = "$major_before"
+          echo "✓ the backport published; v9 kept pointing where it was"
+
   selftest-docker:
     name: exercise the Docker actions
     runs-on: ubuntu-latest
