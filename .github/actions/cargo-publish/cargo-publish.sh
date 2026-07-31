@@ -64,24 +64,10 @@ if [ -n "$PATTERN" ] && ! printf 'v%s' "$VERSION" | grep -Eq "$PATTERN"; then
   exit 0
 fi
 
-# --- the credential -----------------------------------------------------------
-# Trusted Publishing (rust-lang/crates-io-auth-action) exports a short-lived
-# CARGO_REGISTRY_TOKEN; the input is the classic-token fallback.
-TOKEN="${INPUT_REGISTRY_TOKEN:-}"
-if [ -z "$TOKEN" ]; then
-  TOKEN="${CARGO_REGISTRY_TOKEN:-}"
-  [ -n "$TOKEN" ] && echo "using the CARGO_REGISTRY_TOKEN already in the environment"
-else
-  echo "::add-mask::$TOKEN"
-fi
-if [ -z "$TOKEN" ]; then
-  echo "::error::publish: true needs a crates.io credential — run rust-lang/crates-io-auth-action before this step (Trusted Publishing, no stored secret), or set registry-token"
-  exit 1
-fi
-
 # --- already published? -------------------------------------------------------
-# crates.io rejects a duplicate anyway; failing here says so in one line
-# instead of a mid-upload error, and makes a re-run's intent explicit.
+# Decided before the credential: the probe is unauthenticated, so a duplicate
+# fails (or, when allowed, skips) in one line without demanding a token — an
+# idempotent re-run needs no credential at all.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -H "User-Agent: rust-ci cargo-publish" \
   "https://crates.io/api/v1/crates/${NAME}/${VERSION}" || echo "000")
@@ -97,6 +83,21 @@ elif [ "$CODE" = "404" ]; then
   echo "✓ ${NAME} ${VERSION} is not yet on crates.io"
 else
   echo "::warning::crates.io check inconclusive (HTTP ${CODE}); continuing — the registry rejects a duplicate regardless"
+fi
+
+# --- the credential -----------------------------------------------------------
+# Trusted Publishing (rust-lang/crates-io-auth-action) exports a short-lived
+# CARGO_REGISTRY_TOKEN; the input is the classic-token fallback.
+TOKEN="${INPUT_REGISTRY_TOKEN:-}"
+if [ -z "$TOKEN" ]; then
+  TOKEN="${CARGO_REGISTRY_TOKEN:-}"
+  [ -n "$TOKEN" ] && echo "using the CARGO_REGISTRY_TOKEN already in the environment"
+else
+  echo "::add-mask::$TOKEN"
+fi
+if [ -z "$TOKEN" ]; then
+  echo "::error::publish: true needs a crates.io credential — run rust-lang/crates-io-auth-action before this step (Trusted Publishing, no stored secret), or set registry-token"
+  exit 1
 fi
 
 # --- the upload ---------------------------------------------------------------
