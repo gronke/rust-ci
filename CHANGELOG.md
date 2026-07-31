@@ -17,7 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Changed
 
-- The moving major advances to the highest stable release in its line and only onto a commit reachable from the default branch — publishing a backport patch no longer rewinds it. A stable version's publish also drops the draft's pre-release flag.
+- The moving major advances to the highest stable release in its line and only onto a commit reachable from the default branch — publishing a backport patch no longer rewinds it. A stable version's publish also drops the draft's pre-release flag. The move is resolved and validated before the draft flips live, so a refusal leaves the release a draft.
 - release-flow: the publish gate seals the tag against the newest marker's tree, not its commit — a rebase-merged merge-back rewrites the SHA but carries the identical content, so on rebase-only repositories the merge-back lands first and the signed tag points at the rebased tip.
 
 ## [1.2.0] - 2026-07-23
