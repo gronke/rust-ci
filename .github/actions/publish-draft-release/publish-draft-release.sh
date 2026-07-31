@@ -15,15 +15,15 @@ VERSION="$INPUT_VERSION"
 TAG_SHA="${INPUT_TAG_SHA:-$GITHUB_SHA}"
 
 # --- the seal ------------------------------------------------------------------
-n=1
-while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc$((n + 1))" >/dev/null 2>&1; do
-  n=$((n + 1))
-done
-MARKER="v${VERSION}-rc${n}"
-gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MARKER}" >/dev/null 2>&1 || {
+# The newest candidate is the highest rcN, from one refs listing — probing
+# rc1, rc2, … would stop at a numbering gap and seal against an older marker.
+n="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
+  | sed -n 's|.*-rc\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)"
+[ -n "$n" ] || {
   echo "::error::no candidate marker for v${VERSION} — the pipeline publishes only reviewed candidates (cut a release branch first)"
   exit 1
 }
+MARKER="v${VERSION}-rc${n}"
 marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MARKER}" --jq '.object.sha')"
 marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" --jq '.object.sha' 2>/dev/null || printf '%s' "$marker_commit")"
 # The seal is the content, not the commit: a rebase-merged merge-back rewrites
@@ -38,7 +38,7 @@ fi
 
 # Seal-only: the early gate. Running this before the artifact jobs turns a
 # mis-pointed tag into a seconds-long failure instead of one that surfaces after
-# every binary has been built. The full call re-seals (four API calls), so the
+# every binary has been built. The full call re-seals (a few API calls), so the
 # action stays self-contained for pipelines without the early gate.
 if [ "${INPUT_SEAL_ONLY:-false}" = "true" ]; then
   echo "seal-only: not flipping the draft, not touching the moving major"

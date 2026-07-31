@@ -7,6 +7,10 @@ description: >-
   the published Release all say exactly what the changelog says. Pair with
   `release-guidance` (the runbook) and, optionally, `promote-release`.
 
+  The marker tags the run's own commit and is created locally first, so run it
+  on a checkout without fetched tags (actions/checkout's default) — a stale
+  local rcN would shadow the push.
+
 inputs:
   version:
     description: The version being drafted (no leading "v").

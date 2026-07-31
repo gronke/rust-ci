@@ -34,10 +34,12 @@ url="$(gh release view "v${VERSION}" --json url --jq .url)"
 # --- the marker ----------------------------------------------------------------
 git config user.name "$INPUT_GIT_USER_NAME"
 git config user.email "$INPUT_GIT_USER_EMAIL"
-n=1
-while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}-rc${n}" >/dev/null 2>&1; do
-  n=$((n + 1))
-done
+# One past the highest existing rcN, from one refs listing — probing rc1,
+# rc2, … would stop at a numbering gap and renumber a candidate under an
+# existing higher one.
+latest="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
+  | sed -n 's|.*-rc\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)"
+n=$((${latest:-0} + 1))
 # The marker's message is release-notes.md (so promoting a candidate copies it
 # into the signed tag), else a bare candidate label.
 if [ -s release-notes.md ]; then
