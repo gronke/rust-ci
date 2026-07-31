@@ -680,7 +680,7 @@ jobs:
           FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
           bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
           grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
-          grep -q 'FLIPPED: release edit v9.9.0 --draft=false' "$RUNNER_TEMP/gh.log"
+          grep -q 'FLIPPED: release edit v9.9.0 --draft=false --prerelease=false' "$RUNNER_TEMP/gh.log"
           test -n "$(git ls-remote origin refs/tags/v9.9.0)"
           test -n "$(git ls-remote origin refs/tags/v9)"
           test "$(git tag -l --format='%(contents:subject)' v9.9.0)" = "v9.9.0"
@@ -707,7 +707,7 @@ jobs:
           FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
           bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
           grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
-          grep -q 'FLIPPED: release edit v9.8.1 --draft=false' "$RUNNER_TEMP/gh.log"
+          grep -q 'FLIPPED: release edit v9.8.1 --draft=false --prerelease=false' "$RUNNER_TEMP/gh.log"
           test -n "$(git ls-remote origin refs/tags/v9.8.1)"
           test "$(git ls-remote origin refs/tags/v9 | cut -f1)" = "$major_before"
           echo "✓ the backport published; v9 kept pointing where it was"
