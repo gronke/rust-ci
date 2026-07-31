@@ -1134,9 +1134,10 @@ jobs:
           test "$COUNT" -eq 0
 
   # cargo-publish: the dry run is the default and reads no credential; an upload
-  # without one refuses. The upload path itself is exercised by real releases.
+  # without one refuses; already-published is decided before any credential is
+  # required. The upload path itself is exercised by real releases.
   selftest-cargo-publish:
-    name: cargo-publish (dry run · refusal)
+    name: cargo-publish (dry run · refusal · duplicate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1182,3 +1183,28 @@ jobs:
         run: |
           [ "$OUTCOME" = "failure" ] || { echo "::error::publish: true ran without a credential (outcome: $OUTCOME)"; exit 1; }
           echo "correctly refused to upload without a credential"
+
+      # Already-published precedes the credential, so an allowed re-run of a
+      # published version skips with no token in play. The manifest names a
+      # version that is on crates.io forever; nothing is built or uploaded.
+      - name: Fixture whose name and version are on crates.io
+        run: |
+          mkdir -p "$RUNNER_TEMP/published-crate/src"
+          printf '[package]\nname = "serde"\nversion = "1.0.0"\nedition = "2015"\n\n[workspace]\n' \
+            > "$RUNNER_TEMP/published-crate/Cargo.toml"
+          : > "$RUNNER_TEMP/published-crate/src/lib.rs"
+      - name: Already-published skips without a credential
+        id: duplicate
+        uses: ./.github/actions/cargo-publish
+        with:
+          working-directory: ${{ runner.temp }}/published-crate
+          publish: "true"
+          allow-already-published: "true"
+      - name: Assert the duplicate skipped
+        env:
+          PUBLISHED: ${{ steps.duplicate.outputs.published }}
+          ALREADY: ${{ steps.duplicate.outputs.already-published }}
+        run: |
+          [ "$PUBLISHED" = "false" ] || { echo "::error::a duplicate reported published=$PUBLISHED"; exit 1; }
+          [ "$ALREADY" = "true" ] || { echo "::error::already-published=$ALREADY for a published version"; exit 1; }
+          echo "an already-published version skipped, with no credential in play"

@@ -54,8 +54,9 @@ inputs:
     default: "true"
   allow-already-published:
     description: >-
-      When the version is already on crates.io: "true" skips with a notice
-      (idempotent re-runs), otherwise the step fails.
+      When the version is already on crates.io: "true" skips with a notice,
+      otherwise the step fails. The check precedes the credential, so an
+      idempotent re-run needs no token.
     required: false
     default: "false"
   working-directory:
