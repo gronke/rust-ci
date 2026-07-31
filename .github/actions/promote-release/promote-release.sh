@@ -102,7 +102,12 @@ git push origin "refs/tags/${TAG}" || {
 }
 echo "✓ ${TAG} promoted on ${GITHUB_SHA} with the marker's message"
 
-gh release edit "$TAG" --draft=false
+# A stable version sheds the --prerelease the draft was created with; semver's
+# hyphen is the prerelease marker.
+case "$VERSION" in
+  *-*) gh release edit "$TAG" --draft=false ;;
+  *) gh release edit "$TAG" --draft=false --prerelease=false ;;
+esac
 echo "✓ the ${TAG} release is published"
 
 if [ "$MOVE_MAJOR" = "true" ]; then
