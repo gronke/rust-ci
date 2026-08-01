@@ -27,6 +27,24 @@ inputs:
     description: The release tag to gate; default v<version>.
     required: false
     default: ""
+  attestation-tag:
+    description: >-
+      A pushed companion (e.g. `${{ github.ref_name }}` on a `v*-sig` trigger)
+      whose release is derived from it: the tag it seals is looked up by
+      commit, and the published release on that same commit is the one gated.
+      Which suffix or prefix a repository attests with stays its own business,
+      and the derivation refuses rather than guesses when a commit carries no
+      published release or more than one. Sets `release-tag` and `version`,
+      so a signature-triggered job needs no string surgery of its own.
+    required: false
+    default: ""
+  require-published:
+    description: >-
+      "true": a release that is still a draft, or absent, is an error rather
+      than an unsigned answer — for jobs that complete a published release's
+      automation and must never act on a draft.
+    required: false
+    default: "false"
   attestation-tags:
     description: >-
       Glob another tag must match to count as an attestation (e.g. v*-sig).
@@ -73,6 +91,12 @@ outputs:
   commit:
     description: The commit the release tag points at.
     value: ${{ steps.gate.outputs.commit }}
+  release-tag:
+    description: The release tag that was gated — derived from `attestation-tag` when given.
+    value: ${{ steps.gate.outputs.release-tag }}
+  version:
+    description: That tag without its leading "v".
+    value: ${{ steps.gate.outputs.version }}
 
 runs:
   using: composite
@@ -83,6 +107,8 @@ runs:
       env:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_TAG: ${{ inputs.tag }}
+        INPUT_ATTESTATION_TAG: ${{ inputs.attestation-tag }}
+        INPUT_REQUIRE_PUBLISHED: ${{ inputs.require-published }}
         INPUT_ATTESTATION_TAGS: ${{ inputs.attestation-tags }}
         INPUT_ACCEPT_RELEASE_TAG: ${{ inputs.accept-release-tag }}
         INPUT_ACCEPT_ATTESTATION_TAG: ${{ inputs.accept-attestation-tag }}

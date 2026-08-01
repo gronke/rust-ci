@@ -6,6 +6,8 @@
 # action.yml.
 #   INPUT_VERSION                  the released version (no leading "v")
 #   INPUT_TAG                      explicit release tag; default v<version>
+#   INPUT_ATTESTATION_TAG          a pushed companion; the release it seals is derived from it
+#   INPUT_REQUIRE_PUBLISHED        "true": a draft (or absent) release is an error
 #   INPUT_ATTESTATION_TAGS         glob another tag must match to count (default *)
 #   INPUT_ACCEPT_RELEASE_TAG       "true": a verified-signed release tag satisfies
 #   INPUT_ACCEPT_ATTESTATION_TAG   "true": a verified-signed tag on the same commit satisfies
@@ -13,77 +15,167 @@
 #   INPUT_ACCEPT_WEB_FLOW          "false": GitHub's web-flow (UI merge) signature does not count
 set -euo pipefail
 
-TAG="${INPUT_TAG:-}"
-if [ -z "$TAG" ]; then
-  TAG="v${INPUT_VERSION:?version or tag is required}"
-fi
-
-write_outputs() { # signed source attestation commit
+write_outputs() { # signed source attestation commit release-tag
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
       echo "signed=$1"
       echo "source=$2"
       echo "attestation=$3"
       echo "commit=$4"
+      echo "release-tag=$5"
+      echo "version=${5#v}"
     } >>"$GITHUB_OUTPUT"
   fi
 }
 
-# --- the release tag and its commit ----------------------------------------------
-REF="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" 2>/dev/null)" || {
-  echo "::error::release tag ${TAG} not found"
-  exit 1
-}
-OBJ_SHA="$(jq -r '.object.sha' <<<"$REF")"
-OBJ_TYPE="$(jq -r '.object.type' <<<"$REF")"
+# --- reading tags --------------------------------------------------------------------
+declare -A _TAG_TARGET=() _TAG_VERIFIED=()
 
-# One read per annotated tag object: the commit it seals and whether GitHub
-# verifies its signature.
-tag_object() { # <tag-object-sha> — prints "<commit>\t<verified>"
-  gh api "repos/${GITHUB_REPOSITORY}/git/tags/$1" 2>/dev/null \
-    | jq -r '[.object.sha, (.verification.verified // false | tostring)] | @tsv'
+# The commit a tag seals and whether GitHub verifies its signature, memoized:
+# the derivation and the companion scan ask about the same tags. Sets
+# TAG_COMMIT and TAG_VERIFIED.
+resolve_tag() { # <name> <object-sha> <object-type>
+  local name="$1" sha="$2" type="$3" row raw
+  if [ -z "${_TAG_TARGET[$name]:-}" ]; then
+    if [ "$type" = "tag" ]; then
+      # gh's own status decides, so jq runs on the captured body rather than
+      # in a pipeline that would swallow a failed read.
+      raw="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" 2>/dev/null)" || return 1
+      row="$(jq -r '[.object.sha, (.verification.verified // false | tostring)] | @tsv' <<<"$raw")"
+    else
+      row="$(printf '%s\tfalse' "$sha")" # a lightweight tag carries no signature
+    fi
+    _TAG_TARGET[$name]="${row%%$'\t'*}"
+    _TAG_VERIFIED[$name]="${row##*$'\t'}"
+  fi
+  TAG_COMMIT="${_TAG_TARGET[$name]}"
+  TAG_VERIFIED="${_TAG_VERIFIED[$name]}"
 }
 
-if [ "$OBJ_TYPE" = "tag" ]; then
-  IFS=$'\t' read -r COMMIT RELEASE_VERIFIED < <(tag_object "$OBJ_SHA") || {
+# Every tag ref in the repository, once: "<name>\t<object-sha>\t<object-type>".
+_ALL_TAG_REFS=""
+all_tag_refs() {
+  if [ -z "$_ALL_TAG_REFS" ]; then
+    _ALL_TAG_REFS="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" 2>/dev/null \
+      | jq -rs 'add // [] | .[] | [(.ref | sub("^refs/tags/"; "")), .object.sha, .object.type] | @tsv')"
+  fi
+  # A trailing newline is load-bearing: `read` discards a final partial line,
+  # which would silently drop the last tag in the repository.
+  printf '%s\n' "$_ALL_TAG_REFS"
+}
+
+# Only published releases are reachable by tag name; a draft reserves nothing.
+release_state() { # <tag> — prints "published" | "draft" | "none"
+  if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$1" >/dev/null 2>&1; then
+    printf 'published'
+  elif [ "$(gh release view "$1" --json isDraft --jq .isDraft 2>/dev/null || true)" = "true" ]; then
+    printf 'draft'
+  else
+    printf 'none'
+  fi
+}
+
+# --- which release is being gated ------------------------------------------------------
+TAG="${INPUT_TAG:-}"
+ATTESTATION_TAG="${INPUT_ATTESTATION_TAG:-}"
+
+if [ -n "$ATTESTATION_TAG" ]; then
+  # Derive the release from the companion by commit identity rather than by
+  # name: which suffix (or prefix) a repository attests with is its own
+  # business, and the commit is what both tags agree on.
+  A_REF="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${ATTESTATION_TAG}" 2>/dev/null)" || {
+    echo "::error::attestation tag ${ATTESTATION_TAG} not found"
+    exit 1
+  }
+  resolve_tag "$ATTESTATION_TAG" "$(jq -r '.object.sha' <<<"$A_REF")" "$(jq -r '.object.type' <<<"$A_REF")" || {
+    echo "::error::cannot read the ${ATTESTATION_TAG} tag object"
+    exit 1
+  }
+  COMMIT="$TAG_COMMIT"
+
+  published=() drafted=()
+  while IFS=$'\t' read -r name sha type; do
+    { [ -n "$name" ] && [ "$name" != "$ATTESTATION_TAG" ]; } || continue
+    resolve_tag "$name" "$sha" "$type" || continue
+    [ "$TAG_COMMIT" = "$COMMIT" ] || continue
+    case "$(release_state "$name")" in
+      published) published+=("$name") ;;
+      draft) drafted+=("$name") ;;
+    esac
+  done < <(all_tag_refs)
+
+  case "${#published[@]}" in
+    1) TAG="${published[0]}" ;;
+    0)
+      if [ "${#drafted[@]}" -gt 0 ]; then
+        echo "::error::the release for ${drafted[*]} on ${COMMIT} is still a draft — publish it first; a signature completes automation, it does not publish drafts"
+      else
+        echo "::error::${ATTESTATION_TAG} seals ${COMMIT}, which carries no published release — nothing to attest"
+      fi
+      exit 1
+      ;;
+    *)
+      echo "::error::${COMMIT} carries more than one published release (${published[*]}); name the intended one with the tag input"
+      exit 1
+      ;;
+  esac
+  echo "${ATTESTATION_TAG} seals ${TAG} (${COMMIT})"
+else
+  [ -n "$TAG" ] || TAG="v${INPUT_VERSION:?version, tag or attestation-tag is required}"
+  REF="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" 2>/dev/null)" || {
+    echo "::error::release tag ${TAG} not found"
+    exit 1
+  }
+  resolve_tag "$TAG" "$(jq -r '.object.sha' <<<"$REF")" "$(jq -r '.object.type' <<<"$REF")" || {
     echo "::error::cannot read the ${TAG} tag object"
     exit 1
   }
-else
-  COMMIT="$OBJ_SHA" RELEASE_VERIFIED="false" # a lightweight tag carries no signature
+  COMMIT="$TAG_COMMIT"
 fi
 
-# --- 1: the release tag itself ----------------------------------------------------
+if [ "${INPUT_REQUIRE_PUBLISHED:-false}" = "true" ]; then
+  case "$(release_state "$TAG")" in
+    published) ;;
+    draft)
+      echo "::error::the ${TAG} release is still a draft — publish it first"
+      exit 1
+      ;;
+    *)
+      echo "::error::no release exists for ${TAG}"
+      exit 1
+      ;;
+  esac
+fi
+
+# --- 1: the release tag itself ------------------------------------------------------
+RELEASE_VERIFIED="${_TAG_VERIFIED[$TAG]:-false}"
 if [ "${INPUT_ACCEPT_RELEASE_TAG:-true}" = "true" ] && [ "$RELEASE_VERIFIED" = "true" ]; then
   echo "✓ ${TAG} is a verified signed tag on ${COMMIT}"
-  write_outputs true release-tag "" "$COMMIT"
+  write_outputs true release-tag "" "$COMMIT" "$TAG"
   exit 0
 fi
 
-# --- 2: an attestation tag on the same commit --------------------------------------
+# --- 2: an attestation tag on the same commit ----------------------------------------
 # Lightweight tags cannot be signed and are skipped; narrowing the glob (e.g.
 # v*-sig) keeps the per-candidate reads few on tag-heavy repositories.
 if [ "${INPUT_ACCEPT_ATTESTATION_TAG:-true}" = "true" ]; then
   GLOB="${INPUT_ATTESTATION_TAGS:-*}"
-  while IFS=$'\t' read -r A_SHA A_TYPE A_REF; do
-    [ -n "$A_REF" ] || continue
-    NAME="${A_REF#refs/tags/}"
-    [ "$NAME" = "$TAG" ] && continue
+  while IFS=$'\t' read -r name sha type; do
+    { [ -n "$name" ] && [ "$name" != "$TAG" ]; } || continue
     # shellcheck disable=SC2254  # the glob must glob
-    case "$NAME" in $GLOB) ;; *) continue ;; esac
-    [ "$A_TYPE" = "tag" ] || continue
-    IFS=$'\t' read -r A_COMMIT A_VERIFIED < <(tag_object "$A_SHA") || continue
-    [ "$A_COMMIT" = "$COMMIT" ] || continue
-    if [ "$A_VERIFIED" = "true" ]; then
-      echo "✓ ${NAME} is a verified signed tag on the release commit ${COMMIT}"
-      write_outputs true attestation-tag "$NAME" "$COMMIT"
+    case "$name" in $GLOB) ;; *) continue ;; esac
+    [ "$type" = "tag" ] || continue
+    resolve_tag "$name" "$sha" "$type" || continue
+    [ "$TAG_COMMIT" = "$COMMIT" ] || continue
+    if [ "$TAG_VERIFIED" = "true" ]; then
+      echo "✓ ${name} is a verified signed tag on the release commit ${COMMIT}"
+      write_outputs true attestation-tag "$name" "$COMMIT" "$TAG"
       exit 0
     fi
-  done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" 2>/dev/null \
-    | jq -rs 'add // [] | .[] | [.object.sha, .object.type, .ref] | @tsv')
+  done < <(all_tag_refs)
 fi
 
-# --- 3 (opt-in): the commit's own signature ----------------------------------------
+# --- 3 (opt-in): the commit's own signature ------------------------------------------
 # GitHub signs UI-made rebase/squash merges with its own web-flow key, which
 # would satisfy this check on virtually every UI-merged commit — so web-flow
 # does not count unless explicitly accepted.
@@ -96,11 +188,11 @@ if [ "${INPUT_ACCEPT_SIGNED_COMMIT:-false}" = "true" ]; then
       echo "::notice::${COMMIT} is signed by GitHub's web-flow key (a UI merge); not counted — set accept-web-flow to accept it"
     else
       echo "✓ commit ${COMMIT} carries a verified signature"
-      write_outputs true commit "" "$COMMIT"
+      write_outputs true commit "" "$COMMIT" "$TAG"
       exit 0
     fi
   fi
 fi
 
 echo "::notice::no verified signature for ${TAG} on ${COMMIT} — sign the release tag, push a signed tag on that commit, or (opt-in) sign the commit; until then the registry step rehearses instead of uploading"
-write_outputs false "" "" "$COMMIT"
+write_outputs false "" "" "$COMMIT" "$TAG"

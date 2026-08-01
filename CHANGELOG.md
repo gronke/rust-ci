@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Added
+
+- require-signed-release gained `attestation-tag` and `require-published`, so the signature-triggered shape the guide documents needs no shell of its own: a job passes the pushed companion instead of a version, and the release it seals is derived by commit identity — any naming convention works, and a commit carrying no published release, or more than one, is refused rather than guessed. `release-tag` and `version` join the outputs, and `require-published` turns a draft into an error rather than an unsigned answer, since a signature completes automation and never publishes drafts.
+
 ## [1.4.0] - 2026-08-01
 
 ### Added

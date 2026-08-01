@@ -203,30 +203,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0            # the moving major checks the target is on the default branch
-      - id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME%-sig}"   # the sibling release tag
-          commit="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha)"
-          [ "$commit" = "$GITHUB_SHA" ] || {
-            echo "::error::${GITHUB_REF_NAME} does not seal ${tag} (${commit})"; exit 1; }
-          [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "false" ] || {
-            echo "::error::${tag} is not published — a signature completes automation, it does not publish drafts"; exit 1; }
-          echo "version=${tag#v}" >>"$GITHUB_OUTPUT"
+      # The companion names the release: the tag it seals is looked up by
+      # commit, and a draft is an error — a signature completes automation, it
+      # does not publish drafts.
+      - id: sig
+        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
+        with:
+          attestation-tag: ${{ github.ref_name }}
+          require-published: "true"
       # Reconcile whatever the go-live still owes: re-seal, flip (a no-op when
       # published), and the moving major.
       - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
         with:
-          version: ${{ steps.release.outputs.version }}
+          version: ${{ steps.sig.outputs.version }}
           tag-sha: ${{ github.sha }}
           moving-major: "true"
-      - id: sig
-        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
-        with:
-          version: ${{ steps.release.outputs.version }}
-          attestation-tags: "v*-sig"
       - if: steps.sig.outputs.signed == 'true'
         uses: rust-lang/crates-io-auth-action@v1
       - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
@@ -235,7 +226,7 @@ jobs:
           allow-already-published: "true"
 ```
 
-Deriving the release tag is one parameter expansion because the suffix is the repository's own choice; a prefix convention (`sig/vX.Y.Z`) strips just as easily.
+The derivation is by commit identity, not by name: the companion's commit is read, and the published release on that same commit is the one gated — so `vX.Y.Z-sig`, `sig/vX.Y.Z` or any other convention works, and a commit carrying no published release (or more than one) is refused rather than guessed.
 Because the gate reads live state, attestation works retroactively: pushing a signed companion for an old release completes a registry publication that was waiting for it, and `allow-already-published` keeps a companion pushed for an already-published crate a green no-op.
 
 ## What to do with the draft pre-release
