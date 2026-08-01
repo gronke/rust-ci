@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 ### Changed
 
 - tag-rulesets: the signature probe is pattern-aware — `signature_rule_covers_ref` answers for one concrete ref, so a rule scoped to `v*-sig` companions does not mark plain versions as signature-enforced, and require-signed-tag's alignment warning asks about the very tag it gates. An unreadable ruleset detail resolves the probe to unknown, matching the caution of an unreadable listing.
+- promote-release: sign-tags autodetection asks whether a signature rule covers the final tag, and an explicit `off` colliding with such a rule errors before anything is created — CI never pushes an unsigned tag the repository's own policy rejects, or one a bypass would let fail the gate after going live. Re-running a completed promotion skips the tag push and proceeds to the idempotent flip and major; the same version on a different commit is a named conflict.
 
 ## [1.3.0] - 2026-08-01
 
