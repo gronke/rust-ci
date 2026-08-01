@@ -182,8 +182,61 @@ Unsigned is an answer, not a failure — feed it into cargo-publish's own `publi
           allow-already-published: "true"
 ```
 
-The signature can also be the trigger: a workflow leg on `push: tags: ["v*-sig"]` treats the arriving companion as the go signal — assert the sibling release tag sits on the same commit, require the release to be published (a draft is an explicit error: the signature completes automation, it never publishes drafts), reconcile idempotently (`publish-draft-release` re-seals, the flip is a no-op, the moving major catches up), and run the gated publish above.
-Because the gate reads live state, attestation works retroactively: pushing a signed companion for an old release completes a registry publication that was waiting for it.
+`attestation-tags` defaults to `*`, so any verified-signed tag on the release commit counts: a signature there is a human statement about that content whatever the tag is called, and a gate that demanded a particular name would reject a valid statement.
+Name the shape where the statement should be deliberate rather than incidental.
+
+The signature can also be the trigger — the companion's push *is* the go signal, so no release run has to fail and be re-run while a signature is pending:
+
+```yaml
+on:
+  push:
+    tags: ["v*-sig"]
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    environment: crates-io          # where a reviewer gate belongs, if you want one
+    permissions:
+      contents: write               # the moving major, when the reconcile still owes it
+      id-token: write               # crates.io Trusted Publishing
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0            # the moving major checks the target is on the default branch
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME%-sig}"   # the sibling release tag
+          commit="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha)"
+          [ "$commit" = "$GITHUB_SHA" ] || {
+            echo "::error::${GITHUB_REF_NAME} does not seal ${tag} (${commit})"; exit 1; }
+          [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "false" ] || {
+            echo "::error::${tag} is not published — a signature completes automation, it does not publish drafts"; exit 1; }
+          echo "version=${tag#v}" >>"$GITHUB_OUTPUT"
+      # Reconcile whatever the go-live still owes: re-seal, flip (a no-op when
+      # published), and the moving major.
+      - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
+        with:
+          version: ${{ steps.release.outputs.version }}
+          tag-sha: ${{ github.sha }}
+          moving-major: "true"
+      - id: sig
+        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
+        with:
+          version: ${{ steps.release.outputs.version }}
+          attestation-tags: "v*-sig"
+      - if: steps.sig.outputs.signed == 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
+        with:
+          publish: ${{ steps.sig.outputs.signed }}
+          allow-already-published: "true"
+```
+
+Deriving the release tag is one parameter expansion because the suffix is the repository's own choice; a prefix convention (`sig/vX.Y.Z`) strips just as easily.
+Because the gate reads live state, attestation works retroactively: pushing a signed companion for an old release completes a registry publication that was waiting for it, and `allow-already-published` keeps a companion pushed for an already-published crate a green no-op.
 
 ## What to do with the draft pre-release
 

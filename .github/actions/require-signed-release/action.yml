@@ -30,7 +30,10 @@ inputs:
   attestation-tags:
     description: >-
       Glob another tag must match to count as an attestation (e.g. v*-sig).
-      The default counts any signed tag on the release commit; narrowing it
+      The default counts any verified-signed tag on the release commit: such a
+      signature is a human statement about that content whatever the tag is
+      named, and demanding a name would reject a valid one. Name the shape
+      where the statement should be deliberate rather than incidental — it
       also keeps the per-candidate API reads few on tag-heavy repositories.
     required: false
     default: "*"
