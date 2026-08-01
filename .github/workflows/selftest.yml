@@ -815,6 +815,9 @@ jobs:
             *"git/matching-refs/tags/"*) printf '%s\n' "${FAKE_TAG_LIST:-[]}" ;;
             *"git/ref/tags/"*) t="${all##*git/ref/tags/}"; t="${t%% *}"; jq -e --arg t "$t" '.[$t]? // empty' <<<"$refs" ;;
             *"git/tags/"*) s="${all##*git/tags/}"; s="${s%% *}"; jq -e --arg s "$s" '.[$s]? // empty' <<<"$objs" ;;
+            # only published releases answer by tag; a draft reserves nothing
+            *"releases/tags/"*) t="${all##*releases/tags/}"; t="${t%% *}"; jq -e --arg t "$t" '.[$t]? | select(. == "published") | {tag_name: $t}' <<<"${FAKE_RELEASES:-null}" ;;
+            "release view"*) t="${all#release view }"; t="${t%% *}"; jq -e --arg t "$t" 'if .[$t]? == "draft" then true else empty end' <<<"${FAKE_RELEASES:-null}" ;;
             *"commits/"*) s="${all##*commits/}"; s="${s%% *}"; jq -e --arg s "$s" '.[$s]? // empty' <<<"$commits" ;;
             *) echo "fake gh: unhandled: $all" >&2; exit 64 ;;
           esac
@@ -857,6 +860,44 @@ jobs:
           run_gate '*' true false >/dev/null; expect 'signed=false'
           run_gate '*' true true >/dev/null; expect 'signed=true'
           echo "✓ release tag, companion, glob, different-commit, opt-in commit, and web-flow roads all answer correctly"
+
+      # The signature-triggered shape: the pushed companion names the release
+      # by commit, so the job needs no string surgery — and never acts on a draft.
+      - name: the release derives from a pushed attestation tag
+        run: |
+          set -euo pipefail
+          run_attest() { # attestation-tag
+            : > "$RUNNER_TEMP/rsr-out"
+            PATH="$RUNNER_TEMP/rsrbin:$PATH" GITHUB_REPOSITORY=selftest/gate \
+            GITHUB_OUTPUT="$RUNNER_TEMP/rsr-out" \
+            INPUT_VERSION= INPUT_TAG= INPUT_ATTESTATION_TAGS='*' \
+            INPUT_ACCEPT_RELEASE_TAG=true INPUT_ACCEPT_ATTESTATION_TAG=true \
+            INPUT_ACCEPT_SIGNED_COMMIT=false INPUT_ACCEPT_WEB_FLOW=false \
+            INPUT_ATTESTATION_TAG="$1" INPUT_REQUIRE_PUBLISHED=true \
+            bash .github/actions/require-signed-release/require-signed-release.sh
+          }
+          expect() { grep -qx "$1" "$RUNNER_TEMP/rsr-out"; }
+          # v9.9.0 (published) and its signed companion share a commit with the
+          # moving major v9, which has no release and must be ignored.
+          export FAKE_REFS='{"v9.9.0-sig":{"object":{"sha":"bbb","type":"tag"}}}'
+          export FAKE_TAG_OBJECTS='{"aaa":{"object":{"sha":"ccc"},"verification":{"verified":false}},"bbb":{"object":{"sha":"ccc"},"verification":{"verified":true}},"ddd":{"object":{"sha":"ccc"},"verification":{"verified":false}}}'
+          export FAKE_TAG_LIST='[{"ref":"refs/tags/v9.9.0","object":{"sha":"aaa","type":"tag"}},{"ref":"refs/tags/v9.9.0-sig","object":{"sha":"bbb","type":"tag"}},{"ref":"refs/tags/v9","object":{"sha":"ddd","type":"tag"}}]'
+          export FAKE_COMMITS='{}'
+          export FAKE_RELEASES='{"v9.9.0":"published"}'
+          run_attest v9.9.0-sig >/dev/null
+          expect 'signed=true' && expect 'source=attestation-tag'
+          expect 'release-tag=v9.9.0' && expect 'version=9.9.0' && expect 'commit=ccc'
+          export FAKE_RELEASES='{"v9.9.0":"draft"}'
+          if run_attest v9.9.0-sig > "$RUNNER_TEMP/rsr-draft.log" 2>&1; then
+            echo "::error::a draft release was accepted"; exit 1
+          fi
+          grep -q 'still a draft' "$RUNNER_TEMP/rsr-draft.log"
+          export FAKE_RELEASES='{}'
+          if run_attest v9.9.0-sig > "$RUNNER_TEMP/rsr-none.log" 2>&1; then
+            echo "::error::a commit with no release was accepted"; exit 1
+          fi
+          grep -q 'no published release' "$RUNNER_TEMP/rsr-none.log"
+          echo "✓ the companion names its release by commit; drafts and release-less commits are refused"
 
   selftest-docker:
     name: exercise the Docker actions

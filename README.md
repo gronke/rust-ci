@@ -171,7 +171,8 @@ Answers whether a human signature covers a release commit — the gate for regis
 Three sources satisfy it, checked in order: the release tag itself is an annotated tag GitHub verifies; another verified-signed tag points at the same commit; or — opt-in — the commit carries a verified signature, with GitHub's web-flow key (which signs UI merges, so nearly every commit on a UI-merged repository) excluded unless `accept-web-flow` says otherwise.
 Unsigned is an answer, not a failure: feed `signed` into [`cargo-publish`](#cargo-publish)'s `publish` and an unsigned release rehearses instead of uploading, so a signature pushed later — retroactively — completes the publication.
 `attestation-tags` narrows what counts as a companion; the default accepts any signed tag on the release commit, because a verified human signature there *is* an attestation whatever it is named — name the shape (`v*-sig`, `sig/*`) where the statement should be deliberate rather than incidental.
-Outputs: `signed`, `source` (`release-tag` · `attestation-tag` · `commit`), `attestation`, `commit`.
+On a signature-triggered job, pass the pushed companion as `attestation-tag` instead of a version: the release it seals is derived by commit — any naming convention works — and `require-published` makes a draft an error rather than an answer.
+Outputs: `signed`, `source` (`release-tag` · `attestation-tag` · `commit`), `attestation`, `commit`, `release-tag`, `version`.
 
 ```yaml
 - id: sig
@@ -179,6 +180,9 @@ Outputs: `signed`, `source` (`release-tag` · `attestation-tag` · `commit`), `a
   with:
     version: 1.2.3                # or: tag: v1.2.3
     attestation-tags: "v*-sig"    # default "*": any signed tag on that commit
+    # on a v*-sig trigger instead, derive the release from the companion:
+    # attestation-tag: ${{ github.ref_name }}
+    # require-published: "true"
 - if: steps.sig.outputs.signed == 'true'
   uses: rust-lang/crates-io-auth-action@v1
 - uses: gronke/rust-ci/.github/actions/cargo-publish@main
