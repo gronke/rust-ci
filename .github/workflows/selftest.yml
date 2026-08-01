@@ -794,6 +794,70 @@ jobs:
           grep -q 'requires signatures on v9.9.0' "$RUNNER_TEMP/guidance-refused.log"
           echo "✓ the publish-draft guidance renders; a covering rule refuses at candidate time"
 
+  # require-signed-release: the registry gate's three sources against a canned
+  # gh — the release tag itself, an attestation companion on the same commit,
+  # and the opt-in commit signature with the web-flow exclusion. Unsigned is a
+  # green answer, not a failure.
+  selftest-require-signed-release:
+    name: exercise the registry signature gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: stage a canned gh
+        run: |
+          mkdir -p "$RUNNER_TEMP/rsrbin"
+          cat > "$RUNNER_TEMP/rsrbin/gh" <<'FAKE'
+          #!/usr/bin/env bash
+          all="$*"
+          refs="${FAKE_REFS:-null}" objs="${FAKE_TAG_OBJECTS:-null}" commits="${FAKE_COMMITS:-null}"
+          case "$all" in
+            *"git/matching-refs/tags/"*) printf '%s\n' "${FAKE_TAG_LIST:-[]}" ;;
+            *"git/ref/tags/"*) t="${all##*git/ref/tags/}"; t="${t%% *}"; jq -e --arg t "$t" '.[$t]? // empty' <<<"$refs" ;;
+            *"git/tags/"*) s="${all##*git/tags/}"; s="${s%% *}"; jq -e --arg s "$s" '.[$s]? // empty' <<<"$objs" ;;
+            *"commits/"*) s="${all##*commits/}"; s="${s%% *}"; jq -e --arg s "$s" '.[$s]? // empty' <<<"$commits" ;;
+            *) echo "fake gh: unhandled: $all" >&2; exit 64 ;;
+          esac
+          FAKE
+          chmod +x "$RUNNER_TEMP/rsrbin/gh"
+
+      - name: three sources, the glob, web-flow, and the unsigned answer
+        run: |
+          set -euo pipefail
+          run_gate() { # attestation-glob accept-commit accept-web-flow
+            : > "$RUNNER_TEMP/rsr-out"
+            PATH="$RUNNER_TEMP/rsrbin:$PATH" GITHUB_REPOSITORY=selftest/gate \
+            GITHUB_OUTPUT="$RUNNER_TEMP/rsr-out" \
+            INPUT_VERSION=9.9.0 INPUT_TAG= INPUT_ATTESTATION_TAGS="$1" \
+            INPUT_ACCEPT_RELEASE_TAG=true INPUT_ACCEPT_ATTESTATION_TAG=true \
+            INPUT_ACCEPT_SIGNED_COMMIT="$2" INPUT_ACCEPT_WEB_FLOW="$3" \
+            bash .github/actions/require-signed-release/require-signed-release.sh
+          }
+          expect() { grep -qx "$1" "$RUNNER_TEMP/rsr-out"; }
+          export FAKE_REFS='{"v9.9.0":{"object":{"sha":"aaa","type":"tag"}}}'
+          export FAKE_TAG_OBJECTS='{"aaa":{"object":{"sha":"ccc"},"verification":{"verified":true}},"bbb":{"object":{"sha":"ccc"},"verification":{"verified":true}},"eee":{"object":{"sha":"ddd"},"verification":{"verified":true}}}'
+          export FAKE_TAG_LIST='[]' FAKE_COMMITS='{}'
+          run_gate '*' false false >/dev/null
+          expect 'signed=true' && expect 'source=release-tag'
+          # an unverified release tag falls through to the companion
+          export FAKE_TAG_OBJECTS='{"aaa":{"object":{"sha":"ccc"},"verification":{"verified":false}},"bbb":{"object":{"sha":"ccc"},"verification":{"verified":true}},"eee":{"object":{"sha":"ddd"},"verification":{"verified":true}}}'
+          export FAKE_TAG_LIST='[{"ref":"refs/tags/v9.9.0","object":{"sha":"aaa","type":"tag"}},{"ref":"refs/tags/attest1","object":{"sha":"bbb","type":"tag"}}]'
+          run_gate '*' false false >/dev/null
+          expect 'signed=true' && expect 'source=attestation-tag' && expect 'attestation=attest1'
+          # glob narrowing and a different-commit companion do not count
+          run_gate 'v*-sig' false false >/dev/null; expect 'signed=false'
+          export FAKE_TAG_LIST='[{"ref":"refs/tags/attest1","object":{"sha":"eee","type":"tag"}}]'
+          run_gate '*' false false >/dev/null; expect 'signed=false'
+          # commit signatures: opt-in, and web-flow only when accepted
+          export FAKE_TAG_LIST='[]'
+          export FAKE_COMMITS='{"ccc":{"commit":{"verification":{"verified":true}},"committer":{"login":"selftest"}}}'
+          run_gate '*' false false >/dev/null; expect 'signed=false'
+          run_gate '*' true false >/dev/null; expect 'signed=true' && expect 'source=commit'
+          export FAKE_COMMITS='{"ccc":{"commit":{"verification":{"verified":true}},"committer":{"login":"web-flow"}}}'
+          run_gate '*' true false >/dev/null; expect 'signed=false'
+          run_gate '*' true true >/dev/null; expect 'signed=true'
+          echo "✓ release tag, companion, glob, different-commit, opt-in commit, and web-flow roads all answer correctly"
+
   selftest-docker:
     name: exercise the Docker actions
     runs-on: ubuntu-latest
