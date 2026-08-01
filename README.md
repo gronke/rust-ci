@@ -315,9 +315,42 @@ The runner-based `check-release-readiness` above runs the same checks without Do
 
 ## Release flow
 
-The release actions compose into a branch-based flow: [`changelog`](#changelog) gates every pull request, [`cut-release`](#cut-release) starts the release, [`check-release-readiness`](#check-release-readiness) and the draft/marker loop build candidates, [`require-signed-tag`](#require-signed-tag) gates the final tag, and [`release-guidance`](#release-guidance) tells the release manager what to do next — accept, reject, and what follows.
-Release-candidate manifest versions (`1.0.0-rc1`) are first-class: the candidate is a release, and `-rc` stays reserved for stabilization.
-[docs/release-flow.md](docs/release-flow.md) carries the full guide: the candidate loop, the signed final tag, the reference workflows, and the repository configuration the flow relies on.
+Every action above is a base operation with its own contract; a repository composes them under its own conditions — whether publishing a release triggers automation, and to what degree, is the consumer's definition.
+Six actions assume the Keep-a-Changelog convention and the `rcN` candidate markers: [`changelog`](#changelog), [`cut-release`](#cut-release), [`draft-release`](#draft-release), [`publish-draft-release`](#publish-draft-release), [`release-guidance`](#release-guidance), and [`promote-release`](#promote-release).
+They compose into the showcased branch-based flow — [`cut-release`](#cut-release) starts the release, the draft/marker loop builds candidates, and the go-live seals and publishes — with release-candidate manifest versions (`1.0.0-rc1`) first-class: the candidate is a release, and `-rc` stays reserved for stabilization.
+[docs/release-flow.md](docs/release-flow.md) carries the full guide: the candidate loop, the signed and publish-go-live modes, the reference workflows, and the repository configuration the showcase relies on.
+
+A pipeline that keeps its own release process needs none of that.
+The registry ending bolts onto any CI — the version comes from Cargo.toml, the notes are yours, no changelog is read:
+
+```yaml
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write # crates.io Trusted Publishing
+    steps:
+      - uses: actions/checkout@v7
+      # tag/version coherence, packaging, not-already-published
+      - uses: gronke/rust-ci/.github/actions/check-release-readiness@v1
+      # optional: upload only under a human signature — the tag itself, a
+      # signed companion on the same commit, or (opt-in) the signed commit;
+      # unsigned, the publish below rehearses instead of uploading
+      - id: sig
+        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
+        with:
+          tag: ${{ github.ref_name }}
+      - if: steps.sig.outputs.signed == 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
+        with:
+          publish: ${{ steps.sig.outputs.signed }}
+```
 
 ## Passing env into the container (Docker actions)
 

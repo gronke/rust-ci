@@ -3,6 +3,9 @@
 How a crate goes from `[Unreleased]` entries to a published GitHub release sealed by a signed tag, composed from the release actions in this repository:
 [`changelog`](../README.md#changelog), [`cut-release`](../README.md#cut-release), [`check-release-readiness`](../README.md#check-release-readiness), [`require-signed-tag`](../README.md#require-signed-tag), and [`release-guidance`](../README.md#release-guidance).
 
+This document is the showcased composition, not a requirement: every gate in it is a condition a repository can replace or drop, and the base operations — readiness, the signature gates, `cargo-publish` — carry no flow assumptions.
+A pipeline with its own release process publishes with the registry ending alone; [Registry publication behind a signature](#registry-publication-behind-a-signature) has the shapes.
+
 The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a **draft** pre-release, and the signed `vX.Y.Z` tag publishes that draft, exactly once.
 Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the whole loop can run, fail, and be deleted without consequence.
 Publication is the one irreversible step: a published release is immutable — assets frozen, tag locked, and the tag name permanently consumed even if the release is deleted afterwards.
@@ -139,7 +142,7 @@ git push origin refs/tags/vX.Y.Z-sig
 ```
 
 The retargeted ruleset below governs the companion's *form* — if one exists it must carry a verified signature — and nothing requires one to exist.
-What makes the companion load-bearing is a step that reads it: a gate on registry publication, where an unattested release rehearses the upload instead of performing it.
+What makes the companion load-bearing is a step that reads it: [`require-signed-release`](#registry-publication-behind-a-signature) gates registry publication on exactly this, so on a crate repository an unattested release rehearses the upload instead of performing it.
 A repository with nothing to publish — this one — gets provenance only, and the companion is genuinely optional.
 Any tag name works; `attestation-tags` narrows what counts, so a repository that would rather keep the `v*` namespace to releases can attest with `sig/vX.Y.Z` and leave `git describe` alone.
 
