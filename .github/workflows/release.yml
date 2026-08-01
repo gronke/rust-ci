@@ -3,13 +3,13 @@ name: Release
 # The reference pipeline from docs/release-flow.md, dogfooded with local
 # action paths — in publish-go-live mode: no per-release signing. A candidate
 # run builds the draft and its rcN marker; the release manager merges the
-# merge-back PR and then publishes the draft, the one human gate. Publishing
-# creates the vX.Y.Z tag on main's tip, and that tag push runs the final
-# path: version coherence, the tree seal against the newest marker, the
-# (idempotent) flip, and the moving major. Publish right after the merge-back
-# lands — a commit reaching main in between fails the seal after the
-# immutable publish. An optional signed companion (vX.Y.Z-sig, the only tags
-# the ruleset requires signatures on) attests the release commit out of band.
+# merge-back PR and then publishes the draft, the one human gate. The draft's
+# target is pinned to the merged commit (the guidance summary prints the
+# command), so publishing creates vX.Y.Z on exactly the content the marker
+# sealed, and the tag push runs the final path: version coherence, the tree
+# seal, the (idempotent) flip, and the moving major. An optional signed
+# companion (vX.Y.Z-sig, the only tags the ruleset requires signatures on)
+# attests the release commit out of band.
 on:
   push:
     branches: ["release/v**"]
