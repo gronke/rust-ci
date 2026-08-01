@@ -1,0 +1,89 @@
+name: Require signed release
+description: >-
+  Answer whether a release commit carries a human signature — the gate for
+  registry publication. Three sources, checked in order: the release tag
+  itself is annotated and GitHub-verified (the signed flow); another
+  verified-signed tag points at the same commit (the attestation companion,
+  e.g. vX.Y.Z-sig — the name is the repository's choice, narrowed by
+  `attestation-tags`); or, opt-in, the commit itself carries a verified
+  signature. Unsigned is an answer, not a failure: feed `signed` into
+  cargo-publish's `publish` input and an unsigned release rehearses
+  (--dry-run) instead of uploading — pushing a signed tag on the release
+  commit later completes the publication, retroactive attestations included.
+
+  The commit source defaults off because GitHub signs UI-made rebase and
+  squash merges with its own web-flow key — on UI-merged repositories that
+  would satisfy the check for virtually every commit; even when enabled,
+  web-flow signatures only count with `accept-web-flow`.
+
+  Reads everything through the API — no checkout needed.
+
+inputs:
+  version:
+    description: The released version (no leading "v"); ignored when `tag` is set.
+    required: false
+    default: ""
+  tag:
+    description: The release tag to gate; default v<version>.
+    required: false
+    default: ""
+  attestation-tags:
+    description: >-
+      Glob another tag must match to count as an attestation (e.g. v*-sig).
+      The default counts any signed tag on the release commit; narrowing it
+      also keeps the per-candidate API reads few on tag-heavy repositories.
+    required: false
+    default: "*"
+  accept-release-tag:
+    description: '"true": a verified-signed release tag satisfies the gate.'
+    required: false
+    default: "true"
+  accept-attestation-tag:
+    description: '"true": a verified-signed tag on the same commit satisfies the gate.'
+    required: false
+    default: "true"
+  accept-signed-commit:
+    description: >-
+      "true": a verified signature on the release commit itself satisfies the
+      gate. Off by default — see the web-flow caveat above.
+    required: false
+    default: "false"
+  accept-web-flow:
+    description: '"true": a web-flow (GitHub UI merge) signature counts for accept-signed-commit.'
+    required: false
+    default: "false"
+  token:
+    description: Token for the API reads.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  signed:
+    description: '"true" when a verified signature covers the release commit.'
+    value: ${{ steps.gate.outputs.signed }}
+  source:
+    description: 'Which source satisfied the gate: "release-tag", "attestation-tag", "commit", or empty.'
+    value: ${{ steps.gate.outputs.source }}
+  attestation:
+    description: The attestation tag's name, when that source satisfied the gate.
+    value: ${{ steps.gate.outputs.attestation }}
+  commit:
+    description: The commit the release tag points at.
+    value: ${{ steps.gate.outputs.commit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Look for a verified signature on the release commit
+      id: gate
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_ATTESTATION_TAGS: ${{ inputs.attestation-tags }}
+        INPUT_ACCEPT_RELEASE_TAG: ${{ inputs.accept-release-tag }}
+        INPUT_ACCEPT_ATTESTATION_TAG: ${{ inputs.accept-attestation-tag }}
+        INPUT_ACCEPT_SIGNED_COMMIT: ${{ inputs.accept-signed-commit }}
+        INPUT_ACCEPT_WEB_FLOW: ${{ inputs.accept-web-flow }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/require-signed-release.sh"

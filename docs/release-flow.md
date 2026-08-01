@@ -156,6 +156,32 @@ gh api repos/{owner}/{repo}/rulesets/{id} | jq '{name, target, enforcement,
 The guidance step checks this alignment at candidate time and errors while everything is still a draft when a signature rule covers the version itself — the misconfiguration never gets as far as a tag the repository would reject, or one an admin bypass would let fail the gate after going live.
 This repository releases itself in this mode; the signed mode stays the reference default.
 
+## Registry publication behind a signature
+
+The GitHub release and the registry need not share a trust anchor: crates.io publication is the one irreversible, ecosystem-facing step, and `require-signed-release` gates exactly it on a human signature — whichever go-live mode the repository runs.
+
+Three sources satisfy the gate, checked in order: the release tag itself is annotated and GitHub-verified (the signed flow); another verified-signed tag points at the same commit (the attestation companion — the name is the repository's choice, `vX.Y.Z-sig` by convention, narrowed with `attestation-tags`); or, opt-in, the commit itself carries a verified signature.
+The commit source defaults off: GitHub signs UI-made rebase and squash merges with its own web-flow key, which would satisfy the check on virtually every UI-merged commit — and even opted in, web-flow counts only with `accept-web-flow`.
+
+Unsigned is an answer, not a failure — feed it into cargo-publish's own `publish` input and an unsigned release rehearses instead of uploading:
+
+```yaml
+      - id: sig
+        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
+        with:
+          version: ${{ needs.gate.outputs.version }}
+          attestation-tags: "v*-sig"
+      - if: steps.sig.outputs.signed == 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
+        with:
+          publish: ${{ steps.sig.outputs.signed }}
+          allow-already-published: "true"
+```
+
+The signature can also be the trigger: a workflow leg on `push: tags: ["v*-sig"]` treats the arriving companion as the go signal — assert the sibling release tag sits on the same commit, require the release to be published (a draft is an explicit error: the signature completes automation, it never publishes drafts), reconcile idempotently (`publish-draft-release` re-seals, the flip is a no-op, the moving major catches up), and run the gated publish above.
+Because the gate reads live state, attestation works retroactively: pushing a signed companion for an old release completes a registry publication that was waiting for it.
+
 ## What to do with the draft pre-release
 
 The `release-guidance` step writes these answers into every candidate build's step summary; this is the same content in prose.

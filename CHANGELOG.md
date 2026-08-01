@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- require-signed-release: gate registry publication on a human signature, whichever go-live mode the repository runs. Three sources, checked in order: a verified-signed release tag, another verified-signed tag on the same commit (the attestation companion, narrowed with `attestation-tags`), or — opt-in, with GitHub's web-flow key excluded by default — a verified commit signature. Unsigned is an answer, not a failure: feed `signed` into cargo-publish's `publish` input and an unsigned release rehearses instead of uploading; a signed companion pushed later, retroactively included, completes the publication.
 - release-guidance gained `go-live`: "publish-draft" renders merge-then-publish — the admin publishing the draft creates the tag and is the flow's one human gate — plus the optional signed `vX.Y.Z-sig` attestation companion; "signed-tag" (the default) is the runbook as before. In publish-draft mode the step errors at candidate time when an active tag ruleset still requires signatures on the version itself, so CI never sets up a tag the repository's own policy rejects.
 
 ### Changed
