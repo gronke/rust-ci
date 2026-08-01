@@ -27,16 +27,16 @@ write_outputs() {
 
 # --- the effective mode --------------------------------------------------------
 # The explicit input wins; otherwise the repository's own enforcement decides:
-# an active signature-requiring tag ruleset means manual, none means off, and
-# unreadable rulesets mean manual — never push an unsigned tag on a repository
-# whose policy is unknown.
+# an active signature rule covering the final tag means manual (a rule scoped
+# to v*-sig companions does not), none means off, and unreadable rulesets mean
+# manual — never push an unsigned tag on a repository whose policy is unknown.
 MODE="${INPUT_SIGN_TAGS:-}"
 if [ -z "$MODE" ]; then
-  case "$(signature_tag_ruleset_active)" in
+  case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
     false) MODE="off" ;;
     true)
       MODE="manual"
-      echo "::notice::an active tag ruleset requires signatures; sign-tags resolves to manual"
+      echo "::notice::an active tag ruleset requires signatures on ${TAG}; sign-tags resolves to manual"
       ;;
     *)
       MODE="manual"
@@ -62,6 +62,21 @@ if [ "$MODE" = "manual" ]; then
 fi
 
 # --- off: the pipeline promotes ------------------------------------------------
+# An explicit sign-tags: off must not collide with the repository's own policy:
+# an unsigned ${TAG} that an active signature rule covers would be rejected at
+# push time — or slip through a bypass and fail the gate after the release is
+# live. The contradiction errors here, before anything is created.
+case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
+  true)
+    echo "::error::sign-tags: off, but an active tag ruleset requires signatures on ${TAG} — retarget the rule (e.g. to v*-sig companions) or use sign-tags: manual"
+    exit 1
+    ;;
+  false) ;;
+  *)
+    echo "::warning::cannot read the tag rulesets to verify ${TAG} may be created unsigned; continuing"
+    ;;
+esac
+
 git config user.name "$INPUT_GIT_USER_NAME"
 git config user.email "$INPUT_GIT_USER_EMAIL"
 
@@ -88,19 +103,34 @@ if [ "${INPUT_MOVING_MAJOR:-false}" = "true" ]; then
   esac
 fi
 
-# The final tag carries the marker's message (the rendered release notes).
-git fetch --quiet origin "refs/tags/${MARKER}:refs/tags/${MARKER}" --no-tags --force
-MESSAGE_FILE="$(mktemp)"
-git tag -l --format='%(contents)' "$MARKER" >"$MESSAGE_FILE"
-if ! grep -q '[^[:space:]]' "$MESSAGE_FILE"; then
-  echo "${TAG}" >"$MESSAGE_FILE"
+# Idempotent re-run: a completed promotion's tag already points at this very
+# commit — skip the push and proceed to the flip and the major, which are
+# idempotent themselves. The same version on a different commit is a conflict,
+# named as such.
+EXISTING="$(git ls-remote origin "refs/tags/${TAG}" | head -1 | cut -f1)"
+if [ -n "$EXISTING" ]; then
+  git fetch --quiet origin "refs/tags/${TAG}:refs/tags/${TAG}" --no-tags --force
+  EXISTING_COMMIT="$(git rev-list -n1 "refs/tags/${TAG}")"
+  if [ "$EXISTING_COMMIT" != "$GITHUB_SHA" ]; then
+    echo "::error::${TAG} already exists on ${EXISTING_COMMIT}, not ${GITHUB_SHA} — a different promotion owns this version"
+    exit 1
+  fi
+  echo "::notice::${TAG} already exists on ${GITHUB_SHA}; skipping the tag push (idempotent re-run)"
+else
+  # The final tag carries the marker's message (the rendered release notes).
+  git fetch --quiet origin "refs/tags/${MARKER}:refs/tags/${MARKER}" --no-tags --force
+  MESSAGE_FILE="$(mktemp)"
+  git tag -l --format='%(contents)' "$MARKER" >"$MESSAGE_FILE"
+  if ! grep -q '[^[:space:]]' "$MESSAGE_FILE"; then
+    echo "${TAG}" >"$MESSAGE_FILE"
+  fi
+  git tag -a -F "$MESSAGE_FILE" "$TAG" "$GITHUB_SHA"
+  git push origin "refs/tags/${TAG}" || {
+    echo "::error::the ${TAG} push was rejected (GH013) — with sign-tags off the tag ruleset must let Actions create final v* tags, or switch to sign-tags: manual and let the release manager sign"
+    exit 1
+  }
+  echo "✓ ${TAG} promoted on ${GITHUB_SHA} with the marker's message"
 fi
-git tag -a -F "$MESSAGE_FILE" "$TAG" "$GITHUB_SHA"
-git push origin "refs/tags/${TAG}" || {
-  echo "::error::the ${TAG} push was rejected (GH013) — with sign-tags off the tag ruleset must let Actions create final v* tags, or switch to sign-tags: manual and let the release manager sign"
-  exit 1
-}
-echo "✓ ${TAG} promoted on ${GITHUB_SHA} with the marker's message"
 
 # A stable version sheds the --prerelease the draft was created with; semver's
 # hyphen is the prerelease marker.
