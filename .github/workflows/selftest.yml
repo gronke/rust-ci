@@ -565,7 +565,8 @@ jobs:
       - name: the guidance carries the accept, reject, and next blocks
         run: |
           S="$RUNNER_TEMP/guidance.md"
-          GITHUB_STEP_SUMMARY="$S" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc2 \
+          GITHUB_ACTION_PATH=.github/actions/release-guidance \
+            GITHUB_STEP_SUMMARY="$S" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc2 \
             INPUT_COMMIT=0123456789abcdef0123456789abcdef01234567 \
             INPUT_TAG_SCRIPT=scripts/tag-release.sh INPUT_DRAFT_URL=https://example.invalid/v1.2.3 \
             bash .github/actions/release-guidance/release-guidance.sh >/dev/null
@@ -574,7 +575,8 @@ jobs:
           grep -q '^git push origin v1.2.3$' "$S"
           grep -q 'never `git push --tags`' "$S"
           grep -q 'the draft release](https://example.invalid/v1.2.3)' "$S"
-          GITHUB_STEP_SUMMARY="$S.plain" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc1 \
+          GITHUB_ACTION_PATH=.github/actions/release-guidance \
+            GITHUB_STEP_SUMMARY="$S.plain" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc1 \
             INPUT_COMMIT=abc0123 INPUT_TAG_SCRIPT= INPUT_DRAFT_URL= \
             bash .github/actions/release-guidance/release-guidance.sh >/dev/null
           grep -qF "git tag -s -F <(git tag -l --format='%(contents)' v1.2.3-rc1) v1.2.3 abc0123" "$S.plain"
@@ -753,6 +755,34 @@ jobs:
           fi
           grep -q 'a different promotion owns this version' "$RUNNER_TEMP/conflict.log"
           echo "✓ the re-run skipped the push; a different commit was refused"
+
+      # The publish-draft guidance renders merge-then-publish with the -sig
+      # attestation, and refuses at candidate time when a signature rule still
+      # covers the version itself.
+      - name: publish-draft guidance — render, and the covering-rule refusal
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/guidance-publish.md"; : > "$S"
+          run_guidance() { # ids json
+            PATH="$RUNNER_TEMP/fakebin:$PATH" \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/release-guidance" \
+            GITHUB_REPOSITORY=selftest/promote GITHUB_STEP_SUMMARY="$S" \
+            INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_COMMIT=abc0123 \
+            INPUT_GO_LIVE=publish-draft INPUT_TAG_SCRIPT= INPUT_DRAFT_URL=https://example.invalid/v9.9.0 \
+            FAKE_RULESET_IDS="$1" FAKE_RULESET_JSON="$2" FAKE_RULESETS_FAIL="" FAKE_RULESET_DETAIL_FAIL="" \
+            bash "$GITHUB_WORKSPACE/.github/actions/release-guidance/release-guidance.sh"
+          }
+          run_guidance "" "" >/dev/null
+          test "$(grep -c '^### ' "$S")" = "3"
+          grep -q 'Merge the merge-back pull request' "$S"
+          grep -q 'v9.9.0-sig' "$S"
+          grep -q 'before publishing' "$S"
+          COVERING='{"rules":[{"type":"required_signatures"}],"conditions":{"ref_name":{"include":["~ALL"],"exclude":["refs/tags/v*-rc*"]}}}'
+          if run_guidance "7" "$COVERING" > "$RUNNER_TEMP/guidance-refused.log" 2>&1; then
+            echo "::error::publish-draft guidance was not refused under a covering signature rule"; exit 1
+          fi
+          grep -q 'requires signatures on v9.9.0' "$RUNNER_TEMP/guidance-refused.log"
+          echo "✓ the publish-draft guidance renders; a covering rule refuses at candidate time"
 
   selftest-docker:
     name: exercise the Docker actions
