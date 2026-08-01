@@ -165,6 +165,27 @@ Build the reviewable candidate in one step: render the changelog's released sect
     moving-major: "true"
 ```
 
+### `require-signed-release`
+
+Answers whether a human signature covers a release commit — the gate for registry publication, in any go-live mode, and the step that makes an attestation companion load-bearing.
+Three sources satisfy it, checked in order: the release tag itself is an annotated tag GitHub verifies; another verified-signed tag points at the same commit; or — opt-in — the commit carries a verified signature, with GitHub's web-flow key (which signs UI merges, so nearly every commit on a UI-merged repository) excluded unless `accept-web-flow` says otherwise.
+Unsigned is an answer, not a failure: feed `signed` into [`cargo-publish`](#cargo-publish)'s `publish` and an unsigned release rehearses instead of uploading, so a signature pushed later — retroactively — completes the publication.
+`attestation-tags` narrows what counts as a companion; the default accepts any signed tag on the release commit, because a verified human signature there *is* an attestation whatever it is named — name the shape (`v*-sig`, `sig/*`) where the statement should be deliberate rather than incidental.
+Outputs: `signed`, `source` (`release-tag` · `attestation-tag` · `commit`), `attestation`, `commit`.
+
+```yaml
+- id: sig
+  uses: gronke/rust-ci/.github/actions/require-signed-release@main
+  with:
+    version: 1.2.3                # or: tag: v1.2.3
+    attestation-tags: "v*-sig"    # default "*": any signed tag on that commit
+- if: steps.sig.outputs.signed == 'true'
+  uses: rust-lang/crates-io-auth-action@v1
+- uses: gronke/rust-ci/.github/actions/cargo-publish@main
+  with:
+    publish: ${{ steps.sig.outputs.signed }}
+```
+
 ### `cargo-publish`
 
 Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Only releases matching `tag-pattern` are published — the default `^v[0-9]+\.[0-9]+\.[0-9]+$` admits stable releases only, so a prerelease or a bare major is a notice and a skip rather than an upload. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
