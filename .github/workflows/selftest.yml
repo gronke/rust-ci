@@ -636,7 +636,7 @@ jobs:
           #!/usr/bin/env bash
           case "$*" in
             *"/rulesets "*|*"/rulesets") if [ "${FAKE_RULESETS_FAIL:-}" = "1" ]; then exit 1; fi; printf '%s' "${FAKE_RULESET_IDS:-}" ;;
-            *"/rulesets/"*) printf '%s\n' "${FAKE_RULESET_RULES:-}" ;;
+            *"/rulesets/"*) if [ "${FAKE_RULESET_DETAIL_FAIL:-}" = "1" ]; then exit 1; fi; printf '%s\n' "${FAKE_RULESET_JSON:-}" ;;
             "release edit"*) echo "FLIPPED: $*" >> "${FAKE_LOG:?}" ;;
             *) echo "fake gh: unhandled: $*" >&2; exit 64 ;;
           esac
@@ -647,24 +647,28 @@ jobs:
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/promote"
-          run_promote() {
+          COVERING='{"rules":[{"type":"required_signatures"}],"conditions":{"ref_name":{"include":["~ALL"],"exclude":["refs/tags/v*-rc*"]}}}'
+          run_promote() { # sign-tags moving-major ids json list-fail detail-fail
             PATH="$RUNNER_TEMP/fakebin:$PATH" FAKE_LOG="$RUNNER_TEMP/gh.log" \
             GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/promote-release" \
             GITHUB_REPOSITORY=selftest/promote GITHUB_SHA="$(git rev-parse HEAD)" \
             GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" GITHUB_STEP_SUMMARY="$RUNNER_TEMP/summary.md" \
             INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_SIGN_TAGS="$1" \
             INPUT_MOVING_MAJOR="$2" INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
-            FAKE_RULESET_IDS="$3" FAKE_RULESET_RULES="$4" FAKE_RULESETS_FAIL="$5" \
+            FAKE_RULESET_IDS="$3" FAKE_RULESET_JSON="$4" FAKE_RULESETS_FAIL="$5" FAKE_RULESET_DETAIL_FAIL="$6" \
             bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
           }
-          : > "$RUNNER_TEMP/out.txt"; run_promote manual false "" "" ""
+          : > "$RUNNER_TEMP/out.txt"; run_promote manual false "" "" "" ""
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
-          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "required_signatures" ""
+          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "$COVERING" "" ""
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
-          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "" "" "1"
+          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "" "" "1" ""
+          grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
+          # an unreadable ruleset detail is as unknown as an unreadable listing
+          : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "" "" "1"
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
           test -z "$(git ls-remote origin refs/tags/v9.9.0)"
-          echo "✓ explicit, detected, and unreadable-ruleset roads all defer to the release manager"
+          echo "✓ explicit, detected, and both unreadable-ruleset roads all defer to the release manager"
 
       - name: off promotes — tag with the marker message, flip, moving major
         run: |
@@ -677,7 +681,7 @@ jobs:
           GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" \
           INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_SIGN_TAGS="" \
           INPUT_MOVING_MAJOR=true INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
-          FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
+          FAKE_RULESET_IDS="" FAKE_RULESET_JSON="" FAKE_RULESETS_FAIL="" FAKE_RULESET_DETAIL_FAIL="" \
           bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
           grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
           grep -q 'FLIPPED: release edit v9.9.0 --draft=false --prerelease=false' "$RUNNER_TEMP/gh.log"
@@ -704,7 +708,7 @@ jobs:
           GITHUB_OUTPUT="$RUNNER_TEMP/out.txt" \
           INPUT_VERSION=9.8.1 INPUT_MARKER_TAG=v9.8.1-rc1 INPUT_SIGN_TAGS="" \
           INPUT_MOVING_MAJOR=true INPUT_GIT_USER_NAME=selftest INPUT_GIT_USER_EMAIL=selftest@invalid.example \
-          FAKE_RULESET_IDS="" FAKE_RULESET_RULES="" FAKE_RULESETS_FAIL="" \
+          FAKE_RULESET_IDS="" FAKE_RULESET_JSON="" FAKE_RULESETS_FAIL="" FAKE_RULESET_DETAIL_FAIL="" \
           bash "$GITHUB_WORKSPACE/.github/actions/promote-release/promote-release.sh"
           grep -qx 'promoted=true' "$RUNNER_TEMP/out.txt"
           grep -q 'FLIPPED: release edit v9.8.1 --draft=false --prerelease=false' "$RUNNER_TEMP/gh.log"
