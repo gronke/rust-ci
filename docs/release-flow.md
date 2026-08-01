@@ -83,7 +83,7 @@ Whether a human seals the release is a mode, resolved by the `promote-release` s
   The signature binds the release's provenance to a human key that GitHub verifies; this is the mode for anything other people consume.
 - **`off`** — the pipeline promotes the candidate itself: an annotated, unsigned final tag on the built commit carrying the marker's message, the draft published, and optionally the moving major advanced — one job, no ceremony.
   Provenance then rests on whoever holds the workflow token.
-- **Unconfigured** — the repository's own enforcement decides: an active signature-requiring tag ruleset resolves to `manual`, none resolves to `off`, and unreadable rulesets resolve to `manual` (never push an unsigned tag on a repository whose policy is unknown).
+- **Unconfigured** — the repository's own enforcement decides: an active signature rule covering the final tag resolves to `manual` (a rule scoped to `v*-sig` companions does not), none resolves to `off`, and unreadable rulesets resolve to `manual` (never push an unsigned tag on a repository whose policy is unknown).
 
 Repositories that enforce signed tags apply the shipped ruleset files, so the enforcement and the detection agree:
 
@@ -94,6 +94,36 @@ gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-maintainer-on
 
 (Or Settings → Rules → Rulesets → New ruleset → Import a ruleset.)
 Both exclude the `v*-rc*` markers and the bare moving majors, and the maintainer rule carries a Repository-admin bypass for the final signed push.
+
+## The publish-go-live mode
+
+An alternative to the signed final tag, for repositories where the admin's publish click is the trust anchor: no per-release signing, and the one human gate is turning the draft into a release — with immutable releases enabled, that click freezes the result.
+
+The candidate build passes `go-live: publish-draft` to `release-guidance` and drops the `promote-release` step; the gate drops `require-signed-tag`.
+The runbook becomes: review the draft, merge the merge-back pull request, then publish the draft — Releases → vX.Y.Z → Publish.
+Publishing creates the vX.Y.Z tag on the default branch's tip, and that tag push runs the final path unchanged: version coherence, the tree seal against the newest marker, the (idempotent) flip, and the moving major.
+Publish right after the merge-back lands: a commit reaching the default branch in between fails the seal after the publish, and an immutable release cannot be taken back — the failed run then marks a release whose content was never sealed.
+
+The signature statement stays available out of band as a companion tag, pinned to the same commit and enforced signed by the retargeted ruleset below:
+
+```sh
+git fetch origin 'refs/tags/vX.Y.Z:refs/tags/vX.Y.Z'
+git tag -s -m "vX.Y.Z" vX.Y.Z-sig 'vX.Y.Z^{}'
+git push origin refs/tags/vX.Y.Z-sig
+```
+
+The tag ruleset must not require signatures on the versions themselves — GitHub creates them unsigned — so `required_signatures` retargets to the companions:
+
+```sh
+gh api repos/{owner}/{repo}/rulesets/{id} | jq '{name, target, enforcement,
+  bypass_actors: (.bypass_actors // []),
+  conditions: (.conditions | .ref_name = {include: ["refs/tags/v[0-9]*.[0-9]*.[0-9]*-sig"], exclude: []}),
+  rules: [.rules[] | if (.parameters // null) == null then {type} else {type, parameters} end]}' \
+| gh api -X PUT repos/{owner}/{repo}/rulesets/{id} --input -
+```
+
+The guidance step checks this alignment at candidate time and errors while everything is still a draft when a signature rule covers the version itself — the misconfiguration never gets as far as a tag the repository would reject, or one an admin bypass would let fail the gate after going live.
+This repository releases itself in this mode; the signed mode stays the reference default.
 
 ## What to do with the draft pre-release
 
@@ -124,6 +154,7 @@ A rejected version number is only consumed if the draft was published — an unp
 ### What the tag push triggers
 
 The pipeline's final path runs the signature gate, asserts the tag carries the newest marker's tree, attests and signs the assets where the repository is public, and the publish job flips the draft live.
+Never publish the draft by hand in this mode — the pipeline flips it, and a hand-published draft makes GitHub create an unsigned tag that fails the gate after the release is already live; where that click is the intended gate, use the publish-go-live mode above.
 After publication: registry publishing (`cargo publish`) stays a manual, deliberate step; promote the pre-release flag and merge the merge-back pull request per your process.
 
 ## The reference pipeline

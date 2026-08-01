@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - tag-rulesets: the signature probe is pattern-aware — `signature_rule_covers_ref` answers for one concrete ref, so a rule scoped to `v*-sig` companions does not mark plain versions as signature-enforced, and require-signed-tag's alignment warning asks about the very tag it gates. An unreadable ruleset detail resolves the probe to unknown, matching the caution of an unreadable listing.
 - promote-release: sign-tags autodetection asks whether a signature rule covers the final tag, and an explicit `off` colliding with such a rule errors before anything is created — CI never pushes an unsigned tag the repository's own policy rejects, or one a bypass would let fail the gate after going live. Re-running a completed promotion skips the tag push and proceeds to the idempotent flip and major; the same version on a different commit is a named conflict.
+- This repository releases itself in the publish-go-live mode: the gate drops `require-signed-tag`, the candidate run drops `promote-release` and renders the publish-draft runbook, and the admin publishing the draft creates the tag and is the one human gate. docs/release-flow.md describes the mode — the merge-back-then-publish ordering, the seal race caveat, the `vX.Y.Z-sig` attestation companion, and the retargeted ruleset; the signed flow stays the reference default and gains the lesson line about never hand-publishing its drafts.
 
 ## [1.3.0] - 2026-08-01
 

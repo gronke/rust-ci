@@ -1,7 +1,15 @@
 name: Release
 
 # The reference pipeline from docs/release-flow.md, dogfooded with local
-# action paths: a tag releases itself with the actions it carries.
+# action paths — in publish-go-live mode: no per-release signing. A candidate
+# run builds the draft and its rcN marker; the release manager merges the
+# merge-back PR and then publishes the draft, the one human gate. Publishing
+# creates the vX.Y.Z tag on main's tip, and that tag push runs the final
+# path: version coherence, the tree seal against the newest marker, the
+# (idempotent) flip, and the moving major. Publish right after the merge-back
+# lands — a commit reaching main in between fails the seal after the
+# immutable publish. An optional signed companion (vX.Y.Z-sig, the only tags
+# the ruleset requires signatures on) attests the release commit out of band.
 on:
   push:
     branches: ["release/v**"]
@@ -31,10 +39,6 @@ jobs:
             *)                 version="" ;;
           esac
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Require a verified signed tag (final path only)
-        if: github.ref_type == 'tag'
-        uses: ./.github/actions/require-signed-tag
 
       # No crate here: the declared version is the changelog's newest released
       # section, checked against the ref-derived one.
@@ -70,27 +74,23 @@ jobs:
         with:
           version: ${{ env.VERSION }}
 
+      # publish-draft: the admin publishing the draft is the go-live. The step
+      # refuses at candidate time if a signature rule still covers the version
+      # itself, so the publish-created tag is never one the repository rejects.
       - uses: ./.github/actions/release-guidance
         with:
           version: ${{ env.VERSION }}
           marker-tag: ${{ steps.draft.outputs.marker }}
           commit: ${{ github.sha }}
           draft-url: ${{ steps.draft.outputs.url }}
-
-      # The tags-signed ruleset resolves this to manual — the release manager
-      # signs — and every candidate run dogfoods the detection.
-      - uses: ./.github/actions/promote-release
-        with:
-          version: ${{ env.VERSION }}
-          marker-tag: ${{ steps.draft.outputs.marker }}
-          moving-major: "true"
+          go-live: publish-draft
 
   publish:
     name: publish the release (final path)
     needs: gate
-    # Any tag reaching the pipeline is a human-pushed final tag: marker tags are
-    # pushed with the workflow token and trigger nothing, and require-signed-tag
-    # rejects unsigned tags.
+    # The vX.Y.Z tag normally arrives from the admin publishing the draft
+    # (markers are workflow-token pushes and trigger nothing); a hand-pushed
+    # tag runs the same seal.
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
