@@ -75,6 +75,19 @@ Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness
 Fixes land as ordinary pushes to the branch; rc2, rc3, … refresh the same draft.
 Marker tags append one `-rcN` to the version's tag name — including on a release-candidate version, where `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
 
+## Choosing a go-live mode
+
+Three ways for a reviewed candidate to become a release; the trust anchor decides which:
+
+| Trust anchor | How to configure it | Who creates the final tag |
+| --- | --- | --- |
+| A human signing key, per release | the default — `release-guidance` with `go-live: signed-tag`, `promote-release` resolving to `manual` | the release manager, signed |
+| The workflow token | `promote-release` with `sign-tags: off` | the candidate run, unsigned |
+| One admin's publish click, frozen by immutable releases | `release-guidance` with `go-live: publish-draft`, no `promote-release` step | GitHub, when the draft is published |
+
+Unconfigured, `promote-release` reads the repository's own tag rules and picks between the first two — never pushing an unsigned tag where signatures are required, or where the rules cannot be read.
+Whether the registry follows a release is a separate decision from all three: gate `cargo-publish` on a signature and an unattested release rehearses instead of uploading.
+
 ## Signing: the sign-tags mode
 
 Whether a human seals the release is a mode, resolved by the `promote-release` step at the end of every candidate build:
@@ -100,17 +113,35 @@ Both exclude the `v*-rc*` markers and the bare moving majors, and the maintainer
 An alternative to the signed final tag, for repositories where the admin's publish click is the trust anchor: no per-release signing, and the one human gate is turning the draft into a release — with immutable releases enabled, that click freezes the result.
 
 The candidate build passes `go-live: publish-draft` to `release-guidance` and drops the `promote-release` step; the gate drops `require-signed-tag`.
-The runbook becomes: review the draft, merge the merge-back pull request, then publish the draft — Releases → vX.Y.Z → Publish.
-Publishing creates the vX.Y.Z tag on the default branch's tip, and that tag push runs the final path unchanged: version coherence, the tree seal against the newest marker, the (idempotent) flip, and the moving major.
-Publish right after the merge-back lands: a commit reaching the default branch in between fails the seal after the publish, and an immutable release cannot be taken back — the failed run then marks a release whose content was never sealed.
+The runbook:
 
-The signature statement stays available out of band as a companion tag, pinned to the same commit and enforced signed by the retargeted ruleset below:
+1. Review the draft pre-release.
+2. Merge the merge-back pull request.
+3. Publish the draft with its target pinned to the merged commit:
+
+   ```sh
+   target=$(git ls-remote origin refs/heads/main | cut -f1)
+   gh release edit vX.Y.Z --draft=false --prerelease=false --target "$target"
+   ```
+
+A release's `target_commitish` is where its tag gets created, so the pinned SHA — not the branch — decides what the tag seals.
+That is what makes the flow deterministic: the tree seal passes by construction, and a push landing on the default branch between the merge-back and the click cannot end up inside an immutable release.
+Publishing from the web dialog is equivalent as long as the target there names that commit.
+
+The tag push then runs the final path unchanged: version coherence, the tree seal against the newest marker, the (idempotent) flip, and the moving major.
+
+A signature statement stays available out of band as a companion tag on the release commit:
 
 ```sh
 git fetch origin 'refs/tags/vX.Y.Z:refs/tags/vX.Y.Z'
 git tag -s -m "vX.Y.Z" vX.Y.Z-sig 'vX.Y.Z^{}'
 git push origin refs/tags/vX.Y.Z-sig
 ```
+
+The retargeted ruleset below governs the companion's *form* — if one exists it must carry a verified signature — and nothing requires one to exist.
+What makes the companion load-bearing is a step that reads it: a gate on registry publication, where an unattested release rehearses the upload instead of performing it.
+A repository with nothing to publish — this one — gets provenance only, and the companion is genuinely optional.
+Any tag name works; `attestation-tags` narrows what counts, so a repository that would rather keep the `v*` namespace to releases can attest with `sig/vX.Y.Z` and leave `git describe` alone.
 
 The tag ruleset must not require signatures on the versions themselves — GitHub creates them unsigned — so `required_signatures` retargets to the companions:
 

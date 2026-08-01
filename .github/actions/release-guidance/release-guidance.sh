@@ -31,7 +31,8 @@ esac
 # slips through an admin bypass and fails the gate after the immutable
 # publish. The misalignment errors here, at candidate time.
 if [ "$GO_LIVE" = "publish-draft" ]; then
-  case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
+  signature_rule_covers_ref "refs/tags/${TAG}"
+  case "$SIGNATURE_RULE_VERDICT" in
     true)
       echo "::error::go-live: publish-draft, but an active tag ruleset requires signatures on ${TAG} — retarget the rule (e.g. to v*-sig companions) or use go-live: signed-tag"
       exit 1
@@ -49,20 +50,30 @@ if [ "$GO_LIVE" = "publish-draft" ]; then
   if [ -n "${INPUT_DRAFT_URL:-}" ]; then
     DRAFT_LINE="Review [the draft release](${INPUT_DRAFT_URL}) — assets and notes — before publishing."
   fi
+  # Publishing creates the tag from the release's target_commitish, so the
+  # target is the whole game: pinned to the merged commit, the tag lands on the
+  # content the marker sealed and no later push can move it.
+  DEFAULT_BRANCH="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch 2>/dev/null || echo main)"
   ACCEPT="$(cat <<EOF
 ### Accept — merge, then publish
 
-Merge the merge-back pull request; then publish the draft release — Releases → ${TAG} → Publish.
-Publishing creates the ${TAG} tag on main's tip, and that push runs the final path.
-Publish right after the merge-back lands — a commit reaching main in between fails the seal after the (immutable) publish.
+1. Merge the merge-back pull request.
+2. Publish the draft with its target pinned to the merged commit:
 
-Optionally attest with a signature on the same commit:
+   \`\`\`sh
+   target=\$(git ls-remote origin refs/heads/${DEFAULT_BRANCH} | cut -f1)
+   gh release edit ${TAG} --draft=false --prerelease=false --target "\$target"
+   \`\`\`
 
-\`\`\`sh
-git fetch origin 'refs/tags/${TAG}:refs/tags/${TAG}'
-git tag -s -m "${TAG}" ${TAG}-sig ${TAG}^{}
-git push origin refs/tags/${TAG}-sig
-\`\`\`
+   The tag is created from the target, so the resolved SHA — the merge-back's commit — is what ${TAG} seals; a later push to ${DEFAULT_BRANCH} cannot move it.
+   Publishing from the web dialog does the same, as long as the target there names that commit rather than the branch.
+3. Optionally attest the release commit with your signature:
+
+   \`\`\`sh
+   git fetch origin 'refs/tags/${TAG}:refs/tags/${TAG}'
+   git tag -s -m "${TAG}" ${TAG}-sig ${TAG}^{}
+   git push origin refs/tags/${TAG}-sig
+   \`\`\`
 EOF
 )"
   TRIGGERS="$(cat <<EOF
@@ -70,6 +81,7 @@ EOF
 
 The tag GitHub creates on publish runs the pipeline's final path: version coherence, the tree seal against the newest marker, and the moving major advancing.
 Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever — even deleting the release does not free it.
+Which is why the target is pinned: the seal then passes by construction, rather than depending on how long the click took.
 EOF
 )"
 else
