@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ## [Unreleased]
 
+### Added
+
+- release-guidance gained `go-live`: "publish-draft" renders merge-then-publish — the admin publishing the draft creates the tag and is the flow's one human gate — plus the optional signed `vX.Y.Z-sig` attestation companion; "signed-tag" (the default) is the runbook as before. In publish-draft mode the step errors at candidate time when an active tag ruleset still requires signatures on the version itself, so CI never sets up a tag the repository's own policy rejects.
+
 ### Changed
 
 - tag-rulesets: the signature probe is pattern-aware — `signature_rule_covers_ref` answers for one concrete ref, so a rule scoped to `v*-sig` companions does not mark plain versions as signature-enforced, and require-signed-tag's alignment warning asks about the very tag it gates. An unreadable ruleset detail resolves the probe to unknown, matching the caution of an unreadable listing.
