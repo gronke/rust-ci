@@ -639,6 +639,7 @@ jobs:
           case "$*" in
             *"/rulesets "*|*"/rulesets") if [ "${FAKE_RULESETS_FAIL:-}" = "1" ]; then exit 1; fi; printf '%s' "${FAKE_RULESET_IDS:-}" ;;
             *"/rulesets/"*) if [ "${FAKE_RULESET_DETAIL_FAIL:-}" = "1" ]; then exit 1; fi; printf '%s\n' "${FAKE_RULESET_JSON:-}" ;;
+            *".default_branch"*) printf 'main\n' ;;
             "release edit"*) echo "FLIPPED: $*" >> "${FAKE_LOG:?}" ;;
             *) echo "fake gh: unhandled: $*" >&2; exit 64 ;;
           esac
@@ -668,6 +669,11 @@ jobs:
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
           # an unreadable ruleset detail is as unknown as an unreadable listing
           : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "" "" "1"
+          grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
+          # a condition pattern the probe cannot faithfully evaluate is unknown,
+          # not "does not match" — it must never read as "no signature required"
+          : > "$RUNNER_TEMP/out.txt"
+          run_promote "" false "7" '{"rules":[{"type":"required_signatures"}],"conditions":{"ref_name":{"include":["refs/tags/v[!x]*"],"exclude":[]}}}' "" ""
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
           # explicit off colliding with a covering signature rule errors before anything is pushed
           if run_promote off false "7" "$COVERING" "" "" > "$RUNNER_TEMP/collision.log" 2>&1; then
@@ -774,7 +780,11 @@ jobs:
           }
           run_guidance "" "" >/dev/null
           test "$(grep -c '^### ' "$S")" = "3"
-          grep -q 'Merge the merge-back pull request' "$S"
+          grep -q '1. Merge the merge-back pull request' "$S"
+          # the publish command must pin the target: an unpinned publish tags
+          # whatever the default branch points at when the click happens
+          grep -q 'gh release edit v9.9.0 --draft=false --prerelease=false --target "$target"' "$S"
+          grep -q 'git ls-remote origin refs/heads/' "$S"
           grep -q 'v9.9.0-sig' "$S"
           grep -q 'before publishing' "$S"
           COVERING='{"rules":[{"type":"required_signatures"}],"conditions":{"ref_name":{"include":["~ALL"],"exclude":["refs/tags/v*-rc*"]}}}'

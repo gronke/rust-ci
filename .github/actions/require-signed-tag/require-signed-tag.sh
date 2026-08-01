@@ -66,7 +66,8 @@ fi
 # scoped elsewhere (e.g. to v*-sig companions) does not protect it. A token
 # that cannot read the rulesets skips the check quietly.
 if [ "${INPUT_CHECK_RULESET:-true}" = "true" ] && [ "${INPUT_WARN_ONLY:-false}" != "true" ]; then
-  case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
+  signature_rule_covers_ref "refs/tags/${TAG}"
+  case "$SIGNATURE_RULE_VERDICT" in
     true) ;;
     false)
       echo "::warning::the workflow requires a signed tag, but no active tag ruleset requires signatures on ${TAG} — the gate refuses builds, it cannot prevent an unsigned tag from existing; add a tag ruleset with required signatures covering it to align the repository with this preference"

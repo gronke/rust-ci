@@ -32,7 +32,8 @@ write_outputs() {
 # manual — never push an unsigned tag on a repository whose policy is unknown.
 MODE="${INPUT_SIGN_TAGS:-}"
 if [ -z "$MODE" ]; then
-  case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
+  signature_rule_covers_ref "refs/tags/${TAG}"
+  case "$SIGNATURE_RULE_VERDICT" in
     false) MODE="off" ;;
     true)
       MODE="manual"
@@ -66,7 +67,8 @@ fi
 # an unsigned ${TAG} that an active signature rule covers would be rejected at
 # push time — or slip through a bypass and fail the gate after the release is
 # live. The contradiction errors here, before anything is created.
-case "$(signature_rule_covers_ref "refs/tags/${TAG}")" in
+signature_rule_covers_ref "refs/tags/${TAG}"
+case "$SIGNATURE_RULE_VERDICT" in
   true)
     echo "::error::sign-tags: off, but an active tag ruleset requires signatures on ${TAG} — retarget the rule (e.g. to v*-sig companions) or use sign-tags: manual"
     exit 1
