@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
-- retry-transient: a shared helper that retries a command whose failure came from the network rather than from the work it was asked to do, bounded by `RETRY_ATTEMPTS` with a tripling pause.
+- retry-transient: a shared helper that retries a command whose failure came from the network rather than from the work it was asked to do, bounded by `RETRY_ATTEMPTS`, with the pause tripling from `RETRY_DELAY` and holding at `RETRY_MAX_DELAY`.
 - require-signed-release gained `attestation-tag` and `require-published`, so the signature-triggered shape the guide documents needs no shell of its own: a job passes the pushed companion instead of a version, and the release it seals is derived by commit identity — any naming convention works, and a commit carrying no published release, or more than one, is refused rather than guessed. `release-tag` and `version` join the outputs, and `require-published` turns a draft into an error rather than an unsigned answer, since a signature completes automation and never publishes drafts.
 
 ### Fixed
