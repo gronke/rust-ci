@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Fixed
+
+- release-flow: the dogfooded pipeline guards its gate against the moving major, as the reference pipeline already did. The pipeline pushes `v1` with the workflow token, which fires no events, but a maintainer moving it by hand does — and the gate then derived the version "1" from the ref and refused the repository's own major tag.
+
+### Changed
+
+- docs/release-flow.md: publishing before the merge-back lands is named for what it costs. The tag is created on a default branch that does not yet carry the release commit, so it names a version its own changelog does not declare; the gate refuses, the moving major never advances, and immutable releases freeze that tag for good. Nothing downstream runs, but the version is spent and the release has to be cut again under a new number.
+
 ## [1.4.1] - 2026-08-02
 
 ### Added
