@@ -1474,3 +1474,63 @@ jobs:
             retry_transient always' >/dev/null 2>&1 || status=$?
           [ "$status" = "2" ] || { echo "::error::a non-numeric RETRY_ATTEMPTS did not fail fast ($status)"; exit 1; }
           echo "✓ registry timeouts retry; build errors fail once keeping their status; the contract enforces itself"
+
+  # route-git-token: the exported GIT_CONFIG_* entries resolve as git
+  # config in later steps, a second invocation appends behind the first
+  # instead of clobbering it, a non-GitHub host carries its own username
+  # convention, and host/path values that could not name a forge namespace
+  # are refused before anything reaches the environment.
+  selftest-route-git-token:
+    name: exercise the route-git-token action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: route a github.com namespace (defaults)
+        uses: ./.github/actions/route-git-token
+        with:
+          token: not-a-real-token
+          path: octo-test
+
+      - name: route a self-hosted GitLab group, appending
+        uses: ./.github/actions/route-git-token
+        with:
+          token: second-fake-token
+          host: gitlab.example.com:8443
+          username: oauth2
+          path: my-group/sub-group
+
+      - name: the rewrites resolve and cargo is switched to the git CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GIT_CONFIG_COUNT" = "2" ] || { echo "::error::expected 2 entries, got ${GIT_CONFIG_COUNT:-none}"; exit 1; }
+          [ "$CARGO_NET_GIT_FETCH_WITH_CLI" = "true" ] || { echo "::error::cargo git-CLI switch missing"; exit 1; }
+          got="$(git config --get 'url.https://x-access-token:not-a-real-token@github.com/octo-test/.insteadOf')"
+          [ "$got" = "https://github.com/octo-test/" ] || { echo "::error::github rewrite did not resolve (got '$got')"; exit 1; }
+          got="$(git config --get 'url.https://oauth2:second-fake-token@gitlab.example.com:8443/my-group/sub-group/.insteadOf')"
+          [ "$got" = "https://gitlab.example.com:8443/my-group/sub-group/" ] || { echo "::error::gitlab rewrite did not resolve (got '$got')"; exit 1; }
+
+      - name: an invalid path is refused
+        id: bad-path
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          path: "evil/../traversal"
+
+      - name: an invalid host is refused
+        id: bad-host
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          host: "github.com/../evil"
+
+      - name: the refusals actually happened
+        shell: bash
+        run: |
+          [ "${{ steps.bad-path.outcome }}" = "failure" ] \
+            || { echo "::error::invalid path was accepted"; exit 1; }
+          [ "${{ steps.bad-host.outcome }}" = "failure" ] \
+            || { echo "::error::invalid host was accepted"; exit 1; }

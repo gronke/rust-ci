@@ -58,6 +58,23 @@ Mint the token just before `cargo-fetch` and hand the output to `git-token`:
 
 The token expires after one hour, is masked in logs by the action, and is revoked automatically in the action's `post` step, so it never lingers.
 
+### Without the sealed container
+
+A job that runs plain `cargo build` or `git clone` on the runner — no `cargo-fetch`, no seal — routes the same token with `route-git-token`:
+
+```yaml
+- name: Route private git fetches through the token
+  uses: gronke/rust-ci/.github/actions/route-git-token@main
+  with:
+    token: ${{ steps.deps-token.outputs.token }}
+    path: ${{ github.repository_owner }}   # optional; empty routes the whole host
+```
+
+The action is not GitHub-bound: `host:` (with an optional port) and `username:` route any authenticated https git host — a self-hosted GitLab takes `host: gitlab.example.com` with `username: oauth2` and a nested `path: group/sub-group`.
+Only the minting is ecosystem-specific, and that stays with the caller.
+
+It exports the `url.insteadOf` rewrite as `GIT_CONFIG_*` environment entries (they die with the job — nothing lands in a gitconfig file, which matters on self-hosted runners) and sets `CARGO_NET_GIT_FETCH_WITH_CLI` so cargo's fetches honor it. The rewrite is a transport detail: scope the TOKEN, as above — a rewrite for a repository the token cannot read fails exactly like no rewrite at all.
+
 ## Fine-grained PAT (simpler alternative)
 
 Create a fine-grained PAT with **Contents: Read** on each private dependency repository, store it as a secret, and pass it directly:

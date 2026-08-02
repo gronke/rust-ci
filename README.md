@@ -322,6 +322,20 @@ See [the action's README](.github/actions/cargo-install/README.md) for the secur
 Run a `cargo-install`'d tool from the shared cache, sealed and network-isolated by default.
 See [the action's README](.github/actions/cargo-use/README.md).
 
+### `route-git-token`
+
+Route git fetches ON THE RUNNER through a short-lived token: an `url.insteadOf` rewrite exported as `GIT_CONFIG_*` environment entries (they die with the job — nothing lands in a gitconfig file, which matters on self-hosted runners) plus `CARGO_NET_GIT_FETCH_WITH_CLI` so cargo's fetches honor it.
+The unsealed sibling of `cargo-fetch`'s `git-token` input, for jobs that run plain `cargo build` or `git clone` outside the container.
+The defaults speak GitHub, but any authenticated https git host works: `host:` and `username:` carry the host's convention (GitLab OAuth: `oauth2`; Bitbucket: `x-token-auth`), and `path:` optionally scopes the rewrite to a namespace — nested groups included.
+Invocations append, so two tokens for two hosts or namespaces coexist.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/route-git-token@main
+  with:
+    token: ${{ steps.deps-token.outputs.token }}
+    path: my-org
+```
+
 ### `publish-dry-run`
 
 A release gate split into **network-with-no-code** then **code-with-no-network**.
@@ -423,6 +437,7 @@ The token must carry `contents: read` on every private dependency repository.
 The default `GITHUB_TOKEN` only grants access to the workflow's own repository, so a cross-repository dependency needs a fine-grained PAT or a GitHub App installation token, stored as a secret.
 See [docs/private-git-dependencies.md](docs/private-git-dependencies.md) for the GitHub App setup and an in-workflow minting example.
 The sealed `lint-and-test-docker` passes run `--offline` against the cache `cargo-fetch` populated, so they need no token.
+Jobs that build on the runner instead of in the container route the same token with [`route-git-token`](#route-git-token).
 
 ## Cache-size operations
 
