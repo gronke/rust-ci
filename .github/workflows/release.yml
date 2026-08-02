@@ -23,6 +23,11 @@ jobs:
   gate:
     name: release readiness gate
     runs-on: ubuntu-latest
+    # The moving major (v1) names no version to check. The pipeline pushes it
+    # with the workflow token, which fires no events, but a maintainer moving
+    # it by hand does — and without this the gate would derive "1" from the ref
+    # and refuse the repository's own major tag.
+    if: ${{ github.ref_type != 'tag' || contains(github.ref_name, '.') }}
     outputs:
       version: ${{ steps.expect.outputs.version }}
     steps:

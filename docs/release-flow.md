@@ -131,6 +131,10 @@ A release's `target_commitish` is where its tag gets created, so the pinned SHA 
 That is what makes the flow deterministic: the tree seal passes by construction, and a push landing on the default branch between the merge-back and the click cannot end up inside an immutable release.
 Publishing from the web dialog is equivalent as long as the target there names that commit.
 
+The order of steps 2 and 3 is the whole discipline of this mode.
+Publishing before the merge-back lands creates the tag on a default branch that does not yet carry the release commit, so the tag names a version its own changelog does not declare: the gate refuses it, the moving major never advances, and with immutable releases enabled that tag can no longer be moved or reused.
+Nothing downstream runs, so nothing is damaged — but the version is spent, and the release has to be cut again under a new number.
+
 The tag push then runs the final path unchanged: version coherence, the tree seal against the newest marker, the (idempotent) flip, and the moving major.
 
 A signature statement stays available out of band as a companion tag on the release commit:
@@ -422,6 +426,7 @@ jobs:
 - *Lightweight tag* or *not a verified signed tag* — recreate the tag annotated (`git tag -s`) with a key your GitHub account knows, and force-push it by name.
 - *The tag does not carry the content the last build sealed* — the branch moved after the candidate you meant to seal, or the merge-back rebase brought other changes along; re-tag the newest marker commit (or a tree-identical tip), or push the branch and let a new candidate build first.
 - *Expected version != Cargo.toml version* — the ref name, the crate version, and the changelog section must agree; fix the branch content.
+  In the publish-go-live mode this is what publishing before the merge-back looks like: the tag landed on a default branch whose changelog still declares the previous release. The tag is spent (immutable releases freeze it), so cut the next number rather than trying to repair it.
 - *already published on crates.io* / *a published release exists* — immutable names cannot be reused, not even after deleting the release; bump the version and cut again.
 - *GH013 / Cannot create ref on the marker push* — a tag ruleset restricts `v*-rc*`: the markers are pushed unsigned with the workflow token, so exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule (the final `v*` rules stay).
   `require-signed-tag`'s ruleset warning covers the final tag's signature rule, not the markers.
