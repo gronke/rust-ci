@@ -7,7 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- retry-transient: a shared helper that retries a command whose failure came from the network rather than from the work it was asked to do, bounded by `RETRY_ATTEMPTS` with a tripling pause.
 - require-signed-release gained `attestation-tag` and `require-published`, so the signature-triggered shape the guide documents needs no shell of its own: a job passes the pushed companion instead of a version, and the release it seals is derived by commit identity — any naming convention works, and a commit carrying no published release, or more than one, is refused rather than guessed. `release-tag` and `version` join the outputs, and `require-published` turns a draft into an error rather than an unsigned answer, since a signature completes automation and never publishes drafts.
+
+### Fixed
+
+- build-image survives a registry hiccup: the base image comes from Docker Hub, which times out and rate-limits for reasons that have nothing to do with the build, and a single `i/o timeout` there used to fail the job. Both build paths now retry such a failure, while a build that fails on its own terms — a bad Dockerfile, a compile error — still fails on its first attempt and keeps its exit status.
 
 ## [1.4.0] - 2026-08-01
 
