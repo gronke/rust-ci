@@ -1421,3 +1421,36 @@ jobs:
           [ "$PUBLISHED" = "false" ] || { echo "::error::a duplicate reported published=$PUBLISHED"; exit 1; }
           [ "$ALREADY" = "true" ] || { echo "::error::already-published=$ALREADY for a published version"; exit 1; }
           echo "an already-published version skipped, with no credential in play"
+
+  # retry-transient: the registry failing is worth another attempt, the build
+  # failing on its own terms is not.
+  selftest-retry-transient:
+    name: exercise the transient-retry helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: a registry hiccup retries, a build error does not
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          source .github/actions/_lib/retry-transient.sh
+          export RETRY_DELAY=0 RETRY_ATTEMPTS=3
+          count="$(mktemp)"
+          bump() { n=$(( $(cat "$count") + 1 )); echo "$n" > "$count"; printf '%s' "$n"; }
+          flaky() {
+            if [ "$(bump)" -ge 3 ]; then echo "#5 DONE"; return 0; fi
+            echo 'failed to do request: Head "https://registry-1.docker.io/v2/library/rust/manifests/1.95": dial tcp 52.5.201.0:443: i/o timeout'
+            return 1
+          }
+          genuine() { bump >/dev/null; echo "Dockerfile:5 RUN rustup component add clippy: exit code 1"; return 7; }
+
+          echo 0 > "$count"
+          retry_transient flaky >/dev/null
+          [ "$(cat "$count")" = "3" ] || { echo "::error::a registry timeout was not retried"; exit 1; }
+
+          echo 0 > "$count"
+          status=0
+          retry_transient genuine >/dev/null || status=$?
+          [ "$(cat "$count")" = "1" ] || { echo "::error::a genuine build failure was retried"; exit 1; }
+          [ "$status" = "7" ] || { echo "::error::a genuine build failure lost its exit status ($status)"; exit 1; }
+          echo "✓ registry timeouts retry; build errors fail once, keeping their status"

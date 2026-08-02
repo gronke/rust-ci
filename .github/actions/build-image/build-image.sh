@@ -10,6 +10,11 @@
 # The buildx cache scope is derived per resolved Rust version (rust-ci-<version>).
 set -euo pipefail
 
+# The base image is pulled from Docker Hub, which times out and rate-limits for
+# reasons that have nothing to do with this build.
+# shellcheck source=/dev/null
+source "$GITHUB_ACTION_PATH/../_lib/retry-transient.sh"
+
 # Resolve the `msrv` sentinel to the crate's declared rust-version (validated: numeric
 # only, so a crafted manifest can't smuggle a docker tag). Any other value is a literal
 # base tag (latest, 1, 1.95, bookworm, …) and is used as-is.
@@ -33,7 +38,7 @@ if [ "${CACHE:-false}" = "true" ]; then
   docker buildx inspect rust-ci-builder >/dev/null 2>&1 \
     || docker buildx create --name rust-ci-builder --driver docker-container \
          --driver-opt image=moby/buildkit:latest >/dev/null
-  docker buildx build --builder rust-ci-builder \
+  retry_transient docker buildx build --builder rust-ci-builder \
     --build-arg "RUST_VERSION=$RUST_VERSION" \
     --build-arg "RUST_TARGETS=${TARGETS:-}" \
     --cache-from "type=gha,scope=$SCOPE" \
@@ -42,6 +47,6 @@ if [ "${CACHE:-false}" = "true" ]; then
   echo "::endgroup::"
 else
   echo "::group::docker build"
-  docker build --build-arg "RUST_VERSION=$RUST_VERSION" --build-arg "RUST_TARGETS=${TARGETS:-}" -t "$TAG" "$context"
+  retry_transient docker build --build-arg "RUST_VERSION=$RUST_VERSION" --build-arg "RUST_TARGETS=${TARGETS:-}" -t "$TAG" "$context"
   echo "::endgroup::"
 fi
