@@ -1453,4 +1453,24 @@ jobs:
           retry_transient genuine >/dev/null || status=$?
           [ "$(cat "$count")" = "1" ] || { echo "::error::a genuine build failure was retried"; exit 1; }
           [ "$status" = "7" ] || { echo "::error::a genuine build failure lost its exit status ($status)"; exit 1; }
-          echo "✓ registry timeouts retry; build errors fail once, keeping their status"
+
+          # The helper reads failure off a pipeline, so it enforces pipefail
+          # itself: a caller without it must still be told the truth, and must
+          # get its own options back.
+          set +o pipefail
+          status=0
+          retry_transient genuine >/dev/null || status=$?
+          [ "$status" = "7" ] || { echo "::error::a failure was swallowed for a caller without pipefail ($status)"; exit 1; }
+          case "$(set +o)" in
+            *"set -o pipefail"*) echo "::error::pipefail leaked into the caller"; exit 1 ;;
+          esac
+          set -o pipefail
+
+          # A bound that is not a number must fail loudly rather than spin until
+          # the workflow timeout.
+          status=0
+          RETRY_ATTEMPTS=abc timeout 10 bash -c 'source .github/actions/_lib/retry-transient.sh
+            always() { echo "i/o timeout"; return 1; }
+            retry_transient always' >/dev/null 2>&1 || status=$?
+          [ "$status" = "2" ] || { echo "::error::a non-numeric RETRY_ATTEMPTS did not fail fast ($status)"; exit 1; }
+          echo "✓ registry timeouts retry; build errors fail once keeping their status; the contract enforces itself"
