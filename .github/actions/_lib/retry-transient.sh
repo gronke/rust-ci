@@ -13,8 +13,11 @@
 # trying again. That distinction is the point; a blanket retry would triple the
 # wall clock of every genuine failure.
 #
-# RETRY_ATTEMPTS (default 3) bounds the tries, RETRY_DELAY (default 5) the first
-# pause; each further pause triples.
+# RETRY_ATTEMPTS (default 5) bounds the tries, RETRY_DELAY (default 5) the first
+# pause; each further pause triples up to RETRY_MAX_DELAY (default 60), so the
+# default budget waits about two minutes in total. Registry degradation lasts
+# minutes rather than seconds — a budget that only rides out a blip fails the
+# job for the same reason having no retry did.
 
 # Conditions a second attempt can plausibly survive.
 _RETRY_TRANSIENT='i/o timeout|deadlineexceeded|timeout exceeded|context deadline|connection reset|connection refused|tls handshake|temporary failure|too many requests|toomanyrequests|unexpected eof|no such host|503 service|502 bad gateway'
@@ -27,7 +30,7 @@ retry_transient() {
   local -
   set -o pipefail
 
-  local attempt=1 max="${RETRY_ATTEMPTS:-3}" delay="${RETRY_DELAY:-5}" out status
+  local attempt=1 max="${RETRY_ATTEMPTS:-5}" delay="${RETRY_DELAY:-5}" cap="${RETRY_MAX_DELAY:-60}" out status
   # A non-numeric bound would make the `-ge` test error out, the loop's exit
   # unreachable, and the job hang until the workflow timeout.
   case "$max" in
@@ -39,6 +42,12 @@ retry_transient() {
   case "$delay" in
     '' | *[!0-9]*)
       echo "::error::RETRY_DELAY must be a whole number (got '${delay}')"
+      return 2
+      ;;
+  esac
+  case "$cap" in
+    '' | *[!0-9]*)
+      echo "::error::RETRY_MAX_DELAY must be a whole number (got '${cap}')"
       return 2
       ;;
   esac
@@ -63,5 +72,6 @@ retry_transient() {
     sleep "$delay"
     attempt=$((attempt + 1))
     delay=$((delay * 3))
+    [ "$delay" -gt "$cap" ] && delay="$cap"
   done
 }
