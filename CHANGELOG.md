@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Fixed
 
+- rust-cache-save: a cache directory that is not a cargo workspace is saved unpruned instead of failing. The prune step is driven by `cargo metadata`, so it died before the save on any other cache family — a C++ build tree such as pdfium's `out/`, where the directory itself is the value and there is no dependency graph to prune against. The working directory is checked for a `Cargo.toml` first, in the same place `cargo metadata` would have run.
 - release-flow: the dogfooded pipeline guards its gate against the moving major, as the reference pipeline already did. The pipeline pushes `v1` with the workflow token, which fires no events, but a maintainer moving it by hand does — and the gate then derived the version "1" from the ref and refused the repository's own major tag.
 
 ### Changed
