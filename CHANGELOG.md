@@ -12,7 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Fixed
 
-- build-image survives a registry hiccup: the base image comes from Docker Hub, which times out and rate-limits for reasons that have nothing to do with the build, and a single `i/o timeout` there used to fail the job. Both build paths now retry such a failure, while a build that fails on its own terms — a bad Dockerfile, a compile error — still fails on its first attempt and keeps its exit status.
+- build-image survives a registry hiccup: the base image comes from Docker Hub, which times out and rate-limits for reasons that have nothing to do with the build, and a single `i/o timeout` there used to fail the job. Both build paths now retry such a failure on a budget that rides out a degraded registry rather than a momentary blip: five attempts, the pause tripling from five seconds and holding at sixty, about two minutes in all. A build that fails on its own terms — a bad Dockerfile, a compile error — still fails on its first attempt and keeps its exit status.
 
 ## [1.4.0] - 2026-08-01
 
