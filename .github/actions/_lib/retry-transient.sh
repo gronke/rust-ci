@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Retry a command whose failure came from the network rather than from the work
-# it was asked to do. Source it (under `set -o pipefail`), then:
+# it was asked to do. Source it, then:
 #
 #   retry_transient docker build …
+#
+# Needs bash 4.4 for `local -`, which confines the pipefail this function
+# depends on to the function itself.
 #
 # A command that fails on its own terms — a bad Dockerfile, a compile error, a
 # missing file — fails on its first attempt and keeps its exit status: only
@@ -17,7 +20,28 @@
 _RETRY_TRANSIENT='i/o timeout|deadlineexceeded|timeout exceeded|context deadline|connection reset|connection refused|tls handshake|temporary failure|too many requests|toomanyrequests|unexpected eof|no such host|503 service|502 bad gateway'
 
 retry_transient() {
+  # Whether the command failed is read off a pipeline, so pipefail is not
+  # optional: without it tee's success would report a failing command as a
+  # success, and a red build would come back green. `local -` restores the
+  # caller's options on return, so enforcing it here costs them nothing.
+  local -
+  set -o pipefail
+
   local attempt=1 max="${RETRY_ATTEMPTS:-3}" delay="${RETRY_DELAY:-5}" out status
+  # A non-numeric bound would make the `-ge` test error out, the loop's exit
+  # unreachable, and the job hang until the workflow timeout.
+  case "$max" in
+    '' | *[!0-9]*)
+      echo "::error::RETRY_ATTEMPTS must be a whole number (got '${max}')"
+      return 2
+      ;;
+  esac
+  case "$delay" in
+    '' | *[!0-9]*)
+      echo "::error::RETRY_DELAY must be a whole number (got '${delay}')"
+      return 2
+      ;;
+  esac
   out="$(mktemp)"
   while :; do
     status=0
