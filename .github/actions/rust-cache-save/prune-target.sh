@@ -30,6 +30,15 @@ remove() {
 
 du -sh "$target" | sed 's/^/before: /'
 
+# Non-cargo cache families (e.g. a C++ build tree such as pdfium's out/):
+# there is no workspace metadata to prune against, and the directory IS the
+# value — save it unpruned instead of failing on `cargo metadata`.
+# The check runs in the action's working-directory, same as cargo metadata.
+if [ ! -f "Cargo.toml" ]; then
+  echo "no Cargo.toml in $PWD — not a cargo workspace; saving unpruned"
+  exit 0
+fi
+
 # Workspace member names; their compiled artifacts use underscores.
 members=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' | tr '-' '_')
 
