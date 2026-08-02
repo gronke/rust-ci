@@ -25,6 +25,9 @@ runs:
   steps:
     # Dependency artifacts are the cache's value; everything else is rebuilt or relinked on any
     # commit and only grows the archive plus the tar/zstd staging that can fill the runner disk.
+    # The prune step is cargo-metadata-driven: for non-cargo cache families
+    # (no Cargo.toml in the workspace — e.g. a C++ build tree like pdfium's
+    # out/) it logs and saves the directory unpruned instead of failing.
     - name: Prune target to dependency artifacts
       if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
       shell: bash
