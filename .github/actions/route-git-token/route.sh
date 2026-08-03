@@ -8,6 +8,17 @@
 set -euo pipefail
 
 [ -n "${ROUTE_TOKEN:-}" ] || { echo "::error::token input is empty"; exit 1; }
+# The token is interpolated into a $GITHUB_ENV line, so it is validated before
+# it is masked or used: a newline would write a line of its own — an arbitrary
+# environment variable for every later step — and `::add-mask::` would only
+# have masked the first line, printing the rest. The error never echoes the
+# value. The charset covers what forges actually issue (GitHub `ghs_`/
+# `github_pat_`, GitLab `glpat-`, Bitbucket, base64url JWTs) and excludes the
+# characters that would break the URL it is embedded in.
+if ! [[ "$ROUTE_TOKEN" =~ ^[A-Za-z0-9._~+=-]+$ ]]; then
+  echo "::error::the token contains characters this action cannot embed in a git URL (whitespace, or one of @:/?#%); percent-encode it, or mint one without them"
+  exit 1
+fi
 printf '::add-mask::%s\n' "$ROUTE_TOKEN"
 
 # Every validated piece ends up inside a gitconfig KEY; these gates keep
