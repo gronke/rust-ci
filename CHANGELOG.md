@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Added
+
+- route-git-token: route git fetches on the runner through a short-lived token — the unsealed sibling of `cargo-fetch`'s `git-token`, for jobs that run plain `cargo build` or `git clone` outside the sealed container. The rewrite is exported as `GIT_CONFIG_*` entries through `$GITHUB_ENV` rather than written to a gitconfig file, so it dies with the job, and invocations append rather than clobber: two tokens for two owners coexist. `CARGO_NET_GIT_FETCH_WITH_CLI` comes along, since cargo's libgit2 path ignores git's rewrites. The defaults speak GitHub, and `host`, `username` and `path` cover any authenticated https host. Every input that reaches a gitconfig key is charset-validated first, the token included: it is embedded in a `$GITHUB_ENV` line, where a newline would export an environment variable of its own to every later step and escape the log mask.
+
+### Changed
+
+- docs/release-flow.md describes how a cargo workspace releases: `package:` names the crate whose version is the release version, `cargo metadata` resolves `version.workspace = true` inheritance so one unified workspace version works, and per-crate tags with independently versioned members stay out of scope.
+
 ## [1.4.2] - 2026-08-02
 
 ### Fixed

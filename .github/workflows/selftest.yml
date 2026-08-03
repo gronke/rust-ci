@@ -1527,6 +1527,17 @@ jobs:
           token: t
           host: "github.com/../evil"
 
+      # The token is interpolated into a $GITHUB_ENV line, so a newline in it
+      # would export an environment variable of its own to every later step —
+      # and `::add-mask::` would only have covered the first line.
+      - name: a token carrying a newline is refused
+        id: bad-token
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: "ghs_looks_fine\nGIT_CONFIG_COUNT=99"
+          path: octo-test
+
       - name: the refusals actually happened
         shell: bash
         run: |
@@ -1534,3 +1545,8 @@ jobs:
             || { echo "::error::invalid path was accepted"; exit 1; }
           [ "${{ steps.bad-host.outcome }}" = "failure" ] \
             || { echo "::error::invalid host was accepted"; exit 1; }
+          [ "${{ steps.bad-token.outcome }}" = "failure" ] \
+            || { echo "::error::a token containing a newline was accepted"; exit 1; }
+          # …and it changed nothing: the two good entries above still stand.
+          [ "$GIT_CONFIG_COUNT" = "2" ] \
+            || { echo "::error::a refused token disturbed the exported entries (count ${GIT_CONFIG_COUNT:-none})"; exit 1; }
