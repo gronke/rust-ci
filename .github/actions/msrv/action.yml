@@ -15,6 +15,13 @@ inputs:
     description: Feature flag passed to `cargo check` (e.g. --features full, --all-features).
     required: false
     default: ""
+  command:
+    description: >-
+      "check" (default) compiles; "test" builds and runs the test suite on the MSRV, so
+      dev-dependencies and test code are held to the floor too. The source stays mounted
+      read-only either way — tests that write into the checkout fail by design.
+    required: false
+    default: "check"
   rust-version:
     description: >-
       MSRV to test. Empty (default) reads `rust-version` from the crate's Cargo.toml,
@@ -108,7 +115,7 @@ runs:
         CACHE: "false"
       run: bash "$GITHUB_ACTION_PATH/../build-image/build-image.sh"
 
-    - name: cargo check on the MSRV (sealed)
+    - name: cargo ${{ inputs.command }} on the MSRV (sealed)
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -118,6 +125,7 @@ runs:
         OFFLINE: ${{ inputs.offline }}
         PACKAGE: ${{ inputs.package }}
         FEATURES: ${{ inputs.features }}
+        COMMAND: ${{ inputs.command }}
         LOCKED: ${{ inputs.locked }}
         MSRV: ${{ steps.resolve.outputs.msrv }}
         ENV_INCLUDE: ${{ inputs.env-include }}
@@ -210,8 +218,9 @@ runs:
         fi
 
         export CICD_DIR="$GITHUB_ACTION_PATH"
-        # PACKAGE/FEATURES/MSRV aren't CARGO_* (env-include won't forward them); inject them for
-        # the in-container script. seal_run reads OFFLINE for --network; the check is always --locked.
-        EXTRA_ENV="$(printf '%s\n%s\n%s' "PACKAGE=$PACKAGE" "FEATURES=$FEATURES" "MSRV=$MSRV")"
+        # PACKAGE/FEATURES/COMMAND/MSRV aren't CARGO_* (env-include won't forward them); inject
+        # them for the in-container script. seal_run reads OFFLINE for --network; the run is
+        # always --locked.
+        EXTRA_ENV="$(printf '%s\n%s\n%s\n%s' "PACKAGE=$PACKAGE" "FEATURES=$FEATURES" "COMMAND=$COMMAND" "MSRV=$MSRV")"
         export EXTRA_ENV
         seal_run bash /cicd/msrv.sh

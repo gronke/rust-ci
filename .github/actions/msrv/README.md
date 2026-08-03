@@ -6,6 +6,7 @@ Compile a crate on its **declared minimum supported Rust version** to catch a de
 
 The action reads `rust-version` from the crate's `Cargo.toml`, builds the toolchain image at *exactly* that Rust version (`image/Dockerfile` on `rust:<msrv>`), and runs `cargo check` inside it, sealed.
 Because the container's compiler **is** the declared MSRV, a plain `cargo check` is the MSRV check — there is no separate MSRV tool to install and no toolchain to select.
+`command: "test"` runs `cargo test` instead, extending the floor to dev-dependencies and the test suite; the source stays mounted read-only, so tests that write into the checkout fail by design.
 
 **When you need it:** if your main CI already runs the sealed Docker pipeline, set `build-image`'s `rust-version: msrv` instead and the normal `lint-and-test` gate enforces the MSRV across fmt/clippy/test — this action is then redundant. It earns its place when CI runs **natively** or on **stable**: a dedicated, cheap (`cargo check`) floor gate you add as a single job without converting the rest of the pipeline.
 
@@ -33,7 +34,8 @@ Set `locked: "true"` to require a committed `Cargo.lock` and check exactly those
 | Input | Default | Description |
 | --- | --- | --- |
 | `package` | `""` | Package to check (`-p`); required for a multi-member workspace. |
-| `features` | `""` | Feature flag passed to `cargo check` (e.g. `--features full`). |
+| `features` | `""` | Feature flag passed to the cargo command (e.g. `--features full`). |
+| `command` | `"check"` | `"check"` compiles; `"test"` also builds and runs the test suite on the MSRV (dev-deps included). |
 | `rust-version` | `""` | MSRV to test. Empty reads `rust-version` from `Cargo.toml`. |
 | `working-directory` | `.` | Crate/workspace directory (Cargo.toml read from here; mounted read-only). |
 | `locked` | `"false"` | `"false"` resolves a fresh lock at the MSRV (in a disposable copy — the checkout is never modified); `"true"` requires a committed `Cargo.lock` and checks exactly that. |

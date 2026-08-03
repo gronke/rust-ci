@@ -309,7 +309,8 @@ See [the action's README](.github/actions/msrv/README.md).
 - uses: gronke/rust-ci/.github/actions/msrv@main
   with:
     package: my-crate           # required for a workspace with >1 member
-    features: "--features full" # optional; the flag passed to cargo check
+    features: "--features full" # optional; the flag passed to the cargo command
+    # command: "test"           # optional; run the test suite on the MSRV (dev-deps included)
     # rust-version: "1.95"      # optional override; default reads Cargo.toml
 ```
 
