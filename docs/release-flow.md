@@ -40,6 +40,13 @@ The version ladder everywhere is: the explicit `version` input, else Cargo.toml,
 The cut names the version as a `workflow_dispatch` input, `check-release-readiness` and `notes` fall back to the newest released section, and the pull-request `check` — with no next version to test — degrades to section/tag coherence: the newest released section must carry its tag, warning when it does not (a cut may be in flight before its merge-back).
 An empty `[Unreleased]` with the newest section untagged names the release in flight; with the tag present, nothing is left to release.
 
+### Cargo workspaces
+
+A multi-member workspace names the crate whose version is the release version: pass `package:` to [`check-release-readiness`](../README.md#check-release-readiness) (and to `changelog`, when a changelog gates that crate).
+`cargo metadata` resolves `version.workspace = true` inheritance, so a workspace with one unified `[workspace.package] version` names any inheriting member — typically the product crate — and the assert holds against the shared number.
+This shape is proven in production: one repo-wide `vX.Y.Z` tag, one workspace version, `package:` selecting the representative crate — first exercised against a 61-member workspace with `publish = false` throughout, where the coherence check runs and the registry steps skip.
+Per-crate tags and independently-versioned members are NOT covered: the tag convention is repo-wide `v*`, and each action invocation checks exactly one package.
+
 ### Release-candidate versions
 
 A manifest version with a pre-release suffix (`1.0.0-rc1`) declares a release candidate, and the candidate is a release: it gets the full flow below, a signed `v1.0.0-rc1` tag, and a GitHub release flagged as a pre-release.

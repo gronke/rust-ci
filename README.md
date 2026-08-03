@@ -77,6 +77,7 @@ Verifies a crate is ready to release.
 On a `v*` tag it asserts the tag matches the crate version.
 For a publishable crate it runs `cargo publish --dry-run` and checks the version is not already on crates.io.
 A crate with `publish = false` is validated for tag/version coherence only, so the action is equally useful for internal crates.
+In a workspace, `package:` selects the member whose version is asserted; `version.workspace = true` inheritance resolves through cargo metadata, so a unified workspace version works by naming any inheriting member — see [Cargo workspaces](docs/release-flow.md#cargo-workspaces).
 A repository without a Cargo.toml declares its version through the `version` input — or, absent both, through its changelog's newest released section — and is validated for coherence only.
 
 ```yaml
