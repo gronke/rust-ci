@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
-## [Unreleased]
+## [1.5.0] - 2026-08-03
 
 ### Added
 
