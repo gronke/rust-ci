@@ -13,7 +13,10 @@ name: Release
 on:
   push:
     branches: ["release/v**"]
-    tags: ["v*"]
+    # Exclude the signed provenance companion (vX.Y.Z-sig): it attests the
+    # release commit out of band and carries no changelog section or marker, so
+    # it must not drive the release pipeline — it routes to the attest workflow.
+    tags: ["v*", "!v*-sig"]
   workflow_dispatch: # cut-release dispatches the first run explicitly
 
 permissions:

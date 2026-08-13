@@ -1,0 +1,15 @@
+{
+  "name": "tags-sig-signed",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/tags/v[0-9]*.[0-9]*.[0-9]*-sig"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "required_signatures" }
+  ],
+  "bypass_actors": []
+}
