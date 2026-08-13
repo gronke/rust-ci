@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Added
+
+- `tags-sig-signed.json` ruleset: requires a verified signature only on the `vX.Y.Z-sig` provenance companions, the publish-go-live counterpart to `tags-signed.json`. Import it instead of hand-retargeting the signed ruleset's conditions.
+
+### Fixed
+
+- The reference release pipeline in `docs/release-flow.md`, and this repository's own `release.yml`, exclude `v*-sig` from the tag trigger (`tags: ["v*", "!v*-sig"]`). A signed provenance companion carries no changelog section or candidate marker, so pushing one used to spuriously drive the release pipeline into a version-coherence failure; it now routes solely to the attest workflow.
+
 ## [1.5.0] - 2026-08-03
 
 ### Added

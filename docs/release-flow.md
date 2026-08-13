@@ -152,20 +152,18 @@ git tag -s -m "vX.Y.Z" vX.Y.Z-sig 'vX.Y.Z^{}'
 git push origin refs/tags/vX.Y.Z-sig
 ```
 
-The retargeted ruleset below governs the companion's *form* — if one exists it must carry a verified signature — and nothing requires one to exist.
+The `tags-sig-signed` ruleset below governs the companion's *form* — if one exists it must carry a verified signature — and nothing requires one to exist.
 What makes the companion load-bearing is a step that reads it: [`require-signed-release`](#registry-publication-behind-a-signature) gates registry publication on exactly this, so on a crate repository an unattested release rehearses the upload instead of performing it.
 A repository with nothing to publish — this one — gets provenance only, and the companion is genuinely optional.
 Any tag name works; `attestation-tags` narrows what counts, so a repository that would rather keep the `v*` namespace to releases can attest with `sig/vX.Y.Z` and leave `git describe` alone.
 
-The tag ruleset must not require signatures on the versions themselves — GitHub creates them unsigned — so `required_signatures` retargets to the companions:
+The tag ruleset must not require signatures on the versions themselves — GitHub creates them unsigned — so signatures are required only on the companions. Import the shipped ruleset (the publish-go-live counterpart to `tags-signed.json`):
 
 ```sh
-gh api repos/{owner}/{repo}/rulesets/{id} | jq '{name, target, enforcement,
-  bypass_actors: (.bypass_actors // []),
-  conditions: (.conditions | .ref_name = {include: ["refs/tags/v[0-9]*.[0-9]*.[0-9]*-sig"], exclude: []}),
-  rules: [.rules[] | if (.parameters // null) == null then {type} else {type, parameters} end]}' \
-| gh api -X PUT repos/{owner}/{repo}/rulesets/{id} --input -
+gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-sig-signed.json
 ```
+
+It requires a verified signature on the `vX.Y.Z-sig` companions and leaves the release tags unsigned. An existing all-`v*` `tags-signed` ruleset must be removed or retargeted first, or it rejects the unsigned release tag GitHub creates on publish.
 
 The guidance step checks this alignment at candidate time and errors while everything is still a draft when a signature rule covers the version itself — the misconfiguration never gets as far as a tag the repository would reject, or one an admin bypass would let fail the gate after going live.
 This repository releases itself in this mode; the signed mode stays the reference default.
@@ -281,7 +279,9 @@ name: Release
 on:
   push:
     branches: ["release/v**"]
-    tags: ["v*"]
+    # `!v*-sig` keeps the signed provenance companion out of this pipeline: it
+    # carries no changelog section or marker and routes to the attest workflow.
+    tags: ["v*", "!v*-sig"]
   workflow_dispatch: # cut-release dispatches the first run explicitly
 
 permissions:
@@ -420,6 +420,7 @@ jobs:
 - **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
 - **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
   The shipped [`tags-signed.json`](../.github/rulesets/tags-signed.json) and [`tags-maintainer-only.json`](../.github/rulesets/tags-maintainer-only.json) carry exactly this shape.
+  In the publish-go-live mode, import [`tags-sig-signed.json`](../.github/rulesets/tags-sig-signed.json) in place of `tags-signed.json`: signatures are required only on the `vX.Y.Z-sig` companions, and the release tags GitHub creates on publish stay unsigned.
   The markers are pushed unsigned with the workflow token, so a rule covering all tags blocks the candidate loop: exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule, and give the release managers a bypass on the final `v*` restriction so the signed tag can be pushed at all.
   The optional moving-major step force-moves a bare `v<MAJOR>` tag unsigned, so automating it means excluding those names too; without the step, re-tagging the major stays a manual, signed act.
   `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.

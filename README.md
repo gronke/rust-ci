@@ -210,7 +210,7 @@ steps:
 Promotes a candidate from within the pipeline, or defers to the release manager — governed by `sign-tags`.
 `manual` (the mode an active signature-requiring tag ruleset implies when nothing is configured) is a no-op beside the guidance: a human signs.
 `off` creates the annotated, unsigned final tag on the built commit with the marker's message, publishes the draft, and optionally advances the moving major — one job, since a workflow-token tag push triggers no second run.
-Unreadable rulesets resolve to `manual`; the shipped [`/.github/rulesets/`](.github/rulesets) files set up the signed alternative.
+Unreadable rulesets resolve to `manual`; the shipped [`/.github/rulesets/`](.github/rulesets) files set up the signed alternative, and `tags-sig-signed.json` the publish-go-live one (signatures on the `vX.Y.Z-sig` companions only).
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/promote-release@main
