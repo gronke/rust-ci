@@ -300,6 +300,132 @@ jobs:
           mode: check
           working-directory: ${{ runner.temp }}/rc
 
+      # Fragments: changelog.d/<slug>.<section>.md satisfies the check without
+      # touching CHANGELOG.md, and the cut folds the fragments into the section.
+      - name: stage a fragments copy
+        run: |
+          rm -rf "$RUNNER_TEMP/frag"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/frag/"
+          mkdir "$RUNNER_TEMP/frag/changelog.d"
+          printf -- '- A fragment entry from a parallel branch.\n' > "$RUNNER_TEMP/frag/changelog.d/74.fixed.md"
+
+      - name: check passes with a fragment and a bumped version
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.0.9"
+
+      - name: check refuses a fragment without a bump (negative control)
+        id: frag_nobump
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.1.0"
+
+      - name: stage an unknown-suffix fragment
+        run: printf -- '- x\n' > "$RUNNER_TEMP/frag/changelog.d/99.weird.md"
+
+      - name: check refuses an unknown section suffix (negative control)
+        id: frag_suffix
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.0.9"
+
+      - name: stage a bullet-less fragment
+        run: |
+          rm "$RUNNER_TEMP/frag/changelog.d/99.weird.md"
+          printf 'just prose\n' > "$RUNNER_TEMP/frag/changelog.d/98.fixed.md"
+
+      - name: check refuses a fragment with no bullet (negative control)
+        id: frag_nobullet
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.0.9"
+
+      - name: stage a breaking fragment on a patch bump
+        run: |
+          rm "$RUNNER_TEMP/frag/changelog.d/98.fixed.md"
+          printf -- '- **Breaking:** a fragment breaking entry.\n' > "$RUNNER_TEMP/frag/changelog.d/75.changed.md"
+          sed -i 's/^version = "0.1.0"/version = "0.1.1"/' "$RUNNER_TEMP/frag/Cargo.toml"
+
+      - name: check refuses a breaking fragment on a patch bump (negative control)
+        id: frag_breaking_patch
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.1.0"
+
+      - name: stage a feature fragment on a release candidate
+        run: |
+          rm "$RUNNER_TEMP/frag/changelog.d/75.changed.md"
+          printf -- '- A feature fragment.\n' > "$RUNNER_TEMP/frag/changelog.d/76.added.md"
+          sed -i 's/^version = "0.1.1"/version = "0.1.1-rc1"/' "$RUNNER_TEMP/frag/Cargo.toml"
+
+      - name: check refuses a feature fragment on a release candidate (negative control)
+        id: frag_rc_feature
+        continue-on-error: true
+        uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/frag
+          baseline-version: "0.1.0"
+
+      - name: cut folds fragments into the renamed section and deletes them
+        run: |
+          rm "$RUNNER_TEMP/frag/changelog.d/76.added.md"
+          sed -i 's/^version = "0.1.1-rc1"/version = "0.1.0"/' "$RUNNER_TEMP/frag/Cargo.toml"
+          printf -- '- A security fragment from a parallel branch.\n' > "$RUNNER_TEMP/frag/changelog.d/77.security.md"
+        working-directory: ${{ runner.temp }}/frag
+
+      - uses: ./.github/actions/changelog
+        with:
+          mode: cut
+          working-directory: ${{ runner.temp }}/frag
+          date: "2026-02-06"
+
+      - name: the fold grouped the fragments and left no remnant
+        run: |
+          grep -q '^## \[0.1.0\] - 2026-02-06$' "$RUNNER_TEMP/frag/CHANGELOG.md"
+          grep -q '^- A fragment entry from a parallel branch\.$' "$RUNNER_TEMP/frag/CHANGELOG.md"
+          grep -q '^- A security fragment from a parallel branch\.$' "$RUNNER_TEMP/frag/CHANGELOG.md"
+          awk '/^## \[0.1.0\]/{grab=1} grab' "$RUNNER_TEMP/frag/CHANGELOG.md" | grep -q '^### Fixed$'
+          awk '/^## \[0.1.0\]/{grab=1} grab' "$RUNNER_TEMP/frag/CHANGELOG.md" | grep -q '^### Security$'
+          if [ -n "$(ls "$RUNNER_TEMP/frag/changelog.d" 2>/dev/null)" ]; then
+            echo "::error::a fragment survived the cut"; exit 1
+          fi
+          echo "✓ the cut folded the fragments into the released section"
+
+      - name: a fragments-only tree cuts a created section
+        run: |
+          rm -rf "$RUNNER_TEMP/fragonly"
+          rsync -a --exclude='target*' fixtures/sample-crate/ "$RUNNER_TEMP/fragonly/"
+          sed -i '/^## \[Unreleased\]$/,/^## \[0.0.9\]/ { /^## \[0.0.9\]/!d }' "$RUNNER_TEMP/fragonly/CHANGELOG.md"
+          mkdir "$RUNNER_TEMP/fragonly/changelog.d"
+          printf -- '- The only pending note lives in a fragment.\n' > "$RUNNER_TEMP/fragonly/changelog.d/80.fixed.md"
+
+      - uses: ./.github/actions/changelog
+        with:
+          mode: cut
+          working-directory: ${{ runner.temp }}/fragonly
+          date: "2026-02-07"
+
+      - name: the created section carries the fragment
+        run: |
+          grep -q '^## \[0.1.0\] - 2026-02-07$' "$RUNNER_TEMP/fragonly/CHANGELOG.md"
+          grep -q '^- The only pending note lives in a fragment\.$' "$RUNNER_TEMP/fragonly/CHANGELOG.md"
+          echo "✓ a fragments-only tree cuts a created section"
+
       - name: assert the negative controls failed
         run: |
           if [ "${{ steps.nobump.outcome }}" != "failure" ]; then
@@ -319,6 +445,21 @@ jobs:
           fi
           if [ "${{ steps.rc_stale_final.outcome }}" != "failure" ]; then
             echo "::error::a version equal to the tag baseline was not refused"; exit 1
+          fi
+          if [ "${{ steps.frag_nobump.outcome }}" != "failure" ]; then
+            echo "::error::a fragment without a bump was not refused"; exit 1
+          fi
+          if [ "${{ steps.frag_suffix.outcome }}" != "failure" ]; then
+            echo "::error::an unknown section suffix was not refused"; exit 1
+          fi
+          if [ "${{ steps.frag_nobullet.outcome }}" != "failure" ]; then
+            echo "::error::a fragment without a bullet was not refused"; exit 1
+          fi
+          if [ "${{ steps.frag_breaking_patch.outcome }}" != "failure" ]; then
+            echo "::error::a breaking fragment on a patch bump was not refused"; exit 1
+          fi
+          if [ "${{ steps.frag_rc_feature.outcome }}" != "failure" ]; then
+            echo "::error::a feature fragment on a release candidate was not refused"; exit 1
           fi
           echo "✓ all changelog negative controls refused"
 

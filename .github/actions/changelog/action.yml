@@ -28,6 +28,16 @@ inputs:
     description: Changelog path, relative to the working directory.
     required: false
     default: "CHANGELOG.md"
+  fragments:
+    description: >-
+      Directory of pending release-note fragments (changelog.d/<slug>.<section>.md),
+      relative to the working directory. `check` reads them as pending content —
+      the version, breaking-bump, and pre-release rules apply to the combination —
+      and `cut` folds them into the released section and deletes them. A pull
+      request adding a fragment instead of editing [Unreleased] cannot conflict
+      with another pull request's changelog.
+    required: false
+    default: "changelog.d"
   version:
     description: >-
       The version, overriding Cargo.toml resolution in every mode — for notes
@@ -67,6 +77,7 @@ runs:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_FRAGMENTS: ${{ inputs.fragments }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_OUT: ${{ inputs.out }}
         INPUT_TITLE: ${{ inputs.title }}
