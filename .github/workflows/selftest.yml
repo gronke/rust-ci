@@ -15,7 +15,7 @@ jobs:
     name: exercise the composite actions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: install-toolchain
         uses: ./.github/actions/install-toolchain
@@ -158,7 +158,7 @@ jobs:
     name: exercise the changelog action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -525,7 +525,7 @@ jobs:
     name: exercise the cut-release action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -693,7 +693,7 @@ jobs:
     name: exercise the release guidance and the signed-tag gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # The action wiring writes the real step summary of this run.
       - name: release-guidance renders into the step summary
@@ -1049,7 +1049,7 @@ jobs:
     env:
       CICD_PROBE: forwarded
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: build-image (local, cached, with a cross target)
         uses: ./.github/actions/build-image
@@ -1399,7 +1399,7 @@ jobs:
         runner: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/install-toolchain
         with:
           components: clippy
@@ -1419,7 +1419,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: passthrough
@@ -1435,7 +1435,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: seed a sentinel in the custom cargo home
         run: |
           mkdir -p "$CARGO_HOME/registry/index" "$CARGO_HOME/registry/cache" "$CARGO_HOME/git/db"
@@ -1451,7 +1451,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: cargohome-${{ github.run_id }}
@@ -1465,7 +1465,7 @@ jobs:
     name: rust-cache save:false saves nothing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: nosave-${{ github.run_id }}
