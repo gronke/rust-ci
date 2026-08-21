@@ -16,9 +16,14 @@ VERSION="$INPUT_VERSION"
 TITLE="${INPUT_TITLE:-v${VERSION}}"
 
 # --- the notes -----------------------------------------------------------------
-# The released section, rendered plain. The draft body, the marker message and
-# (through the runbook's -F command) the signed tag message are all this text.
-INPUT_MODE="notes" INPUT_OUT="release-notes.md" INPUT_TITLE="$TITLE" \
+# Two renderings of the released section. Markdown for the GitHub release body:
+# GFM renders it, and inline code keeps @tokens (e.g. `@import`, `@v0`) from
+# autolinking as bogus @mentions. Plain text for the annotated tag messages that
+# live in git history — the rcN marker below, and (through the runbook's -F
+# command) the signed release tag.
+INPUT_MODE="notes" INPUT_FORMAT="markdown" INPUT_OUT="release-notes.md" INPUT_TITLE="$TITLE" \
+  bash "$GITHUB_ACTION_PATH/../changelog/changelog.sh"
+INPUT_MODE="notes" INPUT_FORMAT="plain" INPUT_OUT="release-tag.md" INPUT_TITLE="$TITLE" \
   bash "$GITHUB_ACTION_PATH/../changelog/changelog.sh"
 
 # --- the draft -----------------------------------------------------------------
@@ -40,10 +45,10 @@ git config user.email "$INPUT_GIT_USER_EMAIL"
 latest="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
   | sed -n 's|.*-rc\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)"
 n=$((${latest:-0} + 1))
-# The marker's message is release-notes.md (so promoting a candidate copies it
-# into the signed tag), else a bare candidate label.
-if [ -s release-notes.md ]; then
-  git tag -a -F release-notes.md "v${VERSION}-rc${n}" "${GITHUB_SHA}"
+# The marker's message is the plain-text render (so promoting a candidate copies
+# it into the signed tag), else a bare candidate label.
+if [ -s release-tag.md ]; then
+  git tag -a -F release-tag.md "v${VERSION}-rc${n}" "${GITHUB_SHA}"
 else
   git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
 fi
