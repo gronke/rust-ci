@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 ### Fixed
 
 - The reference release pipeline in `docs/release-flow.md`, and this repository's own `release.yml`, exclude `v*-sig` from the tag trigger (`tags: ["v*", "!v*-sig"]`). A signed provenance companion carries no changelog section or candidate marker, so pushing one used to spuriously drive the release pipeline into a version-coherence failure; it now routes solely to the attest workflow.
+- Release notes render as Markdown for the GitHub release body.
 
 ## [1.5.0] - 2026-08-03
 

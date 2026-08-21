@@ -338,7 +338,7 @@ jobs:
             echo
             echo '## [1.2.3] - 2026-01-01'
             echo
-            echo 'A release with `code`, **bold**, and a provider-* glob.'
+            echo 'A release with `code`, **bold**, an `@import` token, and a provider-* glob.'
             echo
             echo '### Added'
             echo
@@ -365,7 +365,28 @@ jobs:
           grep -qx 'Added:' "$out" || { echo "::error::### Added not converted"; exit 1; }
           grep -q 'provider-\* glob' "$out" || { echo "::error::single * dropped"; exit 1; }
           grep -q 'session_auth' "$out" || { echo "::error::identifier dropped"; exit 1; }
+          grep -q '@import' "$out" || { echo "::error::@import token dropped"; exit 1; }
           echo "✓ changelog notes rendered plaintext"
+      - name: render the notes as Markdown (release body)
+        uses: ./.github/actions/changelog
+        with:
+          mode: notes
+          format: markdown
+          version: "1.2.3"
+          title: "v1.2.3"
+          out: release-body.md
+          working-directory: nt
+      - name: assert Markdown kept and the title line omitted
+        run: |
+          set -euo pipefail
+          out=nt/release-body.md
+          test -f "$out"
+          if [ "$(head -1 "$out")" = "v1.2.3" ]; then echo "::error::markdown body led with the title line"; exit 1; fi
+          grep -q '`@import`' "$out" || { echo "::error::code span dropped — @tokens would autolink as @mentions"; exit 1; }
+          grep -q '`code`' "$out" || { echo "::error::inline code stripped"; exit 1; }
+          grep -q '\*\*bold\*\*' "$out" || { echo "::error::bold markers stripped"; exit 1; }
+          grep -qx '### Added' "$out" || { echo "::error::### heading converted"; exit 1; }
+          echo "✓ changelog notes rendered Markdown (code spans kept)"
       - name: notes refuses a version absent from the changelog (negative control)
         id: notes_absent
         continue-on-error: true

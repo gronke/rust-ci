@@ -8,9 +8,11 @@ description: >-
   (### Added, ### Removed, **Breaking) reset the version to the next regular
   release. `cut` turns [Unreleased] into the released section for the crate's
   version, rewrites the compare link, and exports CHANGELOG_VERSION into the
-  job environment. `notes` renders a released section as plain text — inline
-  Markdown stripped, optionally led by a `title` subject line — for a git tag
-  message or a GitHub release body.
+  job environment. `notes` renders a released section for a git tag message or a
+  GitHub release body: `format: plain` (default) strips inline Markdown for a
+  plain-text tag message, `format: markdown` keeps the section as authored for the
+  release body — where inline code stops @tokens (e.g. `@import`, `@v0`)
+  autolinking as bogus @mentions; a `title` subject line optionally leads plain.
 
 inputs:
   mode:
@@ -44,6 +46,13 @@ inputs:
     description: "notes: optional subject line led before the section (e.g. a git tag subject like v1.2.3)."
     required: false
     default: ""
+  format:
+    description: >-
+      notes: `plain` (default) de-Markdowns the section for a plain-text git tag
+      message; `markdown` keeps it as authored for a GitHub release body, where
+      inline code stops @tokens (e.g. `@import`) autolinking as @mentions.
+    required: false
+    default: "plain"
   baseline-version:
     description: >-
       check: the last released version the crate must exceed while [Unreleased]
@@ -70,6 +79,7 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_OUT: ${{ inputs.out }}
         INPUT_TITLE: ${{ inputs.title }}
+        INPUT_FORMAT: ${{ inputs.format }}
         INPUT_BASELINE_VERSION: ${{ inputs.baseline-version }}
         INPUT_DATE: ${{ inputs.date }}
       run: bash "$GITHUB_ACTION_PATH/changelog.sh"

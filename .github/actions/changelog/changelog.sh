@@ -10,6 +10,8 @@
 #                           without a crate needs it for cut, and check degrades gracefully)
 #   INPUT_OUT               notes: file the rendered notes are written to (default release-notes.md)
 #   INPUT_TITLE             notes: optional subject line led before the section (e.g. a git tag subject)
+#   INPUT_FORMAT            notes: "plain" (default, de-Markdowned for a git tag message) or
+#                           "markdown" (the section as authored, for the GitHub release body)
 #   INPUT_BASELINE_VERSION  check: version the crate must exceed (else the greatest release
 #                           tag, pre-releases included, by SemVer precedence)
 #   INPUT_DATE              cut: date stamped on the released section (else today, UTC)
@@ -183,19 +185,32 @@ case "${INPUT_MODE:-}" in
       exit 1
     fi
     # The [VERSION] section body — heading and link block excluded, like
-    # unreleased_body — de-Markdowned for a plain-text tag message or release body:
-    # ** and backticks dropped, ### Group -> Group:, single * / _ and the wrapping
-    # left alone; the trailing awk trims leading and trailing blank lines.
-    SECTION="$(awk -v h="## [$VERSION]" 'index($0, h) == 1 {grab=1; next} /^## /{grab=0} /^\[[^]]+\]: /{grab=0} grab' "$CHANGELOG" \
-      | sed -E 's/`//g; s/\*\*//g; s/^### (.+)/\1:/' \
-      | awk 'NF && !first {first=NR} NF{last=NR} {line[NR]=$0} END{for (i = first; i <= last; i++) print line[i]}')"
+    # unreleased_body. Two renderings, selected by INPUT_FORMAT:
+    #   plain (default): de-Markdowned for a plain-text git tag message — ** and
+    #     backticks dropped, ### Group -> Group:, single * / _ and the wrapping left
+    #     alone. This is the text that lands in git history.
+    #   markdown: the section as authored, for the GitHub release body — GFM renders
+    #     it, and inline code keeps @tokens (e.g. `@import`, `@v0`) from autolinking
+    #     as bogus @mentions.
+    # The trailing awk trims leading and trailing blank lines either way.
+    FORMAT="${INPUT_FORMAT:-plain}"
+    case "$FORMAT" in
+      markdown | plain) ;;
+      *) echo "::error::notes format must be 'markdown' or 'plain' (got '$FORMAT')"; exit 1 ;;
+    esac
+    body="$(awk -v h="## [$VERSION]" 'index($0, h) == 1 {grab=1; next} /^## /{grab=0} /^\[[^]]+\]: /{grab=0} grab' "$CHANGELOG")"
+    if [ "$FORMAT" = plain ]; then
+      body="$(printf '%s\n' "$body" | sed -E 's/`//g; s/\*\*//g; s/^### (.+)/\1:/')"
+    fi
+    SECTION="$(printf '%s\n' "$body" | awk 'NF && !first {first=NR} NF{last=NR} {line[NR]=$0} END{for (i = first; i <= last; i++) print line[i]}')"
     if [ -z "${SECTION//[[:space:]]/}" ]; then
       echo "::error::rendered notes for $VERSION are empty"
       exit 1
     fi
-    # An optional title leads as the first line (a git tag subject), then a blank
-    # line, then the section — so the section's first group heading is not the subject.
-    if [ -n "${INPUT_TITLE:-}" ]; then
+    # A title leads as the first line — the git tag subject — for the plain render,
+    # then a blank line, then the section. The GitHub release body (markdown) shows
+    # its title separately, so it omits the line rather than repeat the release name.
+    if [ -n "${INPUT_TITLE:-}" ] && [ "$FORMAT" = plain ]; then
       printf '%s\n\n%s\n' "$INPUT_TITLE" "$SECTION" > "$OUT"
     else
       printf '%s\n' "$SECTION" > "$OUT"
