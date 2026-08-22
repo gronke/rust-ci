@@ -29,7 +29,7 @@ inputs:
     default: ""
   attestation-tag:
     description: >-
-      A pushed companion (e.g. `${{ github.ref_name }}` on a `v*-sig` trigger)
+      A pushed companion (e.g. `github.ref_name` on a `v*-sig` trigger)
       whose release is derived from it: the tag it seals is looked up by
       commit, and the published release on that same commit is the one gated.
       Which suffix or prefix a repository attests with stays its own business,
