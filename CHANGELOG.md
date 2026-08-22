@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Fixed
+
+- `require-signed-release` loads again when used as a `uses:` action. An input's description embedded a live `${{ }}` expression as an example, which GitHub evaluates while loading the action — and the `github` context is unavailable there, so the action failed to load and every job referencing it died at "Set up job". The example is now plain text. It surfaced on the first go-live to reference the action.
+
 ## [1.6.0] - 2026-08-22
 
 ### Added
