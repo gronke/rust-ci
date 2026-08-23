@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action — the flow dogfoods itself.
 
+## [Unreleased]
+
+### Added
+
+- `publish-dry-run` gains multi-crate release support: the expected version also derives from `<package>-vX.Y.Z` tags, and the new `require-deps-published` input fails a release tagged before its workspace path dependencies are live on crates.io, with an error naming the fix. The prep step now builds the `.crate` and pre-fetches its packaged lockfile, so the sealed offline verify-build resolves co-developed dependencies instead of failing even on a correctly ordered release, and the sealed step lists the shipped files via `cargo package --list`.
+
 ## [1.6.1] - 2026-08-22
 
 ### Fixed
