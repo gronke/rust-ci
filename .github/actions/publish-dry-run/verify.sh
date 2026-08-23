@@ -19,6 +19,12 @@ if [ "$PUBLISHABLE" != "true" ]; then
   exit 0
 fi
 
+# The exact file manifest the .crate ships, in the log for whoever wants to
+# inspect a release before it is published.
+echo "::group::package contents (cargo package --list)"
+cargo package --list --offline --locked -p "$NAME"
+echo "::endgroup::"
+
 echo "::group::cargo package (sealed verify-build: --network none + --offline)"
 cargo package --offline --locked -p "$NAME"
 echo "::endgroup::"

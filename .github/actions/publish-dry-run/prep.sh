@@ -39,8 +39,13 @@ if [ -z "${NAME:-}" ]; then
 fi
 echo "crate: $NAME  version: $VERSION  publishable-to-crates.io: $PUBLISHABLE"
 
-# tag <-> version coherence
+# tag <-> version coherence: a crate-prefixed tag (<package>-vX.Y.Z) names the
+# package it releases in a multi-crate workspace; the bare v* form stays for
+# single-crate repos and legacy flagship tags.
 EXPECT="${INPUT_EXPECTED_VERSION:-}"
+if [ -z "$EXPECT" ] && [[ "${GITHUB_REF:-}" == "refs/tags/${NAME}-v"* ]]; then
+  EXPECT="${GITHUB_REF#refs/tags/"${NAME}"-v}"
+fi
 if [ -z "$EXPECT" ] && [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
   EXPECT="${GITHUB_REF#refs/tags/v}"
 fi
@@ -52,6 +57,36 @@ if [ -n "$EXPECT" ]; then
   echo "✓ version matches ($VERSION)"
 else
   echo "::notice::no tag or expected-version supplied; skipping coherence check"
+fi
+
+# Optional ordering gate for multi-crate workspaces: every workspace path
+# dependency of the selected package must already be live on crates.io at the
+# version the manifest requires, because publishing strips the path and the
+# registry copy is what consumers (and the sealed verify-build) resolve.
+# The probe names the fix; the resolution during packaging below still gates
+# even when the probe is inconclusive.
+if [ "${INPUT_REQUIRE_DEPS_PUBLISHED:-false}" = "true" ] && [ "$PUBLISHABLE" = "true" ]; then
+  echo "::group::dependency liveness (workspace path deps on crates.io)"
+  DEPS=$(printf '%s' "$META" | jq -r --arg name "$NAME" '
+    .packages[] | select(.name == $name) | .dependencies[]
+    | select(.path != null) | "\(.name)\t\(.req)"')
+  while IFS=$'\t' read -r dep req; do
+    [ -z "$dep" ] && continue
+    # The house pin shape is an exact minimum ("^X.Y.Z"); probe that version.
+    ver="${req#^}"; ver="${ver#=}"; ver="${ver%%,*}"; ver="${ver// /}"
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+      -H "User-Agent: rust-ci publish-dry-run" \
+      "https://crates.io/api/v1/crates/${dep}/${ver}" || echo "000")
+    if [ "$CODE" = "200" ]; then
+      echo "✓ ${dep} ${ver} is on crates.io"
+    elif [ "$CODE" = "404" ]; then
+      echo "::error::${dep} ${ver} is not on crates.io; release ${dep} first, then re-tag ${NAME}"
+      exit 1
+    else
+      echo "::warning::crates.io check for ${dep} ${ver} inconclusive (HTTP ${CODE}); the packaging resolution below still gates"
+    fi
+  done <<< "$DEPS"
+  echo "::endgroup::"
 fi
 
 # not-already-published probe (crates.io API; non-fatal on a network blip)
@@ -72,6 +107,27 @@ if [ "$PUBLISHABLE" = "true" ]; then
   # dependency code runs here; the verify-BUILD is done sealed + offline by verify.sh.
   echo "::group::cargo publish --dry-run --no-verify (publish checks, no build)"
   cargo publish --dry-run --no-verify --locked -p "$NAME"
+  echo "::endgroup::"
+
+  # Build the .crate itself (still no build of dependency code): it is the
+  # artifact a caller may upload, and its packaged Cargo.lock names exactly
+  # what the sealed verify-build must resolve. The workspace fetch above
+  # resolves path members from the tree, so a co-developed dependency's
+  # REGISTRY copy is never in the cache; fetching against the packaged
+  # manifest warms it for --offline resolution.
+  echo "::group::cargo package --no-verify (build the .crate)"
+  cargo package --no-verify --locked -p "$NAME"
+  echo "::endgroup::"
+  crate_file="${CARGO_TARGET_DIR:-target}/package/${NAME}-${VERSION}.crate"
+  warm="${CARGO_TARGET_DIR:-target}/.cicd-publish-warm"
+  rm -rf "$warm" && mkdir -p "$warm"
+  tar -xzf "$crate_file" -C "$warm"
+  # The scratch copy lives under the workspace's target dir, so cargo would
+  # walk up and refuse ("believes it's in a workspace"); an empty [workspace]
+  # table makes it standalone. Scratch only; the .crate itself is untouched.
+  printf '\n[workspace]\n' >> "$warm/${NAME}-${VERSION}/Cargo.toml"
+  echo "::group::cargo fetch (packaged manifest: registry copies of path deps)"
+  cargo fetch --locked --manifest-path "$warm/${NAME}-${VERSION}/Cargo.toml"
   echo "::endgroup::"
 fi
 

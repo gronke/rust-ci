@@ -29,9 +29,16 @@ inputs:
     required: false
     default: ""
   expected-version:
-    description: Version the crate must declare (else derived from a v* tag).
+    description: Version the crate must declare (else derived from a <package>-v* or v* tag).
     required: false
     default: ""
+  require-deps-published:
+    description: >-
+      Gate the package's workspace path dependencies: each must already be
+      published on crates.io at the version the manifest requires, so a
+      multi-crate release fails early (and legibly) when tagged out of order.
+    required: false
+    default: "false"
   git-token:
     description: >-
       Token for cloning PRIVATE git dependencies during the prep fetch. Masked and
@@ -67,6 +74,7 @@ runs:
         CARGO_CACHE: ${{ inputs.cargo-cache }}
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
+        INPUT_REQUIRE_DEPS_PUBLISHED: ${{ inputs.require-deps-published }}
         GIT_TOKEN: ${{ inputs.git-token }}
         ENV_INCLUDE: ${{ inputs.env-include }}
         ENV_EXCLUDE: ${{ inputs.env-exclude }}
@@ -86,9 +94,10 @@ runs:
 
         # 1) Networked prep: cargo fetch + metadata + tag<->version + crates.io probe.
         export OFFLINE=false
-        export EXTRA_ENV="$(printf '%s\n%s\n%s\n%s' \
+        export EXTRA_ENV="$(printf '%s\n%s\n%s\n%s\n%s' \
           "INPUT_PACKAGE=$INPUT_PACKAGE" \
           "INPUT_EXPECTED_VERSION=$INPUT_EXPECTED_VERSION" \
+          "INPUT_REQUIRE_DEPS_PUBLISHED=$INPUT_REQUIRE_DEPS_PUBLISHED" \
           "GITHUB_REF=${GITHUB_REF:-}" \
           "$token_line")"
         seal_run bash /cicd/prep.sh
