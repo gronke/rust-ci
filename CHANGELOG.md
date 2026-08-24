@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 ### Added
 
 - `publish-dry-run` gains multi-crate release support: the expected version also derives from `<package>-vX.Y.Z` tags, and the new `require-deps-published` input fails a release tagged before its workspace path dependencies are live on crates.io, with an error naming the fix. The prep step now builds the `.crate` and pre-fetches its packaged lockfile, so the sealed offline verify-build resolves co-developed dependencies instead of failing even on a correctly ordered release, and the sealed step lists the shipped files via `cargo package --list`.
+- `require-signed-release` gains an opt-in `unsigned-guidance` input: an unsigned verdict also writes the way forward into the step summary — the exact commands that create and push the signed companion on the release commit, its name derived from `attestation-tags`. The `::notice::` alone stays the default for pipelines that print their own guidance.
 
 ## [1.6.1] - 2026-08-22
 

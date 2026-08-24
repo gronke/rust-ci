@@ -45,6 +45,15 @@ inputs:
       automation and must never act on a draft.
     required: false
     default: "false"
+  unsigned-guidance:
+    description: >-
+      "true": an unsigned verdict also writes the way forward into the step
+      summary — the exact commands that create and push the signed companion
+      on the release commit, its name derived from `attestation-tags`
+      (v*-sig suggests vX.Y.Z-sig; the default glob suggests <tag>-sig).
+      Off by default for pipelines that print their own guidance.
+    required: false
+    default: "false"
   attestation-tags:
     description: >-
       Glob another tag must match to count as an attestation (e.g. v*-sig).
@@ -110,6 +119,7 @@ runs:
         INPUT_ATTESTATION_TAG: ${{ inputs.attestation-tag }}
         INPUT_REQUIRE_PUBLISHED: ${{ inputs.require-published }}
         INPUT_ATTESTATION_TAGS: ${{ inputs.attestation-tags }}
+        INPUT_UNSIGNED_GUIDANCE: ${{ inputs.unsigned-guidance }}
         INPUT_ACCEPT_RELEASE_TAG: ${{ inputs.accept-release-tag }}
         INPUT_ACCEPT_ATTESTATION_TAG: ${{ inputs.accept-attestation-tag }}
         INPUT_ACCEPT_SIGNED_COMMIT: ${{ inputs.accept-signed-commit }}
