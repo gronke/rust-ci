@@ -195,4 +195,27 @@ if [ "${INPUT_ACCEPT_SIGNED_COMMIT:-false}" = "true" ]; then
 fi
 
 echo "::notice::no verified signature for ${TAG} on ${COMMIT} — sign the release tag, push a signed tag on that commit, or (opt-in) sign the commit; until then the registry step rehearses instead of uploading"
+
+# Opt-in: put the way forward where the release manager is already
+# looking, with the companion's name derived from the attestation glob.
+if [ "${INPUT_UNSIGNED_GUIDANCE:-false}" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  GLOB="${INPUT_ATTESTATION_TAGS:-*}"
+  if [ "$GLOB" = "*" ]; then
+    COMPANION="${TAG}-sig"
+  else
+    COMPANION="${GLOB/\*/${TAG#v}}"
+  fi
+  {
+    echo "**Rehearsal only**: no verified signature covers \`${TAG}\` on \`${COMMIT}\`."
+    echo ""
+    echo "To publish, sign and push the companion on the release commit:"
+    echo ""
+    echo '```sh'
+    echo "git fetch origin tag ${TAG}"
+    echo "git tag -s -m '${TAG}' ${COMPANION} ${COMMIT}"
+    echo "git push origin ${COMPANION}"
+    echo '```'
+  } >> "$GITHUB_STEP_SUMMARY"
+fi
+
 write_outputs false "" "" "$COMMIT" "$TAG"
