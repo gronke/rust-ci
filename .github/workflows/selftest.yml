@@ -1571,3 +1571,222 @@ jobs:
           # …and it changed nothing: the two good entries above still stand.
           [ "$GIT_CONFIG_COUNT" = "2" ] \
             || { echo "::error::a refused token disturbed the exported entries (count ${GIT_CONFIG_COUNT:-none})"; exit 1; }
+
+  # The timing actions end to end: marks bound stages, the sampler attributes
+  # CPU to the stage that spent it, and the report renders and closes the last
+  # stage itself. The CPU assertion is the one that matters — a load average
+  # would smear an eight-second burn across the stage after it, which is the
+  # failure the /proc/stat delta exists to avoid — so it burns every core in one
+  # stage and sleeps through the next, then asserts the ordering rather than any
+  # absolute number.
+  selftest-timing:
+    name: exercise the timing actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: timing-start
+        id: start
+        uses: ./.github/actions/timing-start
+        with:
+          sample-interval: "1"
+          first-stage: setup
+
+      - name: timing-start exported the state directory
+        run: |
+          set -euo pipefail
+          test -n "${RUST_CI_TIMING_DIR:-}" || { echo "::error::RUST_CI_TIMING_DIR not exported"; exit 1; }
+          test "${{ steps.start.outputs.timing-dir }}" = "$RUST_CI_TIMING_DIR" \
+            || { echo "::error::the timing-dir output disagrees with the exported env"; exit 1; }
+          for f in marks.tsv samples.tsv notes.tsv sampler.pid; do
+            test -f "$RUST_CI_TIMING_DIR/$f" || { echo "::error::missing $f"; exit 1; }
+          done
+          grep -q "	setup$" "$RUST_CI_TIMING_DIR/marks.tsv" \
+            || { echo "::error::the first-stage mark was not recorded"; exit 1; }
+          echo "✓ state at $RUST_CI_TIMING_DIR, sampler pid $(cat "$RUST_CI_TIMING_DIR/sampler.pid")"
+
+      - name: timing-mark (busy stage)
+        uses: ./.github/actions/timing-mark
+        with:
+          name: busy stage
+
+      # Saturate every core for long enough to cover several sampling ticks.
+      - name: burn all cores
+        run: |
+          for _ in $(seq 1 "$(nproc)"); do
+            timeout 8 bash -c 'while :; do :; done' &
+          done
+          wait
+
+      - name: timing-mark (idle stage)
+        uses: ./.github/actions/timing-mark
+        with:
+          name: idle stage
+
+      - name: sleep
+        run: sleep 8
+
+      - name: the sampler collected ticks while the steps ran
+        run: |
+          set -euo pipefail
+          n=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          test "$n" -ge 10 || { echo "::error::only $n samples across ~17s at 1s; the sampler did not survive the step boundary"; exit 1; }
+          echo "✓ $n samples"
+
+      - name: timing-report
+        id: report
+        uses: ./.github/actions/timing-report
+        with:
+          columns: "10"
+
+      - name: the report attributed CPU to the stage that spent it
+        run: |
+          set -euo pipefail
+          stats="$RUST_CI_TIMING_DIR/stages.tsv"
+          test -f "$stats" || { echo "::error::no per-stage stats were written"; exit 1; }
+          cat "$stats"
+          busy=$(awk -F'\t' '$1 == "busy stage" {print int($3)}' "$stats")
+          idle=$(awk -F'\t' '$1 == "idle stage" {print int($3)}' "$stats")
+          test -n "$busy" && test -n "$idle" \
+            || { echo "::error::a stage is missing from the report"; exit 1; }
+          test "$busy" -gt "$idle" \
+            || { echo "::error::peak CPU did not separate the stages (busy ${busy}%, idle ${idle}%): samples are not being attributed per stage"; exit 1; }
+          test "$busy" -ge 50 \
+            || { echo "::error::burning every core measured only ${busy}%"; exit 1; }
+          echo "✓ busy ${busy}% against idle ${idle}%"
+
+      - name: the report rendered the table and the outputs agree with it
+        run: |
+          set -euo pipefail
+          grep -q '^## Where the time went' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::no report heading in the step summary"; exit 1; }
+          grep -q '| busy stage |' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::the busy stage is missing from the rendered table"; exit 1; }
+          # The sentinel closes the last stage and is not itself a row.
+          if grep -q '__report' "$GITHUB_STEP_SUMMARY"; then
+            echo "::error::the internal sentinel leaked into the table"; exit 1
+          fi
+          total='${{ steps.report.outputs.total-seconds }}'
+          test "$total" -ge 15 || { echo "::error::total of ${total}s is short of the ~17s of stages"; exit 1; }
+          echo "✓ rendered; total ${total}s, slowest '${{ steps.report.outputs.slowest-stage }}'"
+
+      - name: the report stopped the sampler
+        run: |
+          set -euo pipefail
+          test ! -f "$RUST_CI_TIMING_DIR/sampler.pid" \
+            || { echo "::error::the pid file survived the report"; exit 1; }
+          before=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          sleep 3
+          after=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          test "$before" = "$after" \
+            || { echo "::error::the sampler is still writing ($before -> $after); it would outlive the job"; exit 1; }
+          echo "✓ sampler stopped"
+
+  # Durations without sampling, and a report with nothing to report: the two
+  # shapes a consumer hits on a non-Linux runner and on a misordered workflow.
+  selftest-timing-degenerate:
+    name: exercise the timing actions without samples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Negative control: a report before any timing-start must warn and pass,
+      # not fail the job. A timing action is instrumentation; it has no business
+      # turning a green build red.
+      - name: timing-report without marks (negative control)
+        uses: ./.github/actions/timing-report
+
+      - name: the empty report wrote nothing and did not fail
+        run: |
+          set -euo pipefail
+          if [ -s "$GITHUB_STEP_SUMMARY" ] && grep -q 'Where the time went' "$GITHUB_STEP_SUMMARY"; then
+            echo "::error::a report was rendered with no marks"; exit 1
+          fi
+          echo "✓ no marks, no report, no failure"
+
+      - name: timing-start with sampling off
+        uses: ./.github/actions/timing-start
+        with:
+          sample-interval: "0"
+          first-stage: unsampled setup
+
+      - name: sampling off starts no sampler
+        run: |
+          set -euo pipefail
+          test ! -f "$RUST_CI_TIMING_DIR/sampler.pid" \
+            || { echo "::error::sample-interval 0 still started a sampler"; exit 1; }
+          grep -q 'sampling disabled' "$RUST_CI_TIMING_DIR/notes.tsv" \
+            || { echo "::error::the report will not say why there are no samples"; exit 1; }
+          echo "✓ no sampler, and the reason is recorded"
+
+      - uses: ./.github/actions/timing-mark
+        with:
+          name: a stage
+      - run: sleep 2
+
+      - name: timing-report
+        uses: ./.github/actions/timing-report
+        with:
+          order: chronological
+
+      - name: the table degrades to durations only
+        run: |
+          set -euo pipefail
+          grep -q '| stage | duration | share |' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::expected the durations-only header without samples"; exit 1; }
+          if grep -q 'cpu shape' "$GITHUB_STEP_SUMMARY"; then
+            echo "::error::CPU columns rendered with no samples behind them"; exit 1
+          fi
+          grep -q 'sampling disabled by input' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::the report did not say sampling was off"; exit 1; }
+          echo "✓ durations only, and it says why"
+
+  # rust-cache's opt-in statistics: the hit kind and the restored size reach the
+  # timing notes, which is what lets a report distinguish a cold run from a warm
+  # one that simply could not reuse what it restored.
+  selftest-cache-stats:
+    name: exercise the cache statistics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/timing-start
+        with:
+          sample-interval: "0"
+          first-stage: setup
+
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: stats-fixture
+          cache-target: "true"
+          target-dir: fixtures/sample-crate/target
+          lockfiles: fixtures/sample-crate/Cargo.lock
+          stats: "true"
+
+      - name: the restore recorded a hit kind and, on a hit, a size
+        run: |
+          set -euo pipefail
+          notes="$RUST_CI_TIMING_DIR/notes.tsv"
+          cat "$notes"
+          kind=$(awk -F'\t' '$1 == "cache.target" {print $2}' "$notes" | tail -1)
+          case "$kind" in
+            'exact hit' | 'restore-key fallback'* | miss) echo "✓ hit kind: $kind" ;;
+            *) echo "::error::unexpected or missing hit kind: '$kind'"; exit 1 ;;
+          esac
+          grep -q '^cache\.target\.key	stats-fixture-Linux-target-' "$notes" \
+            || { echo "::error::the cache key was not recorded"; exit 1; }
+          if [ "$kind" != "miss" ]; then
+            grep -q '^cache\.target\.restored	' "$notes" \
+              || { echo "::error::a restored tree recorded no size"; exit 1; }
+          fi
+
+      - uses: ./.github/actions/timing-report
+
+      - name: the report carries a Cache section
+        run: |
+          set -euo pipefail
+          grep -q '^### Cache' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::the Cache section is missing from the report"; exit 1; }
+          grep -q '`cache.target`' "$GITHUB_STEP_SUMMARY" \
+            || { echo "::error::the hit kind did not reach the summary"; exit 1; }
+          echo "✓ Cache section rendered"

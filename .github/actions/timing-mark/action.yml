@@ -1,0 +1,28 @@
+name: Timing mark
+description: >-
+  Record the start of a stage for the build-performance report. One call per stage, as its own step
+  immediately before the work it names; `timing-report` closes the last stage with its own timestamp.
+
+  A mark is a boundary, not a duration, which is what makes the gaps visible: the interval between
+  the mark on a build step and the mark on the next one contains the runner's own overhead
+  (container pulls, cache restore, npm install) instead of leaving it unattributed. Naming a stage
+  for the step that follows it therefore attributes the setup cost to the stage that pays it.
+
+  It appends and never fails a job: a mark placed before `timing-start`, or without one at all,
+  still records, because a missing mark is a hole in the report that nothing else would explain.
+
+inputs:
+  name:
+    description: >-
+      Stage name, as it should read in the summary table. Tabs and newlines are collapsed to spaces:
+      the log is TSV and a stage name reaches it from a workflow input.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Mark stage
+      shell: bash
+      env:
+        STAGE: ${{ inputs.name }}
+      run: bash "$GITHUB_ACTION_PATH/timing-mark.sh"

@@ -1,0 +1,47 @@
+name: Timing start
+description: >-
+  Begin per-stage build-performance tracking for a job: initialise the mark log and start a
+  background resource sampler. Pair it with `timing-mark` at the top of each stage and
+  `timing-report` as an always() last step.
+
+  Marks are recorded in-band rather than read back from the Actions API afterwards, for three
+  reasons. The API needs an `actions: read` permission on a job that may hold nothing else worth
+  granting; it costs a network round-trip at the end of a job that just spent minutes compiling; and
+  decisively it has no resolution inside a step, so a twenty-minute test step stays one opaque bar.
+  The load samples are the part that answers "compiling or executing", and only an in-job sampler
+  can collect them.
+
+  Sampling reads /proc and is therefore Linux-only. On other runners the durations are still
+  recorded and the report says the sampler was unavailable, rather than rendering empty load columns
+  that read as an idle machine.
+
+inputs:
+  sample-interval:
+    description: >-
+      Seconds between resource samples. "0" records durations only. The default costs one /proc read
+      and one df per tick, which is noise against a compile.
+    required: false
+    default: "5"
+  first-stage:
+    description: >-
+      Name for the interval that begins here. It covers everything up to the first `timing-mark`,
+      which on most jobs is the checkout and cache restore rather than any build step, so name it
+      for what it is.
+    required: false
+    default: "setup"
+
+outputs:
+  timing-dir:
+    description: Directory holding the marks, samples and notes for this job.
+    value: ${{ steps.start.outputs.timing-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Start timing
+      id: start
+      shell: bash
+      env:
+        SAMPLE_INTERVAL: ${{ inputs.sample-interval }}
+        FIRST_STAGE: ${{ inputs.first-stage }}
+      run: bash "$GITHUB_ACTION_PATH/timing-start.sh"
