@@ -63,6 +63,11 @@ git config user.name "${INPUT_GIT_USER_NAME:-github-actions[bot]}"
 git config user.email "${INPUT_GIT_USER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
 git switch -c "${BRANCH}"
 git add "${INPUT_CHANGELOG:-CHANGELOG.md}"
+# The cut folds changelog.d fragments into the section and deletes them;
+# stage the directory so the deletions ride the release commit.
+if [ -d "${INPUT_FRAGMENTS:-changelog.d}" ]; then
+  git add "${INPUT_FRAGMENTS:-changelog.d}"
+fi
 git commit -m "chore: release v${VERSION}"
 git push origin "${BRANCH}"
 
