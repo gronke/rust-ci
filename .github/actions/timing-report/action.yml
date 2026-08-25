@@ -30,6 +30,12 @@ inputs:
     required: false
     default: "12"
 outputs:
+  report-path:
+    description: >-
+      The rendered Markdown report on disk. `$GITHUB_STEP_SUMMARY` is a separate file per step, so
+      the summary cannot be read back by a later step; this can be, and it is also what to upload as
+      an artifact or diff between two runs.
+    value: ${{ steps.report.outputs.report-path }}
   total-seconds:
     description: Sum of every stage's duration.
     value: ${{ steps.report.outputs.total-seconds }}
