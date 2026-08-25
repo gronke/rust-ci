@@ -31,7 +31,9 @@ if [ -n "$TARGET_DIR" ]; then
   timing_note "cache.target.key" "$TARGET_KEY"
   if [ -d "$TARGET_DIR" ]; then
     bytes="$(du -sb "$TARGET_DIR" 2>/dev/null | cut -f1)"
-    [ -n "$bytes" ] && timing_note "cache.target.restored" "$(timing_bytes "$bytes")"
+    if [ -n "$bytes" ]; then
+      timing_note "cache.target.restored" "$(timing_bytes "$bytes")"
+    fi
     # Handed to rust-cache-save so it can report the prune ratio without
     # re-walking a multi-gigabyte tree a second time.
     echo "RUST_CI_TARGET_BYTES_IN=${bytes:-0}" >> "$GITHUB_ENV"
@@ -45,4 +47,13 @@ while IFS= read -r d; do
   n="$(du -sb "$d" 2>/dev/null | cut -f1)" || n=0
   reg=$(( reg + ${n:-0} ))
 done <<< "$REGISTRY_DIRS"
-[ "$reg" -gt 0 ] && timing_note "cache.registry.restored" "$(timing_bytes "$reg")"
+if [ "$reg" -gt 0 ]; then
+  timing_note "cache.registry.restored" "$(timing_bytes "$reg")"
+fi
+
+# An explicit success: a trailing `[ ... ] && cmd` whose test is false leaves the
+# script's exit status at 1, which fails the step even under `set -e` (the -e
+# exemption for AND-OR lists does not change the script's final status). That is
+# exactly what happened when a job restored no registry directories, so nothing
+# here may end on a conditional.
+exit 0

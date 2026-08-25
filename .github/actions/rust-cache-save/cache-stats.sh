@@ -27,3 +27,6 @@ if [ "$before" -gt 0 ] && [ "$after" -le "$before" ]; then
   timing_note "cache.target.prune_removed" \
     "$(timing_bytes "$(( before - after ))") of $(timing_bytes "$before") ($(( 100 - after * 100 / before ))%)"
 fi
+
+# See the note in rust-cache/cache-stats.sh: never end on a conditional.
+exit 0
