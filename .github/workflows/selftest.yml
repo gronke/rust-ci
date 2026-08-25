@@ -1655,15 +1655,23 @@ jobs:
             || { echo "::error::burning every core measured only ${busy}%"; exit 1; }
           echo "✓ busy ${busy}% against idle ${idle}%"
 
+      # Asserted against the rendered report on disk, NOT $GITHUB_STEP_SUMMARY:
+      # that path is a separate file per step, so a later step opening it reads
+      # an empty file and every assertion here would fail while the report was
+      # in fact correct.
       - name: the report rendered the table and the outputs agree with it
         run: |
           set -euo pipefail
-          grep -q '^## Where the time went' "$GITHUB_STEP_SUMMARY" \
-            || { echo "::error::no report heading in the step summary"; exit 1; }
-          grep -q '| busy stage |' "$GITHUB_STEP_SUMMARY" \
+          report='${{ steps.report.outputs.report-path }}'
+          test -n "$report" && test -f "$report" \
+            || { echo "::error::the report-path output does not name a file: '$report'"; exit 1; }
+          cat "$report"
+          grep -q '^## Where the time went' "$report" \
+            || { echo "::error::no report heading"; exit 1; }
+          grep -q '| busy stage |' "$report" \
             || { echo "::error::the busy stage is missing from the rendered table"; exit 1; }
           # The sentinel closes the last stage and is not itself a row.
-          if grep -q '__report' "$GITHUB_STEP_SUMMARY"; then
+          if grep -q '__report' "$report"; then
             echo "::error::the internal sentinel leaked into the table"; exit 1
           fi
           total='${{ steps.report.outputs.total-seconds }}'
@@ -1699,8 +1707,9 @@ jobs:
       - name: the empty report wrote nothing and did not fail
         run: |
           set -euo pipefail
-          if [ -s "$GITHUB_STEP_SUMMARY" ] && grep -q 'Where the time went' "$GITHUB_STEP_SUMMARY"; then
-            echo "::error::a report was rendered with no marks"; exit 1
+          report="${RUNNER_TEMP}/rust-ci-timing/report.md"
+          if [ -e "$report" ]; then
+            echo "::error::a report was rendered with no marks"; cat "$report"; exit 1
           fi
           echo "✓ no marks, no report, no failure"
 
@@ -1725,6 +1734,7 @@ jobs:
       - run: sleep 2
 
       - name: timing-report
+        id: report
         uses: ./.github/actions/timing-report
         with:
           order: chronological
@@ -1732,12 +1742,14 @@ jobs:
       - name: the table degrades to durations only
         run: |
           set -euo pipefail
-          grep -q '| stage | duration | share |' "$GITHUB_STEP_SUMMARY" \
+          report='${{ steps.report.outputs.report-path }}'
+          cat "$report"
+          grep -q '| stage | duration | share |' "$report" \
             || { echo "::error::expected the durations-only header without samples"; exit 1; }
-          if grep -q 'cpu shape' "$GITHUB_STEP_SUMMARY"; then
+          if grep -q 'cpu shape' "$report"; then
             echo "::error::CPU columns rendered with no samples behind them"; exit 1
           fi
-          grep -q 'sampling disabled by input' "$GITHUB_STEP_SUMMARY" \
+          grep -q 'sampling disabled by input' "$report" \
             || { echo "::error::the report did not say sampling was off"; exit 1; }
           echo "✓ durations only, and it says why"
 
@@ -1780,13 +1792,16 @@ jobs:
               || { echo "::error::a restored tree recorded no size"; exit 1; }
           fi
 
-      - uses: ./.github/actions/timing-report
+      - id: report
+        uses: ./.github/actions/timing-report
 
       - name: the report carries a Cache section
         run: |
           set -euo pipefail
-          grep -q '^### Cache' "$GITHUB_STEP_SUMMARY" \
+          report='${{ steps.report.outputs.report-path }}'
+          cat "$report"
+          grep -q '^### Cache' "$report" \
             || { echo "::error::the Cache section is missing from the report"; exit 1; }
-          grep -q '`cache.target`' "$GITHUB_STEP_SUMMARY" \
-            || { echo "::error::the hit kind did not reach the summary"; exit 1; }
+          grep -q '`cache.target`' "$report" \
+            || { echo "::error::the hit kind did not reach the report"; exit 1; }
           echo "✓ Cache section rendered"

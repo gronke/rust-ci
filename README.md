@@ -307,6 +307,9 @@ Marks are recorded **in-band** rather than read back from the Actions API afterw
 Sampling reads `/proc` and is therefore Linux-only. Elsewhere the durations are still recorded and the report says the sampler was unavailable, rather than rendering empty CPU columns that read as an idle machine.
 The actions never fail a job: instrumentation that turns a green build red is worse than no instrumentation.
 
+`timing-report` also writes the rendered Markdown to disk and exposes it as its `report-path` output.
+`$GITHUB_STEP_SUMMARY` is a **separate file per step** (the runner concatenates each step's file into the job summary), so nothing can read the summary back afterwards; the report file can be asserted on, uploaded as an artifact, or diffed between two runs.
+
 Pair with `stats: "true"` on [`rust-cache`](#rust-cache) and [`rust-cache-save`](#rust-cache-save) to add a **Cache** section — the hit kind (exact, restore-key fallback, or miss), the restored size, and the share the prune removed.
 A cache that restores but whose artifacts are not reusable reports success at every step, every suite still passes, and the job is simply minutes more expensive with nothing saying so; the hit kind next to the size is what separates that from a genuinely cold run.
 

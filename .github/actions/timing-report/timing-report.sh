@@ -201,10 +201,18 @@ fmt_ms() {
     echo "| --- | --- |"
     grep '^cache\.' "$dir/notes.tsv" | awk -F'\t' '{printf "| `%s` | %s |\n", $1, $2}'
   fi
-} >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+} > "$dir/report.md"
+
+# Rendered to a file first, then appended. $GITHUB_STEP_SUMMARY is a SEPARATE
+# file per step: the runner concatenates each step's file into the job summary,
+# so a later step that opens it sees an empty one. Keeping the report on disk is
+# what lets a consumer assert on it, diff two runs, or upload it as an artifact,
+# none of which the step summary can support.
+cat "$dir/report.md" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
 slowest="$(head -1 "${stats}.sorted" 2>/dev/null || sort -t"$(printf '\t')" -k2,2nr "$stats" | head -1)"
 {
+  echo "report-path=$dir/report.md"
   echo "total-ms=$total_ms"
   echo "total-seconds=$(( total_ms / 1000 ))"
   echo "slowest-stage=$(printf '%s' "$slowest" | cut -f1)"
