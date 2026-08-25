@@ -53,6 +53,15 @@ inputs:
       to vendored/download caches that track the lockfiles.
     required: false
     default: ""
+  stats:
+    description: >-
+      Record what the restore delivered (hit kind, restored sizes) for the `timing-report` Cache
+      section. Off by default because it walks the restored trees with `du`, which is seconds on a
+      multi-gigabyte target. Worth it while tuning a pipeline: a cache that restores but whose
+      artifacts are not reusable reports success at every step and simply costs minutes, and the hit
+      kind plus the size is what separates that from a genuinely cold run.
+    required: false
+    default: "false"
 
 outputs:
   target-cache-hit:
@@ -151,3 +160,15 @@ runs:
           echo "RUST_CI_TARGET_DIR=$TARGET_DIR"
           echo "RUST_CI_TARGET_HIT=${HIT:-false}"
         } >> "$GITHUB_ENV"
+
+    # Opt-in, and last: the du walks cost seconds and must not sit between the
+    # restore and the build for consumers who did not ask for them.
+    - name: Record cache statistics
+      if: inputs.stats == 'true'
+      shell: bash
+      env:
+        TARGET_DIR: ${{ inputs.cache-target == 'true' && inputs.target-dir || '' }}
+        TARGET_HIT: ${{ steps.target.outputs.cache-hit }}
+        TARGET_KEY: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        REGISTRY_DIRS: ${{ steps.meta.outputs.registry_paths }}
+      run: bash "$GITHUB_ACTION_PATH/cache-stats.sh"

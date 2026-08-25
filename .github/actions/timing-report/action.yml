@@ -1,0 +1,53 @@
+name: Timing report
+description: >-
+  Render the build-performance report collected by `timing-start` and `timing-mark` to the job
+  summary: per-stage durations with their share of the job, and where the sampler ran, the peak load
+  and memory each stage reached plus a load shape across it.
+
+  Put it last with `if: always()`, so a job that fails half way still reports what the stages up to
+  the failure cost. It closes the stage named by the workflow's last `timing-mark` with its own
+  timestamp and stops the sampler, so that last stage needs no separate name here.
+
+  The load columns are the part that turns a duration into a decision. A stage that runs at a
+  fraction of the core count is waiting on something (a link step, a database, one serialized test
+  group) and will not get faster on a bigger runner; a stage that pins every core is compute-bound
+  and will. Reading the two together is how a slow job gets attributed to compilation or to
+  execution without guessing.
+
+inputs:
+  title:
+    description: Heading for the summary section.
+    required: false
+    default: Where the time went
+  order:
+    description: >-
+      "duration" lists the slowest stage first, which is what a reader is looking for.
+      "chronological" keeps mark order, which is what a comparison between two runs wants.
+    required: false
+    default: duration
+  columns:
+    description: Sparkline width per stage. Wider resolves a stage's phases; narrower keeps the table compact.
+    required: false
+    default: "12"
+outputs:
+  total-seconds:
+    description: Sum of every stage's duration.
+    value: ${{ steps.report.outputs.total-seconds }}
+  slowest-stage:
+    description: Name of the longest stage, for a threshold check or an alert.
+    value: ${{ steps.report.outputs.slowest-stage }}
+  slowest-seconds:
+    description: Duration of the longest stage.
+    value: ${{ steps.report.outputs.slowest-seconds }}
+
+runs:
+  using: composite
+  steps:
+    - name: Render timing report
+      id: report
+      shell: bash
+      env:
+        TITLE: ${{ inputs.title }}
+        ORDER: ${{ inputs.order }}
+        COLUMNS: ${{ inputs.columns }}
+      run: bash "$GITHUB_ACTION_PATH/timing-report.sh"

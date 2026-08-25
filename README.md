@@ -241,7 +241,11 @@ Two independent cache entries, split by churn rate:
     prefix: build            # cache family — use a distinct one per job
     cache-target: "true"     # also restore target/ (off by default)
     # save: "false"          # registry restore-only, for pure consumers
+    # stats: "true"          # record hit kind + restored size for timing-report
 ```
+
+`stats` is off by default because it walks the restored trees with `du`, which is seconds on a multi-gigabyte target; it is worth paying while tuning a pipeline.
+See [the timing actions](#timing-start--timing-mark--timing-report) for what it feeds.
 
 ### `rust-cache-save`
 
@@ -256,7 +260,55 @@ The restore-everywhere/save-on-main pattern: PR jobs omit this action (or pass `
   with:
     save: ${{ github.ref == 'refs/heads/main' }}
     # working-directory: .   # where `cargo metadata` names the members to prune
+    # stats: "true"          # record the pruned size and the prune ratio
 ```
+
+### `timing-start` / `timing-mark` / `timing-report`
+
+Per-stage build-performance tracking for one job: where the minutes went, and whether each stage was compute-bound.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/timing-start@v1
+  with:
+    sample-interval: "5"     # seconds; "0" records durations only
+    first-stage: setup       # covers checkout and cache restore
+
+- uses: gronke/rust-ci/.github/actions/timing-mark@v1
+  with: { name: Rust tests }
+- run: cargo nextest run --workspace
+
+- uses: gronke/rust-ci/.github/actions/timing-mark@v1
+  with: { name: E2E tests }
+- run: npx playwright test
+
+- uses: gronke/rust-ci/.github/actions/timing-report@v1
+  if: always()               # report the stages that ran before a failure
+```
+
+A mark is a **boundary, not a duration**: a stage runs from its mark to the next one, and `timing-report` closes the last one with its own timestamp.
+That is what makes the runner's own overhead visible, because the interval before your first build mark contains the container pull and the cache restore instead of leaving them unattributed.
+
+The report renders per stage: duration, share of the job, peak and mean CPU, peak memory, and a shape.
+
+| stage | duration | share | peak cpu | mean cpu | peak mem | cpu shape |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Rust tests | 18m 40s | 50% | 98% (7.8 of 8) | 71% | 10.4 GiB | `▂▇▇▇▇▇▇▇▇▂▂▂` |
+| E2E tests | 7m 00s | 19% | 58% (4.7 of 8) | 44% | 6.9 GiB | `▄▄▄▄▄▄▄▄▄▄▄▄` |
+
+CPU comes from `/proc/stat` deltas between sampling ticks, **not** from `/proc/loadavg`.
+A load average is a one-minute exponential mean, so it lags into the following stage and under-reports any stage shorter than its own window: a three-minute compile that pins every core reads as half idle, and the stage after it inherits the tail.
+A delta is the actual utilization of the interval it covers, which is the only form that attributes to a stage.
+
+Reading the CPU column is the point. A stage at a fraction of the core count is waiting on something (a link step, a database, one serialized test group) and will not get faster on a bigger runner; a stage that pins every core is compute-bound and will.
+That distinction is what separates "split this job" from "remove this work", and it is not recoverable from durations alone.
+
+Marks are recorded **in-band** rather than read back from the Actions API afterwards, for three reasons: the API needs an `actions: read` permission on a job that may hold nothing else worth granting, it costs a round-trip at the end of a job that just spent minutes compiling, and decisively it has no resolution *inside* a step, so a twenty-minute test step stays one opaque bar.
+
+Sampling reads `/proc` and is therefore Linux-only. Elsewhere the durations are still recorded and the report says the sampler was unavailable, rather than rendering empty CPU columns that read as an idle machine.
+The actions never fail a job: instrumentation that turns a green build red is worse than no instrumentation.
+
+Pair with `stats: "true"` on [`rust-cache`](#rust-cache) and [`rust-cache-save`](#rust-cache-save) to add a **Cache** section — the hit kind (exact, restore-key fallback, or miss), the restored size, and the share the prune removed.
+A cache that restores but whose artifacts are not reusable reports success at every step, every suite still passes, and the job is simply minutes more expensive with nothing saying so; the hit kind next to the size is what separates that from a genuinely cold run.
 
 ### `build-image`
 

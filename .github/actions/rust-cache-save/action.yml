@@ -19,6 +19,13 @@ inputs:
     description: Workspace directory whose `cargo metadata` names the members to prune.
     required: false
     default: "."
+  stats:
+    description: >-
+      Record the pruned size, and the share the prune removed when `rust-cache` measured the tree
+      before the build, for the `timing-report` Cache section. Pair it with `stats: "true"` on
+      `rust-cache`.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -40,3 +47,13 @@ runs:
       with:
         path: ${{ env.RUST_CI_TARGET_DIR }}
         key: ${{ env.RUST_CI_TARGET_KEY }}
+
+    # After the save, so the du never delays the upload. Reads the pre-build
+    # size rust-cache left in the environment; without it only the pruned size
+    # is reported rather than a ratio against nothing.
+    - name: Record cache statistics
+      if: ${{ inputs.stats == 'true' && env.RUST_CI_TARGET_KEY != '' }}
+      shell: bash
+      env:
+        TARGET_DIR: ${{ env.RUST_CI_TARGET_DIR }}
+      run: bash "$GITHUB_ACTION_PATH/cache-stats.sh"
