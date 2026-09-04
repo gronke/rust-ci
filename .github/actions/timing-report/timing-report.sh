@@ -4,6 +4,7 @@
 #   TITLE     heading for the summary section
 #   ORDER     "duration" (slowest first) or "chronological"
 #   COLUMNS   sparkline width per stage
+#   GITHUB_TOKEN  token for the Actions API (per-step timings); needs actions:read
 set -euo pipefail
 
 # shellcheck source=../_lib/timing.sh disable=SC1091
@@ -22,16 +23,73 @@ if [ -f "$dir/sampler.pid" ]; then
   rm -f "$dir/sampler.pid"
 fi
 
-if [ ! -s "$dir/marks.tsv" ]; then
-  echo "::warning title=No timing marks::timing-report found no marks; was timing-start called in this job?"
+# Stage boundaries, written to marks.tsv as `epoch_ms <TAB> name`, ascending.
+# When a workflow places no manual marks, GitHub's own per-step timings are the
+# source: no timing-mark steps are needed and even pre-step stages such as
+# "Initialize containers" that in-job marks cannot see are captured. Emits the
+# current job's completed steps plus a closing "__report" sentinel at the last
+# step's end. Prints nothing (and returns non-zero) whenever the token, jq/curl,
+# or the API response is unavailable, so the caller falls back to any marks.
+marks_from_api() {
+  local token="${GITHUB_TOKEN:-}"
+  [ -n "$token" ] && [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] || return 1
+  command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 || return 1
+  local api="${GITHUB_API_URL:-https://api.github.com}" resp
+  resp="$(curl -sSL --max-time 20 \
+    -H "Authorization: Bearer $token" \
+    -H "Accept: application/vnd.github+json" \
+    "$api/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null)" || return 1
+  printf '%s' "$resp" | jq -e 'has("jobs")' >/dev/null 2>&1 || return 1
+  # This job: the in-progress one on this runner (the report itself is a step of
+  # it). Falls back to a runner match, then to the latest-started job, so the
+  # selection still resolves when queried after the job completes (tests, reruns).
+  local rows
+  rows="$(printf '%s' "$resp" | jq -r --arg runner "${RUNNER_NAME:-}" '
+    (.jobs // []) as $all
+    | ($all | map(select(.status == "in_progress"))) as $inp
+    | (if ($inp | length) > 0 then $inp else $all end) as $c
+    | ($c | map(select(.runner_name == $runner))) as $byr
+    | ((if ($byr | length) > 0 then $byr else $c end) | sort_by(.started_at) | last) as $job
+    | (($job.steps // [])
+        | map(select(.started_at != null and .completed_at != null))
+        | sort_by(.number)) as $s
+    | if ($s | length) == 0 then empty
+      else (($s | map([.started_at, .name] | @tsv)) + [([$s[-1].completed_at, "__report"] | @tsv)])[]
+      end
+  ' 2>/dev/null)" || return 1
+  [ -n "$rows" ] || return 1
+  # ISO 8601 (second precision) -> epoch_ms; sanitize the name to stay tab-free.
+  local iso name secs
+  while IFS="$(printf '\t')" read -r iso name; do
+    [ -n "$iso" ] || continue
+    secs="$(date -u -d "$iso" +%s 2>/dev/null)" || return 1
+    case "$secs" in '' | *[!0-9]*) return 1 ;; esac
+    printf '%s\t%s\n' "$(( secs * 1000 ))" "$(timing_sanitize "$name")"
+  done <<< "$rows"
+}
+
+if [ -s "$dir/marks.tsv" ]; then
+  # Manual marks win. A workflow that still calls timing-mark instrumented its
+  # stages on purpose, so honor them rather than overriding with raw step names;
+  # dropping the marks is what opts a workflow into the API-derived stages below.
+  # The last mark has no end until this sentinel closes it; the table drops it.
+  timing_mark "__report"
+elif marks_from_api > "$dir/marks.api.tsv" 2>/dev/null && [ -s "$dir/marks.api.tsv" ]; then
+  # No manual marks: derive the stages from the Actions API. Its output already
+  # ends with the __report sentinel, so no manual close is needed.
+  mv "$dir/marks.api.tsv" "$dir/marks.tsv"
+else
+  rm -f "$dir/marks.api.tsv"
+  echo "::warning title=No timing data::timing-report found no timing marks and could not read the Actions API (needs a token with actions:read)."
   exit 0
 fi
 
-# The closing boundary. A mark records where a stage begins, so the stage named
-# by the workflow's last timing-mark has no end until this sentinel exists. The
-# sentinel is not itself a stage and is dropped from the table; it only supplies
-# the final timestamp.
-timing_mark "__report"
+# The render reads samples.tsv and notes.tsv. A report derived from the API
+# without timing-start has neither, so create them empty: the table degrades to
+# durations only rather than failing the awk (set -e + pipefail turns a missing
+# input into a fatal exit), and the cores/sampler/cache lookups just find nothing.
+[ -f "$dir/samples.tsv" ] || : > "$dir/samples.tsv"
+[ -f "$dir/notes.tsv" ] || : > "$dir/notes.tsv"
 
 cores="$(awk -F'\t' '$1 == "runner.cores" {print $2}' "$dir/notes.tsv" 2>/dev/null | tail -1)"
 case "$cores" in '' | 0 | *[!0-9]*) cores=0 ;; esac

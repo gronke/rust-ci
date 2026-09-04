@@ -1,12 +1,18 @@
 name: Timing report
 description: >-
-  Render the build-performance report collected by `timing-start` and `timing-mark` to the job
-  summary: per-stage durations with their share of the job, and where the sampler ran, the peak load
-  and memory each stage reached plus a load shape across it.
+  Render the build-performance report to the job summary: per-stage durations with their share of
+  the job, and where the sampler ran, the peak load and memory each stage reached plus a load shape
+  across it.
+
+  Stage boundaries come from the manual `timing-mark` steps when a workflow places them, and
+  otherwise from the Actions API — GitHub already times every step, so a workflow can drop its
+  `timing-mark` steps and still get a per-stage report, one that even captures pre-step stages like
+  "Initialize containers" that in-job marks cannot see. Manual marks win when present, so an existing
+  workflow is unaffected; the API path needs a token with `actions: read` (the default
+  `github.token` works once the job grants that permission).
 
   Put it last with `if: always()`, so a job that fails half way still reports what the stages up to
-  the failure cost. It closes the stage named by the workflow's last `timing-mark` with its own
-  timestamp and stops the sampler, so that last stage needs no separate name here.
+  the failure cost. It stops the sampler before reading it, so the last stage's samples are complete.
 
   The load columns are the part that turns a duration into a decision. A stage that runs at a
   fraction of the core count is waiting on something (a link step, a database, one serialized test
@@ -22,13 +28,20 @@ inputs:
   order:
     description: >-
       "duration" lists the slowest stage first, which is what a reader is looking for.
-      "chronological" keeps mark order, which is what a comparison between two runs wants.
+      "chronological" keeps step order, which is what a comparison between two runs wants.
     required: false
     default: duration
   columns:
     description: Sparkline width per stage. Wider resolves a stage's phases; narrower keeps the table compact.
     required: false
     default: "12"
+  token:
+    description: >-
+      Token used to read the job's per-step timings from the Actions API, for the case where a
+      workflow places no manual `timing-mark` steps. Needs `actions: read`. Defaults to the job's
+      `github.token`.
+    required: false
+    default: ${{ github.token }}
 outputs:
   report-path:
     description: >-
@@ -56,4 +69,5 @@ runs:
         TITLE: ${{ inputs.title }}
         ORDER: ${{ inputs.order }}
         COLUMNS: ${{ inputs.columns }}
+        GITHUB_TOKEN: ${{ inputs.token }}
       run: bash "$GITHUB_ACTION_PATH/timing-report.sh"
