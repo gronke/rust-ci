@@ -7,7 +7,7 @@
 # RUST_CI_TIMING_DIR so later steps in the same job find it without an input:
 #
 #   marks.tsv     epoch_ms <TAB> stage name          one line per timing-mark
-#   samples.tsv   epoch_ms <TAB> load1 <TAB> mem_used_kb <TAB> mem_total_kb <TAB> disk_avail_kb
+#   samples.tsv   epoch_ms <TAB> cpu-busy-percent <TAB> mem_used_kb <TAB> mem_total_kb <TAB> disk_avail_kb
 #   notes.tsv     key <TAB> value                    facts contributed by other actions
 #   sampler.pid   pid of the background resource sampler, when one runs
 #

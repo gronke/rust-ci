@@ -1708,11 +1708,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Negative control: a report before any timing-start must warn and pass,
-      # not fail the job. A timing action is instrumentation; it has no business
-      # turning a green build red.
+      # Negative control: with no marks and no API access, timing-report must
+      # warn and pass, not fail the job. A timing action is instrumentation; it
+      # has no business turning a green build red. token: "" denies the Actions
+      # API, so this stays a genuine no-data case rather than deriving the run's
+      # own steps (the API path is exercised by "from the Actions API" below).
       - name: timing-report without marks (negative control)
         uses: ./.github/actions/timing-report
+        with:
+          token: ""
 
       - name: the empty report wrote nothing and did not fail
         run: |
@@ -1762,6 +1766,37 @@ jobs:
           grep -q 'sampling disabled by input' "$report" \
             || { echo "::error::the report did not say sampling was off"; exit 1; }
           echo "✓ durations only, and it says why"
+
+  # The API-derived path: with no manual marks and an actions:read token,
+  # timing-report reads the job's own per-step timings from the Actions API,
+  # which is what a workflow opts into by dropping its timing-mark steps. No
+  # timing-start here either, so this also covers the no-sampler degrade.
+  selftest-timing-from-api:
+    name: exercise the timing actions from the Actions API
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: spend a measurable moment
+        run: sleep 3
+
+      - name: timing-report
+        id: report
+        uses: ./.github/actions/timing-report
+
+      - name: the stages are the job's real step names, with no marks placed
+        run: |
+          set -euo pipefail
+          report='${{ steps.report.outputs.report-path }}'
+          test -e "$report" || { echo "::error::no report was produced from the API"; exit 1; }
+          cat "$report"
+          # "Set up job" is always the first step and completes before this one,
+          # so the API has it regardless of any lag on the freshest step.
+          grep -q 'Set up job' "$report" \
+            || { echo "::error::the API-derived report is missing the job's real step names"; exit 1; }
+          echo "✓ stages derived from the Actions API without any timing-mark"
 
   # rust-cache's opt-in statistics: the hit kind and the restored size reach the
   # timing notes, which is what lets a report distinguish a cold run from a warm
