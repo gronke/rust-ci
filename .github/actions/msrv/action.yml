@@ -127,6 +127,8 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/retry-transient.sh"
 
         # The source is mounted read-only, so cargo cannot write Cargo.lock during the check.
         # With locked: false, resolve a fresh lock at the MSRV up front — in a DISPOSABLE COPY
@@ -205,7 +207,9 @@ runs:
           gen_args=()
           [ "$OFFLINE" = "true" ] && gen_args+=(--offline)
           echo "::group::resolve Cargo.lock at the MSRV (in a disposable copy of the source)"
-          seal_run_rw_lockresolve cargo generate-lockfile "${gen_args[@]}"
+          # Retry a crates.io blip: generate-lockfile only resolves the graph, so a re-run
+          # resumes off the cache rather than restarting work.
+          retry_transient seal_run_rw_lockresolve cargo generate-lockfile "${gen_args[@]}"
           echo "::endgroup::"
         fi
 

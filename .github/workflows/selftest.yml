@@ -1464,10 +1464,20 @@ jobs:
             return 1
           }
           genuine() { bump >/dev/null; echo "Dockerfile:5 RUN rustup component add clippy: exit code 1"; return 7; }
+          cargo_flaky() {
+            if [ "$(bump)" -ge 2 ]; then echo "resolved"; return 0; fi
+            echo 'warning: spurious network error (1 tries remaining): [28] Timeout was reached (Failed to connect to index.crates.io port 443)'
+            return 101
+          }
 
           echo 0 > "$count"
           retry_transient flaky >/dev/null
           [ "$(cat "$count")" = "3" ] || { echo "::error::a registry timeout was not retried"; exit 1; }
+
+          # A crates.io timeout (cargo/curl text), not only a Docker registry error, must retry.
+          echo 0 > "$count"
+          retry_transient cargo_flaky >/dev/null
+          [ "$(cat "$count")" = "2" ] || { echo "::error::a crates.io network timeout was not retried"; exit 1; }
 
           echo 0 > "$count"
           status=0
