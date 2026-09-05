@@ -59,6 +59,11 @@ else
   fi
 fi
 
-timing_mark "$FIRST_STAGE"
+# An empty first-stage starts the sampler without laying down a mark. With no marks in
+# the file, timing-report derives the stage boundaries from the Actions API instead, so
+# the resource sampler and the per-step API timings combine with no manual timing-mark steps.
+if [ -n "$FIRST_STAGE" ]; then
+  timing_mark "$FIRST_STAGE"
+fi
 echo "timing state at $dir"
 echo "timing-dir=$dir" >> "$GITHUB_OUTPUT"
