@@ -26,7 +26,9 @@ inputs:
     description: >-
       Name for the interval that begins here. It covers everything up to the first `timing-mark`,
       which on most jobs is the checkout and cache restore rather than any build step, so name it
-      for what it is.
+      for what it is. Set it empty to start the resource sampler without any mark: a job that lays
+      down no `timing-mark` steps then has its stages derived from the Actions API by timing-report,
+      and the sampler still supplies the CPU/memory shape.
     required: false
     default: "setup"
 

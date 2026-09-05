@@ -43,7 +43,7 @@ jobs:
       # cargo-out-dir: resolve the fixture build script's OUT_DIR.
       # Dependencies' build scripts emit the same cargo message, so the
       # assertion pins the PACKAGE filter: the resolved path must be the
-      # fixture's own build dir. (Deliberately no content assert — a
+      # fixture's own build dir. (Deliberately no content assert, so that a
       # restored target cache legitimately replays an earlier build-script
       # execution.)
       - name: cargo-out-dir (fixture)
@@ -1797,6 +1797,42 @@ jobs:
           grep -q 'Set up job' "$report" \
             || { echo "::error::the API-derived report is missing the job's real step names"; exit 1; }
           echo "✓ stages derived from the Actions API without any timing-mark"
+
+  # first-stage: "" starts the sampler but lays down no mark, so a job keeps the
+  # CPU/memory shape while still deriving its stages from the Actions API and the
+  # setup a workflow adopts when it drops its timing-mark steps but wants the
+  # sampler. The assertion would fail if timing-start still marked: an empty-named
+  # mark would send timing-report down the marks path, and "Set up job" only
+  # appears when the stages come from the API.
+  selftest-timing-sampler-only:
+    name: exercise sampler-only timing-start with the Actions API
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: timing-start (sampler only, no first-stage mark)
+        uses: ./.github/actions/timing-start
+        with:
+          first-stage: ""
+
+      - name: spend a measurable moment
+        run: sleep 3
+
+      - name: timing-report
+        id: report
+        uses: ./.github/actions/timing-report
+
+      - name: the report comes from the API even though the sampler ran
+        run: |
+          set -euo pipefail
+          report='${{ steps.report.outputs.report-path }}'
+          test -e "$report" || { echo "::error::no report was produced"; exit 1; }
+          cat "$report"
+          grep -q 'Set up job' "$report" \
+            || { echo "::error::sampler-only timing-start left a mark; the API path was not taken"; exit 1; }
+          echo "✓ sampler-only timing-start kept the API-derived stages"
 
   # rust-cache's opt-in statistics: the hit kind and the restored size reach the
   # timing notes, which is what lets a report distinguish a cold run from a warm
