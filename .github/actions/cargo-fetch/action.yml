@@ -62,6 +62,8 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/retry-transient.sh"
         # The one networked step: OFFLINE unset → no --network=none; no target mount
         # (fetch only populates the cache). Forward a private-git token as one masked
         # env-file line (not via env-include); add-mask redacts it from logs.
@@ -69,7 +71,8 @@ runs:
           printf '::add-mask::%s\n' "$GIT_TOKEN"
           export EXTRA_ENV="CICD_GIT_TOKEN=$GIT_TOKEN"
         fi
-        seal_run bash -c '
+        # cargo fetch is incremental, so a retry after a crates.io blip resumes off the cache.
+        retry_transient seal_run bash -c '
           # With a git-token, authenticate github.com fetches as x-access-token and
           # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies
           # — lets cargo clone PRIVATE git dependencies. No-op for public deps.

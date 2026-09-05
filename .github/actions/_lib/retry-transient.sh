@@ -20,7 +20,7 @@
 # job for the same reason having no retry did.
 
 # Conditions a second attempt can plausibly survive.
-_RETRY_TRANSIENT='i/o timeout|deadlineexceeded|timeout exceeded|context deadline|connection reset|connection refused|tls handshake|temporary failure|too many requests|toomanyrequests|unexpected eof|no such host|503 service|502 bad gateway'
+_RETRY_TRANSIENT='i/o timeout|deadlineexceeded|timeout exceeded|context deadline|connection reset|connection refused|tls handshake|temporary failure|too many requests|toomanyrequests|unexpected eof|no such host|503 service|502 bad gateway|spurious network error|timeout was reached|failed to download|failed to connect'
 
 retry_transient() {
   # Whether the command failed is read off a pipeline, so pipefail is not
