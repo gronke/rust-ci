@@ -7,11 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
-- `timing-start`, `timing-mark` and `timing-report`: per-stage build-performance tracking for a job, rendered to the run summary as durations with their share of the job plus peak CPU, peak memory and a per-stage shape. A mark is a boundary rather than a duration, so the interval before the first build mark attributes the container pull and the cache restore instead of leaving them unaccounted. CPU comes from `/proc/stat` deltas rather than `/proc/loadavg`: a one-minute exponential average lags into the following stage and under-reports any stage shorter than its own window, which is exactly the case a report is read to resolve. Marks are collected in-band because the Actions API needs an `actions: read` permission, costs a round-trip, and has no resolution inside a step, so a twenty-minute test step would stay one opaque bar. Sampling is Linux-only and says so when unavailable; none of the three can fail a job.
-The rendered Markdown is written to disk as well and exposed as `timing-report`'s `report-path` output, because `$GITHUB_STEP_SUMMARY` is a separate file per step and cannot be read back by a later one; the file is what a consumer asserts on, uploads as an artifact, or diffs between runs.
-- `rust-cache` and `rust-cache-save` gain an opt-in `stats` input that feeds a Cache section into the timing report: the hit kind (exact, restore-key fallback, or miss), the restored sizes, and the share the prune removed. A restore-key fallback and an exact hit are both "restored" to `actions/cache` and mean opposite things for a build, and a cache whose artifacts are not reusable reports success at every step while the job is simply minutes more expensive. Off by default because it walks the restored trees with `du`.
-- `publish-dry-run` gains multi-crate release support: the expected version also derives from `<package>-vX.Y.Z` tags, and the new `require-deps-published` input fails a release tagged before its workspace path dependencies are live on crates.io, with an error naming the fix. The prep step now builds the `.crate` and pre-fetches its packaged lockfile, so the sealed offline verify-build resolves co-developed dependencies instead of failing even on a correctly ordered release, and the sealed step lists the shipped files via `cargo package --list`.
-- `require-signed-release` gains an opt-in `unsigned-guidance` input: an unsigned verdict also writes the way forward into the step summary — the exact commands that create and push the signed companion on the release commit, its name derived from `attestation-tags`. The `::notice::` alone stays the default for pipelines that print their own guidance.
+- `timing-start`/`timing-mark`/`timing-report`: per-stage build timing (durations with job share, peak CPU/memory, a per-stage shape from the Linux sampler) to the run summary and a `report-path` file. Stages come from in-band marks or, mark-free, from the Actions API (`actions: read`); an empty `first-stage` keeps the sampler without a mark.
+- `rust-cache`/`rust-cache-save`: opt-in `stats` adds a Cache section to the timing report (hit kind, restored size, prune share).
+- `publish-dry-run`: multi-crate support via `<package>-vX.Y.Z` tags and `require-deps-published`, with a packaged-lockfile prefetch so the sealed verify-build resolves co-developed deps.
+- `require-signed-release`: opt-in `unsigned-guidance` writes the signed-companion commands to the step summary.
+
+### Fixed
+
+- `install-toolchain`: put cargo on `GITHUB_PATH` when rustup is preinstalled (later steps otherwise had none); the installer fetch now retries transients.
+- `msrv`/`cargo-fetch`: retry crates.io transients instead of exhausting cargo's three tries on a blip.
 
 ## [1.6.1] - 2026-08-22
 
