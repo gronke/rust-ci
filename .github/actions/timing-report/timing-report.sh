@@ -34,29 +34,36 @@ marks_from_api() {
   local token="${GITHUB_TOKEN:-}"
   [ -n "$token" ] && [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] || return 1
   command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 || return 1
-  local api="${GITHUB_API_URL:-https://api.github.com}" resp
-  resp="$(curl -sSL --max-time 20 \
-    -H "Authorization: Bearer $token" \
-    -H "Accept: application/vnd.github+json" \
-    "$api/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null)" || return 1
-  printf '%s' "$resp" | jq -e 'has("jobs")' >/dev/null 2>&1 || return 1
-  # This job: the in-progress one on this runner (the report itself is a step of
-  # it). Falls back to a runner match, then to the latest-started job, so the
-  # selection still resolves when queried after the job completes (tests, reruns).
-  local rows
-  rows="$(printf '%s' "$resp" | jq -r --arg runner "${RUNNER_NAME:-}" '
-    (.jobs // []) as $all
-    | ($all | map(select(.status == "in_progress"))) as $inp
-    | (if ($inp | length) > 0 then $inp else $all end) as $c
-    | ($c | map(select(.runner_name == $runner))) as $byr
-    | ((if ($byr | length) > 0 then $byr else $c end) | sort_by(.started_at) | last) as $job
-    | (($job.steps // [])
-        | map(select(.started_at != null and .completed_at != null))
-        | sort_by(.number)) as $s
-    | if ($s | length) == 0 then empty
-      else (($s | map([.started_at, .name] | @tsv)) + [([$s[-1].completed_at, "__report"] | @tsv)])[]
-      end
-  ' 2>/dev/null)" || return 1
+  local api="${GITHUB_API_URL:-https://api.github.com}" resp rows='' attempt
+  # The API ingests step results asynchronously, so seconds into a job — a short
+  # job querying early — the in-progress job can still report zero completed
+  # steps. An attempt that yields no usable rows (a curl failure included) is
+  # retried on a short budget before the caller degrades to the no-data warning.
+  for attempt in 1 2 3; do
+    if [ "$attempt" -gt 1 ]; then sleep 3; fi
+    resp="$(curl -sSL --max-time 20 \
+      -H "Authorization: Bearer $token" \
+      -H "Accept: application/vnd.github+json" \
+      "$api/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null)" || continue
+    printf '%s' "$resp" | jq -e 'has("jobs")' >/dev/null 2>&1 || continue
+    # This job: the in-progress one on this runner (the report itself is a step of
+    # it). Falls back to a runner match, then to the latest-started job, so the
+    # selection still resolves when queried after the job completes (tests, reruns).
+    rows="$(printf '%s' "$resp" | jq -r --arg runner "${RUNNER_NAME:-}" '
+      (.jobs // []) as $all
+      | ($all | map(select(.status == "in_progress"))) as $inp
+      | (if ($inp | length) > 0 then $inp else $all end) as $c
+      | ($c | map(select(.runner_name == $runner))) as $byr
+      | ((if ($byr | length) > 0 then $byr else $c end) | sort_by(.started_at) | last) as $job
+      | (($job.steps // [])
+          | map(select(.started_at != null and .completed_at != null))
+          | sort_by(.number)) as $s
+      | if ($s | length) == 0 then empty
+        else (($s | map([.started_at, .name] | @tsv)) + [([$s[-1].completed_at, "__report"] | @tsv)])[]
+        end
+    ' 2>/dev/null)" || { rows=''; continue; }
+    [ -n "$rows" ] && break
+  done
   [ -n "$rows" ] || return 1
   # ISO 8601 (second precision) -> epoch_ms; sanitize the name to stay tab-free.
   local iso name secs
