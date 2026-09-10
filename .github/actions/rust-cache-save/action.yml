@@ -8,6 +8,10 @@ description: >-
   requests, with the default branch's warmup feeding them — omit this action or pass save: false;
   to also save when a build step failed, put `if: always()` on this step in the workflow.
 
+  Under `rust-cache`'s `local-target` this action does nothing. The guards name that mode explicitly
+  rather than inferring it from a missing key, because pruning a target directory the runner keeps
+  between jobs would delete artifacts the next build reuses.
+
 inputs:
   save:
     description: >-
@@ -36,13 +40,13 @@ runs:
     # (no Cargo.toml in the workspace — e.g. a C++ build tree like pdfium's
     # out/) it logs and saves the directory unpruned instead of failing.
     - name: Prune target to dependency artifacts
-      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
+      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_LOCAL != '1' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: bash "$GITHUB_ACTION_PATH/prune-target.sh"
 
     - name: Save target
-      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
+      if: ${{ inputs.save == 'true' && env.RUST_CI_TARGET_LOCAL != '1' && env.RUST_CI_TARGET_KEY != '' && env.RUST_CI_TARGET_HIT != 'true' }}
       uses: actions/cache/save@v6
       with:
         path: ${{ env.RUST_CI_TARGET_DIR }}
@@ -52,7 +56,7 @@ runs:
     # size rust-cache left in the environment; without it only the pruned size
     # is reported rather than a ratio against nothing.
     - name: Record cache statistics
-      if: ${{ inputs.stats == 'true' && env.RUST_CI_TARGET_KEY != '' }}
+      if: ${{ inputs.stats == 'true' && env.RUST_CI_TARGET_LOCAL != '1' && env.RUST_CI_TARGET_KEY != '' }}
       shell: bash
       env:
         TARGET_DIR: ${{ env.RUST_CI_TARGET_DIR }}

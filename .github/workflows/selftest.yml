@@ -1367,6 +1367,84 @@ jobs:
             --jq '[.[] | select(.key | startswith("nosave-${{ github.run_id }}-"))] | length')
           test "$COUNT" -eq 0
 
+  # The property the whole mode rests on: a target dir outside the workspace
+  # survives the `git clean -ffdx` that actions/checkout runs.
+  selftest-cache-local-target:
+    name: rust-cache local-target survives git clean
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: place the marker a host would place
+        run: touch "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-local-target"
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: localtgt-${{ github.run_id }}
+          cache-target: "true"
+          local-target: "auto"
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: auto fired, target sits outside the workspace, no key handed over
+        run: |
+          [ "${RUST_CI_TARGET_LOCAL:-}" = "1" ] || { echo "::error::local-target did not activate"; exit 1; }
+          [ -n "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR unset"; exit 1; }
+          [ -d "$CARGO_TARGET_DIR" ] || { echo "::error::$CARGO_TARGET_DIR missing"; exit 1; }
+          case "$CARGO_TARGET_DIR" in
+            "$GITHUB_WORKSPACE"/*) echo "::error::target dir is inside the workspace"; exit 1 ;;
+          esac
+          [ -z "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::key handed over: $RUST_CI_TARGET_KEY"; exit 1; }
+          echo "✓ $CARGO_TARGET_DIR, outside the workspace, no key"
+      - name: git clean -ffdx does not reach it
+        run: |
+          echo "${{ github.run_id }}" > "$CARGO_TARGET_DIR/sentinel"
+          git clean -ffdx
+          test "$(cat "$CARGO_TARGET_DIR/sentinel")" = "${{ github.run_id }}" || {
+            echo "::error::checkout's clean would delete the target dir"; exit 1; }
+          echo "✓ sentinel survived git clean -ffdx"
+      - uses: ./.github/actions/rust-cache-save
+        with:
+          working-directory: fixtures/sample-crate
+      - name: rust-cache-save left it alone
+        run: |
+          test "$(cat "$CARGO_TARGET_DIR/sentinel")" = "${{ github.run_id }}" || {
+            echo "::error::rust-cache-save pruned a tree it does not own"; exit 1; }
+          echo "✓ nothing pruned"
+
+  selftest-cache-local-target-assert:
+    name: rust-cache local-target uploaded nothing
+    needs: selftest-cache-local-target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: no target entry exists for the prefix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
+            --jq '[.[] | select(.key | startswith("localtgt-${{ github.run_id }}-Linux-target-"))] | length')
+          test "$COUNT" -eq 0 || { echo "::error::uploaded $COUNT target entries"; exit 1; }
+          echo "✓ nothing transferred"
+
+  # Without a marker, "auto" must stay off, or a hosted runner silently stops caching.
+  selftest-cache-local-target-off:
+    name: rust-cache local-target auto stays off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-cache
+        with:
+          prefix: localoff-${{ github.run_id }}
+          cache-target: "true"
+          local-target: "auto"
+          save: "false"
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: the normal path ran
+        run: |
+          [ -z "${RUST_CI_TARGET_LOCAL:-}" ] || { echo "::error::activated without a marker"; exit 1; }
+          [ -z "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR was set: $CARGO_TARGET_DIR"; exit 1; }
+          [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
+          echo "✓ auto stayed off; key handed over as usual"
+
   # cargo-publish: the dry run is the default and reads no credential; an upload
   # without one refuses; already-published is decided before any credential is
   # required. The upload path itself is exercised by real releases.

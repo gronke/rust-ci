@@ -235,11 +235,25 @@ Two independent cache entries, split by churn rate:
 - The **target** entry (opt-in via `cache-target`) is **restore-only in this action**: a restore-key fallback plus save-on-new-key would accrete every generation's stale artifacts into the next.
   Saving it back is [`rust-cache-save`](#rust-cache-save)'s job.
 
+On a runner whose work tree persists, `local-target` keeps `target/` between jobs and drops the transfer.
+Measured on one: 525 s of a 20.5-minute job spent moving 9.26 GB.
+
+It sets `CARGO_TARGET_DIR` to a directory in the runner's work tree, **outside the workspace**, because `actions/checkout` defaults to `clean: true` and runs `git clean -ffdx` — which deletes `target/` along with every other ignored file.
+A target directory inside the workspace cannot survive a checkout, however persistent the disk is.
+**Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.**
+
+`"auto"` activates only when the host leaves a `.rust-ci-local-target` marker beside the runner's work directory, so the same workflow runs unchanged on a hosted runner (no marker, transfer as before) and on a self-hosted one (marker, no transfer).
+A marker rather than an env var because the runner does not forward its own environment into a job container, while the work tree is bind-mounted into it.
+
+Only the target entry is affected; the registry entry still uses `actions/cache`, since `$CARGO_HOME` usually lives in the toolchain image rather than the work tree.
+`rust-cache-save` needs no flag, because this mode hands over no key.
+
 ```yaml
 - uses: gronke/rust-ci/.github/actions/rust-cache@main
   with:
     prefix: build            # cache family — use a distinct one per job
     cache-target: "true"     # also restore target/ (off by default)
+    # local-target: "auto"   # keep target/ on the runner where the work tree persists
     # save: "false"          # registry restore-only, for pure consumers
     # stats: "true"          # record hit kind + restored size for timing-report
 ```

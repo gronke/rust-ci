@@ -16,6 +16,9 @@ description: >-
   post hooks, so an auto-save could not run after the build). Jobs that should only consume — PR
   jobs reading what a default-branch warmup maintains — simply omit the save step.
 
+  On a runner whose work tree persists, `local-target` moves target/ out of the workspace and drops
+  the transfer entirely.
+
   Avoids third-party cache actions whose behaviour drifts with the runner image.
 
 inputs:
@@ -39,8 +42,32 @@ inputs:
       `rust-cache-save` action's job (typically only on the default branch).
     required: false
     default: "false"
+  local-target:
+    description: >-
+      Keep target/ on the runner between jobs instead of transferring it. Sets CARGO_TARGET_DIR to a
+      directory in the runner's work tree, outside the workspace, and skips the target restore and
+      save.
+
+      Outside the workspace because actions/checkout defaults to clean: true and runs
+      `git clean -ffdx`, which deletes target/ along with every other ignored file. A target
+      directory inside the workspace cannot survive a checkout, however persistent the disk is.
+
+      "auto" activates only when the host leaves a `.rust-ci-local-target` marker beside the
+      runner's work directory, so one workflow runs unchanged on a hosted runner (no marker,
+      transfer as before) and on a self-hosted one (marker, no transfer). "true" forces it,
+      "false" is the default and changes nothing.
+
+      A marker rather than an env var because the runner does not forward its own environment into
+      a job container, while the work tree is bind-mounted into it.
+
+      Consumers must read CARGO_TARGET_DIR rather than assume ./target. Only the target entry
+      changes; the registry entry still uses actions/cache, because $CARGO_HOME usually lives in the
+      toolchain image rather than the work tree. rust-cache-save needs no flag, since this mode
+      hands over no key.
+    required: false
+    default: "false"
   target-dir:
-    description: Workspace-relative target directory to restore when cache-target is true (e.g. an out-of-workspace crate's target).
+    description: Workspace-relative target directory to restore when cache-target is true (e.g. an out-of-workspace crate's target). Ignored when local-target is active.
     required: false
     default: target
   lockfiles:
@@ -65,7 +92,7 @@ inputs:
 
 outputs:
   target-cache-hit:
-    description: '"true" when the target entry restored from its exact key.'
+    description: '"true" when the target entry restored from its exact key. Empty under local-target, which restores nothing.'
     value: ${{ steps.target.outputs.cache-hit }}
 
 runs:
@@ -80,6 +107,8 @@ runs:
       shell: bash
       env:
         EXTRA_DIRS: ${{ inputs.cache-directories }}
+        LOCAL_TARGET: ${{ inputs.local-target }}
+        PREFIX: ${{ inputs.prefix }}
       run: |
         set -euo pipefail
         # Default these only when the consumer hasn't set them — an explicit CARGO_INCREMENTAL
@@ -95,6 +124,26 @@ runs:
           rust=norustc
         fi
         echo "rust=$rust" >> "$GITHUB_OUTPUT"
+
+        # "auto" reads a marker the host places beside the work directory: the runner does not pass
+        # its own env into a job container, but the work tree is mounted into it.
+        work=""
+        [ -n "${RUNNER_WORKSPACE:-}" ] && work="$(dirname "$RUNNER_WORKSPACE")"
+        local_target=false
+        case "$LOCAL_TARGET" in
+          true) local_target=true ;;
+          auto)
+            if [ "${RUST_CI_LOCAL_TARGET:-}" = "1" ]; then
+              local_target=true
+            elif [ -n "$work" ] && [ -e "$work/.rust-ci-local-target" ]; then
+              local_target=true
+            fi
+            ;;
+        esac
+        # No work tree means nowhere safe to put it; fall back to the transfer.
+        [ -n "$work" ] || local_target=false
+        echo "local_target=$local_target" >> "$GITHUB_OUTPUT"
+        echo "local_target_dir=$work/.rust-ci-target/$PREFIX" >> "$GITHUB_OUTPUT"
 
         # Cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never registry/src:
         # cargo re-extracts it from the tarballs, so caching it is pure duplication (it roughly
@@ -136,7 +185,7 @@ runs:
     # Target: restore-only (see the action description); `rust-cache-save` prunes and uploads under
     # the same key, handed over via $GITHUB_ENV so the two halves can never diverge.
     - name: Restore target
-      if: inputs.cache-target == 'true'
+      if: inputs.cache-target == 'true' && steps.meta.outputs.local_target != 'true'
       id: target
       uses: actions/cache/restore@v6
       with:
@@ -147,7 +196,7 @@ runs:
           ${{ inputs.prefix }}-${{ runner.os }}-target-
 
     - name: Hand the target key to rust-cache-save
-      if: inputs.cache-target == 'true'
+      if: inputs.cache-target == 'true' && steps.meta.outputs.local_target != 'true'
       shell: bash
       env:
         KEY: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
@@ -161,14 +210,32 @@ runs:
           echo "RUST_CI_TARGET_HIT=${HIT:-false}"
         } >> "$GITHUB_ENV"
 
+    # Deliberately hands over no key: that is what makes rust-cache-save skip its prune and upload,
+    # and pruning here would delete artifacts the next build on this tree reuses.
+    - name: Keep target on the runner
+      if: inputs.cache-target == 'true' && steps.meta.outputs.local_target == 'true'
+      shell: bash
+      env:
+        DIR: ${{ steps.meta.outputs.local_target_dir }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$DIR"
+        {
+          echo "CARGO_TARGET_DIR=$DIR"
+          echo "RUST_CI_TARGET_DIR=$DIR"
+          echo "RUST_CI_TARGET_LOCAL=1"
+        } >> "$GITHUB_ENV"
+        echo "rust-cache: target stays at $DIR ($(du -sh "$DIR" 2>/dev/null | cut -f1)); nothing transferred."
+
     # Opt-in, and last: the du walks cost seconds and must not sit between the
     # restore and the build for consumers who did not ask for them.
     - name: Record cache statistics
       if: inputs.stats == 'true'
       shell: bash
       env:
-        TARGET_DIR: ${{ inputs.cache-target == 'true' && inputs.target-dir || '' }}
+        TARGET_DIR: ${{ inputs.cache-target != 'true' && '' || (steps.meta.outputs.local_target == 'true' && steps.meta.outputs.local_target_dir || inputs.target-dir) }}
         TARGET_HIT: ${{ steps.target.outputs.cache-hit }}
         TARGET_KEY: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
+        TARGET_LOCAL: ${{ steps.meta.outputs.local_target }}
         REGISTRY_DIRS: ${{ steps.meta.outputs.registry_paths }}
       run: bash "$GITHUB_ACTION_PATH/cache-stats.sh"
