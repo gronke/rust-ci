@@ -4,6 +4,7 @@
 #   TARGET_DIR   restored target directory ("" when cache-target is off)
 #   TARGET_HIT   actions/cache "cache-hit": "true" on an exact key match
 #   TARGET_KEY   the exact key the restore asked for
+#   TARGET_LOCAL "true" under local-target: nothing was restored
 #   REGISTRY_DIRS newline-separated registry paths
 #
 # The distinction this exists to make: a cache that restores but whose
@@ -21,14 +22,23 @@ source "$GITHUB_ACTION_PATH/../_lib/timing.sh"
 # generation's artifacts, which cargo may or may not accept.
 if [ -n "$TARGET_DIR" ]; then
   # shellcheck disable=SC2153  # TARGET_HIT arrives from action.yml's env block
-  if [ "$TARGET_HIT" = "true" ]; then
+  # No key under local-target; reporting one would imply a lookup that never happened.
+  if [ "${TARGET_LOCAL:-}" = "true" ]; then
+    if [ -d "$TARGET_DIR" ]; then
+      timing_note "cache.target" "local (kept on the runner)"
+    else
+      timing_note "cache.target" "local, cold"
+    fi
+  elif [ "$TARGET_HIT" = "true" ]; then
     timing_note "cache.target" "exact hit"
+    timing_note "cache.target.key" "$TARGET_KEY"
   elif [ -d "$TARGET_DIR" ]; then
     timing_note "cache.target" "restore-key fallback (another generation)"
+    timing_note "cache.target.key" "$TARGET_KEY"
   else
     timing_note "cache.target" "miss"
+    timing_note "cache.target.key" "$TARGET_KEY"
   fi
-  timing_note "cache.target.key" "$TARGET_KEY"
   if [ -d "$TARGET_DIR" ]; then
     bytes="$(du -sb "$TARGET_DIR" 2>/dev/null | cut -f1)"
     if [ -n "$bytes" ]; then
