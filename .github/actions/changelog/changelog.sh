@@ -20,6 +20,7 @@ set -euo pipefail
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
 source "$GITHUB_ACTION_PATH/../_lib/changelog-version.sh"
 source "$GITHUB_ACTION_PATH/../_lib/semver.sh"
+source "$GITHUB_ACTION_PATH/../_lib/changelog-fragments.sh"
 
 CHANGELOG="${INPUT_CHANGELOG:-CHANGELOG.md}"
 if [ ! -f "$CHANGELOG" ]; then
@@ -52,12 +53,18 @@ ver_part() {
 
 case "${INPUT_MODE:-}" in
   check)
+    FRAGMENT_FILES="$(list_fragments)"
     if ! grep -q '^## \[Unreleased\]' "$CHANGELOG"; then
-      echo "✓ no [Unreleased] section in $CHANGELOG; nothing to check"
-      exit 0
+      if [ -z "$FRAGMENT_FILES" ]; then
+        echo "✓ no [Unreleased] section in $CHANGELOG; nothing to check"
+        exit 0
+      fi
+      BODY=""
+    else
+      BODY="$(unreleased_body)"
     fi
-    BODY="$(unreleased_body)"
-    if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
+    PENDING="$(printf '%s\n' "$BODY"; fragment_bullets)"
+    if [ -z "$(printf '%s' "$PENDING" | tr -d '[:space:]')" ]; then
       echo "✓ [Unreleased] is empty; nothing to check"
       exit 0
     fi
@@ -100,14 +107,15 @@ case "${INPUT_MODE:-}" in
       exit 1
     fi
     # A release-candidate version is for stabilizing exactly that release: feature
-    # content resets the version out of rc-space.
+    # content resets the version out of rc-space. Fragments name their section in
+    # the filename, so their feature signal is the added/removed suffix.
     if [ -n "$(semver_prerelease "$VERSION")" ]; then
-      if printf '%s' "$BODY" | grep -Eq '^### (Added|Removed)|\*\*Breaking'; then
-        echo "::error::the crate version ($VERSION) is a pre-release, but [Unreleased] carries feature content (### Added, ### Removed, or a **Breaking entry) — feature work resets the version to the next regular release"
+      if printf '%s' "$BODY" | grep -Eq '^### (Added|Removed)|\*\*Breaking' || fragments_have_feature_content || printf '%s' "$PENDING" | grep -q '\*\*Breaking'; then
+        echo "::error::the crate version ($VERSION) is a pre-release, but the pending release content carries feature work (### Added, ### Removed, an added/removed fragment, or a **Breaking entry) — feature work resets the version to the next regular release"
         exit 1
       fi
     fi
-    if printf '%s' "$BODY" | grep -q '\*\*Breaking'; then
+    if printf '%s' "$PENDING" | grep -q '\*\*Breaking'; then
       base_major="$(ver_part "$BASE" 1)"; base_minor="$(ver_part "$BASE" 2)"
       major="$(ver_part "$VERSION" 1)"; minor="$(ver_part "$VERSION" 2)"
       bumped=false
@@ -129,18 +137,22 @@ case "${INPUT_MODE:-}" in
       echo "::error::cut needs a version — none given and no Cargo.toml declares one"
       exit 1
     fi
+    FRAGMENT_FILES="$(list_fragments)"
     HEADINGS="$(grep -c '^## \[Unreleased\]' "$CHANGELOG" || true)"
     if [ "$HEADINGS" -eq 0 ]; then
-      echo "::error::no [Unreleased] section to cut in $CHANGELOG"
-      exit 1
-    fi
-    if [ "$HEADINGS" -ne 1 ]; then
+      if [ -z "$FRAGMENT_FILES" ]; then
+        echo "::error::no [Unreleased] section to cut in $CHANGELOG"
+        exit 1
+      fi
+      # Fragments-only flow: the heading is created as the assembly point.
+      create_unreleased_heading
+    elif [ "$HEADINGS" -ne 1 ]; then
       echo "::error::$CHANGELOG carries $HEADINGS [Unreleased] headings; expected exactly one"
       exit 1
     fi
     BODY="$(unreleased_body)"
-    if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
-      echo "::error::[Unreleased] is empty; nothing to release"
+    if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ] && [ -z "$FRAGMENT_FILES" ]; then
+      echo "::error::[Unreleased] is empty and no fragments are pending; nothing to release"
       exit 1
     fi
     if grep -q "^## \[$VERSION\]" "$CHANGELOG"; then
@@ -166,7 +178,13 @@ case "${INPUT_MODE:-}" in
     if [ -n "${GITHUB_ENV:-}" ]; then
       echo "CHANGELOG_VERSION=$VERSION" >> "$GITHUB_ENV"
     fi
-    echo "✓ cut [$VERSION] - $DATE from [Unreleased]"
+    if [ -n "$FRAGMENT_FILES" ]; then
+      COUNT="$(printf '%s\n' "$FRAGMENT_FILES" | wc -l | tr -d ' ')"
+      fold_fragments "$VERSION"
+      echo "✓ cut [$VERSION] - $DATE from [Unreleased], folding $COUNT fragment(s)"
+    else
+      echo "✓ cut [$VERSION] - $DATE from [Unreleased]"
+    fi
     ;;
 
   notes)

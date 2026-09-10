@@ -96,6 +96,10 @@ Keeps a [Keep a Changelog](https://keepachangelog.com) `CHANGELOG.md` coherent w
 `mode: notes` renders a released version's section as plain text — inline Markdown stripped (`**`, backticks), `### Group` → `Group:`, reference-link definitions dropped, an optional `title` led as a subject line — into `out` (default `release-notes.md`), for a git tag message or release body.
 The `version` input overrides Cargo.toml resolution in every mode; a repository without a crate names the version at cut time (`notes` falls back to the newest released section, and `check` degrades to section/tag coherence — the newest released section must be tagged).
 
+**Fragments.** A pull request may add `changelog.d/<slug>.<section>.md` — bullet lines only, one of `added`/`changed`/`deprecated`/`removed`/`fixed`/`security` as the section suffix — instead of editing `[Unreleased]`: parallel branches then never collide on the same region of one file.
+`check` reads fragments as pending content (the version, breaking-bump, and pre-release rules apply to the combination, with a fragment's feature signal read from its filename suffix), and `cut` folds them into the released section — existing `###` groups keep their order and gain the matching fragments, new sections append in canonical order — and deletes the files from the release commit.
+Direct `[Unreleased]` entries and fragments may coexist; the `fragments` input moves the directory.
+
 ```yaml
 - uses: actions/checkout@v7
   with:

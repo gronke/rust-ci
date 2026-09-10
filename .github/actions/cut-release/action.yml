@@ -46,6 +46,13 @@ inputs:
     description: Changelog path, relative to the working directory.
     required: false
     default: "CHANGELOG.md"
+  fragments:
+    description: >-
+      Directory of pending release-note fragments (changelog.d/<slug>.<section>.md),
+      relative to the working directory. The cut folds them into the released
+      section and deletes them from the release commit.
+    required: false
+    default: "changelog.d"
   date:
     description: The date stamped on the released section (defaults to today, UTC).
     required: false
@@ -98,6 +105,7 @@ runs:
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_FRAGMENTS: ${{ inputs.fragments }}
         INPUT_DATE: ${{ inputs.date }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
         INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}

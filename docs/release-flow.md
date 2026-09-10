@@ -79,6 +79,13 @@ jobs:
       - uses: gronke/rust-ci/.github/actions/cut-release@v1
 ```
 
+### Fragment files
+
+A pull request may carry its release note as a fragment — `changelog.d/<slug>.<section>.md`, bullet lines only, the section one of `added`/`changed`/`deprecated`/`removed`/`fixed`/`security` — instead of editing `[Unreleased]`, so parallel branches never collide on the same region of one file.
+The pull-request `check` reads fragments as pending content: the version-must-exceed rule and the breaking-bump rule apply to the combination of body and fragments, and a release candidate tolerates no `added`/`removed` fragment just as it tolerates no `### Added` entry.
+The cut folds the fragments into the released section — groups the section already has keep their order and gain the matching fragments' bullets; sections not yet present append in canonical order — deletes the fragment files from the release commit, and creates the section outright when only fragments are pending (a fragments-only repository keeps no `[Unreleased]` heading between releases).
+Direct entries and fragments may coexist in one cycle, so a repository adopts fragments gradually or not at all; the `fragments` input moves the directory.
+
 ## The candidate loop
 
 Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit — carrying `release-notes.md` as its message, or a bare candidate label when there is none — and the guidance summary for the release manager.
