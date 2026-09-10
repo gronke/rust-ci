@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
-- `rust-cache`: opt-in `local-target` keeps `target/` on the runner between jobs instead of transferring it, by pointing `CARGO_TARGET_DIR` at the runner's work tree, outside the workspace where `git clean -ffdx` cannot reach it.
+- `rust-cache`: opt-in `local-target` (requires `cache-target`) keeps `target/` on the runner between jobs instead of transferring it, by pointing `CARGO_TARGET_DIR` at the runner's work tree, outside the workspace where `git clean -ffdx` cannot reach it.
   `"auto"` activates only when the host leaves a `.rust-ci-local-target` marker, so one workflow runs unchanged on hosted and self-hosted runners.
   Measured on a self-hosted runner: 525 s of a 20.5-minute job spent transferring 9.26 GB.
   Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.

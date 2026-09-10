@@ -1407,6 +1407,11 @@ jobs:
           test "$(cat "$CARGO_TARGET_DIR/sentinel")" = "${{ github.run_id }}" || {
             echo "::error::rust-cache-save pruned a tree it does not own"; exit 1; }
           echo "✓ nothing pruned"
+      # The marker survives the job on a self-hosted runner, where it would
+      # activate the mode the off-job below asserts is off.
+      - name: remove the marker
+        if: always()
+        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-local-target"
 
   selftest-cache-local-target-assert:
     name: rust-cache local-target uploaded nothing
