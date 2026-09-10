@@ -235,18 +235,19 @@ Two independent cache entries, split by churn rate:
 - The **target** entry (opt-in via `cache-target`) is **restore-only in this action**: a restore-key fallback plus save-on-new-key would accrete every generation's stale artifacts into the next.
   Saving it back is [`rust-cache-save`](#rust-cache-save)'s job.
 
-On a runner whose work tree persists, `local-target` keeps `target/` between jobs and drops the transfer.
-Measured on one: 525 s of a 20.5-minute job spent moving 9.26 GB.
+On a runner whose work tree persists, `local-target` (requires `cache-target`) keeps `target/` between jobs and drops the transfer.
 
-It sets `CARGO_TARGET_DIR` to a directory in the runner's work tree, **outside the workspace**, because `actions/checkout` defaults to `clean: true` and runs `git clean -ffdx` — which deletes `target/` along with every other ignored file.
+It sets `CARGO_TARGET_DIR` to a directory in the runner's work tree, **outside the workspace**, because `actions/checkout` defaults to `clean: true` and runs `git clean -ffdx`, which deletes `target/` along with every other ignored file.
 A target directory inside the workspace cannot survive a checkout, however persistent the disk is.
 **Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.**
 
 `"auto"` activates only when the host leaves a `.rust-ci-local-target` marker beside the runner's work directory, so the same workflow runs unchanged on a hosted runner (no marker, transfer as before) and on a self-hosted one (marker, no transfer).
+A job env `RUST_CI_LOCAL_TARGET=1` counts as the marker, for a workflow that controls its runner but not the host.
 A marker rather than an env var because the runner does not forward its own environment into a job container, while the work tree is bind-mounted into it.
 
 Only the target entry is affected; the registry entry still uses `actions/cache`, since `$CARGO_HOME` usually lives in the toolchain image rather than the work tree.
 `rust-cache-save` needs no flag, because this mode hands over no key.
+The directory sits at the work root, is shared per prefix across every repo on the runner, and is never pruned: the host owns it and can wipe `.rust-ci-target` to reclaim disk.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/rust-cache@main

@@ -22,7 +22,6 @@ source "$GITHUB_ACTION_PATH/../_lib/timing.sh"
 # generation's artifacts, which cargo may or may not accept.
 if [ -n "$TARGET_DIR" ]; then
   # shellcheck disable=SC2153  # TARGET_HIT arrives from action.yml's env block
-  # No key under local-target; reporting one would imply a lookup that never happened.
   if [ "${TARGET_LOCAL:-}" = "true" ]; then
     if [ -d "$TARGET_DIR" ]; then
       timing_note "cache.target" "local (kept on the runner)"
@@ -31,14 +30,13 @@ if [ -n "$TARGET_DIR" ]; then
     fi
   elif [ "$TARGET_HIT" = "true" ]; then
     timing_note "cache.target" "exact hit"
-    timing_note "cache.target.key" "$TARGET_KEY"
   elif [ -d "$TARGET_DIR" ]; then
     timing_note "cache.target" "restore-key fallback (another generation)"
-    timing_note "cache.target.key" "$TARGET_KEY"
   else
     timing_note "cache.target" "miss"
-    timing_note "cache.target.key" "$TARGET_KEY"
   fi
+  # No key under local-target; reporting one would imply a lookup that never happened.
+  [ "${TARGET_LOCAL:-}" = "true" ] || timing_note "cache.target.key" "$TARGET_KEY"
   if [ -d "$TARGET_DIR" ]; then
     bytes="$(du -sb "$TARGET_DIR" 2>/dev/null | cut -f1)"
     if [ -n "$bytes" ]; then
