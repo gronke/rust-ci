@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- `cut-release`: stamps a `CITATION.cff` into the release commit, where the repository keeps one: top-level `version`, and `date-released` where the file has one, both on the cut's date.
+  Keys match whole-line, so `cff-version` survives; a missing file skips and `citation: ""` disables.
 - `rust-cache`: opt-in `local-target` (requires `cache-target`) keeps `target/` on the runner between jobs instead of transferring it, by pointing `CARGO_TARGET_DIR` at the runner's work tree, outside the workspace where `git clean -ffdx` cannot reach it.
   `"auto"` activates only when the host leaves a `.rust-ci-local-target` marker, so one workflow runs unchanged on hosted and self-hosted runners.
   Measured on a self-hosted runner: 525 s of a 20.5-minute job spent transferring 9.26 GB.

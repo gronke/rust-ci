@@ -59,6 +59,7 @@ Number candidates `-rc.9`, `-rc.10` (numeric identifiers) when double digits are
 Dispatch a workflow that runs `cut-release` on the default branch.
 It rewrites `[Unreleased]` into `[X.Y.Z] - <date>` for the version Cargo.toml declares, pushes that as `release/vX.Y.Z`, opens the merge-back pull request, and dispatches the release pipeline on the branch — explicitly, because pushes made with the workflow token trigger no workflows.
 The cut refuses an empty `[Unreleased]` section and an existing release branch.
+A `CITATION.cff` in the repository is stamped into the same commit, taking the release version and the cut's date, so the citation metadata GitHub renders never names the previous release. Repositories without one are unaffected.
 
 ```yaml
 name: Cut release

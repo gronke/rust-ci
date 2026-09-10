@@ -437,9 +437,38 @@ jobs:
           test -z "$(git -C "$RUNNER_TEMP/cut-release" ls-remote origin | head -1)"
           echo "✓ dry run derived the version and branch, cut the tree, pushed nothing"
 
+      # The citation file takes the same version and the same date as the
+      # changelog section. cff-version is the reason the stamp matches keys
+      # whole-line instead of substituting the outgoing version string.
+      - name: the dry run stamped the citation file
+        run: |
+          cff="$RUNNER_TEMP/cut-release/CITATION.cff"
+          grep -qxF 'version: 0.1.0' "$cff"
+          grep -qxF 'date-released: 2026-02-02' "$cff"
+          grep -qxF 'cff-version: 1.2.0' "$cff"
+          echo "✓ citation stamped with the release version and the cut date, cff-version intact"
+
+      - name: reset the tree for the opt-out run
+        run: git -C "$RUNNER_TEMP/cut-release" checkout -q -- CHANGELOG.md CITATION.cff
+
+      - name: an empty citation input disables the stamp
+        uses: ./.github/actions/cut-release
+        with:
+          working-directory: ${{ runner.temp }}/cut-release
+          date: "2026-02-02"
+          citation: ""
+          dry-run: "true"
+
+      - name: the citation was left untouched
+        run: |
+          cff="$RUNNER_TEMP/cut-release/CITATION.cff"
+          grep -qxF 'version: 0.0.0' "$cff"
+          grep -qxF 'date-released: 2020-01-01' "$cff"
+          echo "✓ empty citation input left the file alone"
+
       - name: stage an existing release branch
         run: |
-          git -C "$RUNNER_TEMP/cut-release" checkout -q -- CHANGELOG.md
+          git -C "$RUNNER_TEMP/cut-release" checkout -q -- CHANGELOG.md CITATION.cff
           git -C "$RUNNER_TEMP/cut-release" push -q origin HEAD:refs/heads/release/v0.1.0
 
       - name: an existing release branch is refused (negative control)

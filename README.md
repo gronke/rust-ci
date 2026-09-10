@@ -109,6 +109,7 @@ The `version` input overrides Cargo.toml resolution in every mode; a repository 
 
 Starts a release for the version Cargo.toml declares — or the `version` input where there is no crate: runs the [changelog](#changelog) cut, pushes the `release/vX.Y.Z` branch with the release commit, opens the merge-back pull request, and dispatches the release pipeline on the branch (explicitly — pushes made with the workflow token trigger no workflows).
 Refuses an existing release branch before the changelog is touched; `dry-run` derives the `version`/`branch` outputs and cuts only the working tree.
+Where the repository keeps a `CITATION.cff`, the release commit also carries its stamped top-level `version` and, if the file has one, `date-released` on the cut date, so the citation metadata GitHub renders does not lag a release. A missing file is skipped, so nothing needs configuring to opt out.
 The job needs `contents`, `pull-requests`, and `actions` write permissions, and the repository setting that allows Actions to create pull requests.
 
 ```yaml
@@ -116,6 +117,8 @@ The job needs `contents`, `pull-requests`, and `actions` write permissions, and 
   # with:
   #   version: 1.2.0                   # non-crate repos name the version to cut
   #   pipeline-workflow: release.yml   # dispatched on the new branch; empty skips
+  #   citation: CITATION.cff           # stamped with the version and cut date;
+  #                                    # empty disables, a missing file skips
   #   git-user-name / git-user-email   # a machine-user or App identity lets the
   #                                    # merge-back pull request trigger CI
 ```

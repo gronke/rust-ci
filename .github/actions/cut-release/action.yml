@@ -3,7 +3,8 @@ description: >-
   Start a release for the version Cargo.toml declares — or the `version`
   input where there is no crate: cut the changelog's
   [Unreleased] section (the sibling changelog action's cut mode), push the
-  release branch, open the merge-back pull request, and dispatch the release
+  release branch, stamp the citation file where the repository keeps one,
+  open the merge-back pull request, and dispatch the release
   pipeline on the branch — a push made with the workflow token triggers no
   workflows by itself, so the dispatch is explicit. Refuses when the release
   branch already exists. The job needs `contents: write` (push the branch),
@@ -47,9 +48,18 @@ inputs:
     required: false
     default: "CHANGELOG.md"
   date:
-    description: The date stamped on the released section (defaults to today, UTC).
+    description: The date stamped on the released section and the citation file (defaults to today, UTC).
     required: false
     default: ""
+  citation:
+    description: >-
+      Citation File Format path, relative to the working directory. The cut
+      stamps its top-level `version`, and `date-released` where the file keeps
+      one, so the citation metadata GitHub renders does not lag the release.
+      A missing file is skipped, so a repository without a CITATION.cff needs
+      no configuration; an empty value disables the stamp outright.
+    required: false
+    default: "CITATION.cff"
   token:
     description: Token for the push, the merge-back pull request, and the dispatch.
     required: false
@@ -99,6 +109,7 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_CHANGELOG: ${{ inputs.changelog }}
         INPUT_DATE: ${{ inputs.date }}
+        INPUT_CITATION: ${{ inputs.citation }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
         INPUT_GIT_USER_NAME: ${{ inputs.git-user-name }}
         INPUT_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
