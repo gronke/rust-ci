@@ -2047,6 +2047,9 @@ jobs:
     name: exercise the timing actions from the Actions API
     runs-on: ubuntu-latest
     permissions:
+      # contents too: a permissions block replaces the default set, and the
+      # checkout of a private clone of this repository needs the read.
+      contents: read
       actions: read
     steps:
       - uses: actions/checkout@v7
@@ -2080,6 +2083,7 @@ jobs:
     name: exercise sampler-only timing-start with the Actions API
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       actions: read
     steps:
       - uses: actions/checkout@v7
