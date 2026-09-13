@@ -139,6 +139,12 @@ A release's `target_commitish` is where its tag gets created, so the pinned SHA 
 That is what makes the flow deterministic: the tree seal passes by construction, and a push landing on the default branch between the merge-back and the click cannot end up inside an immutable release.
 Publishing from the web dialog is equivalent as long as the target there names that commit.
 
+The tag name binds in the other direction too: pushing a lightweight tag whose name a bound draft carries publishes that draft on arrival — before the merge-back, the review, or any gate — and immutable releases make the result final.
+An annotated tag of the same name does not trigger this; the draft waits for the click.
+Never push `vX.Y.Z` in this mode: the publish click is the only go-live.
+
+A `release` environment pause does not hold this mode's go-live either: publishing is a web or tag event outside Actions, so required reviewers gate only what the pipeline runs afterwards (the final path, any registry upload), never whether the release is already live.
+
 The order of steps 2 and 3 is the whole discipline of this mode.
 Publishing before the merge-back lands creates the tag on a default branch that does not yet carry the release commit, so the tag names a version its own changelog does not declare: the gate refuses it, the moving major never advances, and with immutable releases enabled that tag can no longer be moved or reused.
 Nothing downstream runs, so nothing is damaged — but the version is spent, and the release has to be cut again under a new number.
@@ -269,6 +275,8 @@ A rejected version number is only consumed if the draft was published — an unp
 
 The pipeline's final path runs the signature gate, asserts the tag carries the newest marker's tree, attests and signs the assets where the repository is public, and the publish job flips the draft live.
 Never publish the draft by hand in this mode — the pipeline flips it, and a hand-published draft makes GitHub create an unsigned tag that fails the gate after the release is already live; where that click is the intended gate, use the publish-go-live mode above.
+The same binding works in reverse: a hand-pushed lightweight tag under the draft's tag name publishes the draft the instant it lands, ahead of the signature gate.
+The runbook's signed annotated tag is the safe form — it leaves the flip to the pipeline.
 After publication: registry publishing (`cargo publish`) stays a manual, deliberate step; promote the pre-release flag and merge the merge-back pull request per your process.
 
 ## The reference pipeline
