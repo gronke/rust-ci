@@ -1,0 +1,63 @@
+name: sccache
+description: >-
+  Install a pinned sccache as RUSTC_WRAPPER, backend configured by the
+  runner's host. The compile cache lives where the host put it, so ephemeral
+  runner instances share compile results without per-job transfers.
+
+  The host hands the configuration over in `.rust-ci-env`, a dotenv beside
+  the runner's work directory; the same channel as rust-cache's
+  local-target marker, because the work tree is bind-mounted into job
+  containers while the runner's env is not. Every `SCCACHE_*` line is
+  imported into the job env after an allowlist and charset check. The action
+  is backend-agnostic; the host names the backend. Contract:
+  docs/runner-services.md.
+
+  "auto" activates only when that file offers SCCACHE_* configuration, so
+  one workflow runs unchanged on hosted and prepared self-hosted runners.
+  A job env RUST_CI_SCCACHE=1 counts as the offer. Linking, build-script
+  execution and incremental compiles stay uncached (sccache's limits);
+  CARGO_INCREMENTAL therefore defaults to 0, an explicit value is obeyed.
+  Linux only; activation elsewhere fails loudly.
+
+inputs:
+  mode:
+    description: >-
+      "auto" activates on a host offer (file or RUST_CI_SCCACHE=1). "on"
+      forces activation; without any SCCACHE_* configuration sccache falls
+      back to its local-disk default, which an ephemeral runner throws away,
+      so that is warned about. "off" changes nothing.
+    required: false
+    default: auto
+  version:
+    description: sccache release to install, pinned together with the checksums below.
+    required: false
+    default: "0.17.0"
+  sha256-x86_64:
+    description: SHA256 of the x86_64-unknown-linux-musl release archive.
+    required: false
+    default: "67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006"
+  sha256-aarch64:
+    description: SHA256 of the aarch64-unknown-linux-musl release archive.
+    required: false
+    default: "821a86343191aa1cbab74bd42f9e93c9a63bf85e4742945f40d3ae84193c1c77"
+
+outputs:
+  active:
+    description: '"true" when sccache was installed and RUSTC_WRAPPER exported.'
+    value: ${{ steps.setup.outputs.active }}
+  bin:
+    description: Absolute path of the installed sccache binary (empty when inactive).
+    value: ${{ steps.setup.outputs.bin }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install sccache and import the host backend configuration
+      id: setup
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        VERSION: ${{ inputs.version }}
+        SHA256_X86_64: ${{ inputs.sha256-x86_64 }}
+        SHA256_AARCH64: ${{ inputs.sha256-aarch64 }}
+      run: bash "$GITHUB_ACTION_PATH/sccache.sh"
