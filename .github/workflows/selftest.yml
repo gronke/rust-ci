@@ -1525,6 +1525,36 @@ jobs:
         if: always()
         run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
 
+  # gha: GitHub's cache service as the backend, the explicit hosted-runner
+  # choice. The round-trip is real: the rebuild's hits come back from the
+  # cache service, write-then-read within one job.
+  selftest-sccache-gha:
+    name: sccache round-trip through the GitHub cache service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/sccache
+        id: sccache
+        with:
+          mode: gha
+      - name: the gha backend is wired
+        run: |
+          [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::gha mode did not activate"; exit 1; }
+          [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || { echo "::error::SCCACHE_GHA_ENABLED not exported"; exit 1; }
+          [ -n "${ACTIONS_RESULTS_URL:-}" ] || { echo "::error::cache-service runtime not exported"; exit 1; }
+          echo "✓ gha backend wired"
+      - name: first build stores, second build hits
+        working-directory: fixtures/sample-crate
+        run: |
+          cargo build --locked --quiet
+          writes=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '.stats.cache_writes // 0')
+          [ "$writes" -gt 0 ] || { echo "::error::nothing written to the cache service"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          rm -rf target
+          cargo build --locked --quiet
+          hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
+          [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $writes write(s), $hits hit(s) through the cache service"
+
   # Without the file, "auto" must stay off, or a hosted runner silently gains
   # a wrapper (and a warning-free local disk cache nobody reads).
   selftest-sccache-off:
