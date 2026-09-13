@@ -1479,6 +1479,136 @@ jobs:
           [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
           echo "✓ auto stayed off; key handed over as usual"
 
+  # sccache: the job plays host with a local-disk backend (SCCACHE_DIR),
+  # which exercises the whole contract (file parsing, allowlist import,
+  # pinned install, wrapper export) plus a real cache round-trip: the second
+  # build's rlib compiles must hit what the first build stored.
+  selftest-sccache:
+    name: sccache round-trip through a host-offered backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: place the env file a host would place
+        run: |
+          {
+            echo "# selftest backend: local disk under RUNNER_TEMP"
+            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store"
+          } > "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
+      - uses: ./.github/actions/sccache
+        id: sccache
+      - name: auto fired and the wrapper is an absolute, executable path
+        run: |
+          [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
+          [ "${RUST_CI_SCCACHE:-}" = "1" ] || { echo "::error::RUST_CI_SCCACHE not exported"; exit 1; }
+          [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
+          case "$RUSTC_WRAPPER" in /*) ;; *) echo "::error::RUSTC_WRAPPER is not absolute"; exit 1 ;; esac
+          [ "${SCCACHE_DIR:-}" = "$RUNNER_TEMP/sccache-store" ] || { echo "::error::SCCACHE_DIR did not import"; exit 1; }
+          echo "✓ active, $RUSTC_WRAPPER wraps rustc, backend imported"
+      - name: first build stores, second build hits
+        working-directory: fixtures/sample-crate
+        run: |
+          cargo build --locked --quiet
+          rm -rf target
+          cargo build --locked --quiet
+          hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
+          [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $hits hit(s) through the backend"
+      - uses: ./.github/actions/sccache-stats
+      - name: the stats landed as cache.sccache facts
+        run: |
+          notes="${RUST_CI_TIMING_DIR:-$RUNNER_TEMP/rust-ci-timing}/notes.tsv"
+          grep -q '^cache\.sccache' "$notes" || { echo "::error::no cache.sccache fact in $notes"; exit 1; }
+          echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded"
+      # The file survives the job on a self-hosted runner, where it would
+      # activate the mode the off-job below asserts is off.
+      - name: remove the env file
+        if: always()
+        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
+
+  # Without the file, "auto" must stay off, or a hosted runner silently gains
+  # a wrapper (and a warning-free local disk cache nobody reads).
+  selftest-sccache-off:
+    name: sccache auto stays off without a host offer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/sccache
+        id: sccache
+      - name: nothing was wired
+        run: |
+          [ "${{ steps.sccache.outputs.active }}" = "false" ] || { echo "::error::activated without an offer"; exit 1; }
+          [ -z "${RUSTC_WRAPPER:-}" ] || { echo "::error::RUSTC_WRAPPER was set: $RUSTC_WRAPPER"; exit 1; }
+          [ -z "${RUST_CI_SCCACHE:-}" ] || { echo "::error::RUST_CI_SCCACHE was set"; exit 1; }
+          echo "✓ auto stayed off"
+      - uses: ./.github/actions/sccache-stats
+      - name: stats no-op without sccache
+        run: echo "✓ sccache-stats survived an inactive job"
+
+  # crates-mirror: a REAL sparse mirror, ten lines of setup: the upstream
+  # config.json plus the one index file the fixture needs, served locally.
+  # Pointing the replacement at index.crates.io itself would not do: cargo
+  # rejects a replacement source whose URL equals the builtin crates-io
+  # source ("defined multiple times"). Downloads still come from
+  # static.crates.io (the mirror's config.json says so), which is exactly a
+  # pull-through's shape. CARGO_HOME is job-scoped so the runner's real
+  # cargo home stays untouched.
+  selftest-crates-mirror:
+    name: crates-mirror routes crates-io through the offered URL
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /tmp/selftest-cargo-mirror
+    steps:
+      - uses: actions/checkout@v7
+      - name: serve a minimal sparse mirror and place the env file
+        run: |
+          mkdir -p /tmp/sparse-mirror/li/bc
+          curl -sSfL https://index.crates.io/config.json -o /tmp/sparse-mirror/config.json
+          curl -sSfL https://index.crates.io/li/bc/libc -o /tmp/sparse-mirror/li/bc/libc
+          (cd /tmp/sparse-mirror && python3 -m http.server 8399 &>/tmp/sparse-mirror.log &)
+          for i in $(seq 1 20); do curl -sf http://127.0.0.1:8399/config.json >/dev/null && break; sleep 0.5; done
+          echo "RUST_CI_CRATES_MIRROR=sparse+http://127.0.0.1:8399/" \
+            > "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
+      - uses: ./.github/actions/crates-mirror
+        id: mirror
+      - name: the replacement was written
+        run: |
+          [ "${{ steps.mirror.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
+          grep -q '^\[source\.crates-io\]' "$CARGO_HOME/config.toml" || { echo "::error::no source replacement in $CARGO_HOME/config.toml"; exit 1; }
+          grep -qF 'registry = "sparse+http://127.0.0.1:8399/"' "$CARGO_HOME/config.toml" || { echo "::error::mirror URL missing"; exit 1; }
+          echo "✓ crates-io replaced"
+      - name: cargo resolves through the replacement
+        working-directory: fixtures/sample-crate
+        run: |
+          cargo fetch --locked
+          echo "✓ fetch through the replacement"
+      - name: a second run is idempotent
+        uses: ./.github/actions/crates-mirror
+      - name: no duplicate block was appended
+        run: |
+          count=$(grep -c '^\[source\.crates-io\]' "$CARGO_HOME/config.toml")
+          [ "$count" -eq 1 ] || { echo "::error::$count crates-io blocks in config.toml"; exit 1; }
+          echo "✓ idempotent"
+      - name: remove the env file
+        if: always()
+        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
+
+  # Without an offer, "auto" must write nothing: a hosted runner keeps
+  # fetching from crates.io directly.
+  selftest-crates-mirror-off:
+    name: crates-mirror auto stays off without a host offer
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /tmp/selftest-cargo-mirror-off
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/crates-mirror
+        id: mirror
+      - name: no config was written
+        run: |
+          [ "${{ steps.mirror.outputs.active }}" = "false" ] || { echo "::error::activated without an offer"; exit 1; }
+          [ ! -e "$CARGO_HOME/config.toml" ] || { echo "::error::config.toml appeared: $(cat "$CARGO_HOME/config.toml")"; exit 1; }
+          echo "✓ auto stayed off"
+
   # cargo-publish: the dry run is the default and reads no credential; an upload
   # without one refuses; already-published is decided before any credential is
   # required. The upload path itself is exercised by real releases.

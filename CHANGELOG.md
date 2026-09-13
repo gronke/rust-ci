@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
+- `sccache`: installs a pinned sccache (version + per-arch sha256) as `RUSTC_WRAPPER`, backend-configured by the host's `.rust-ci-env` file beside the work directory (`SCCACHE_*` lines, allowlist-checked into the job env).
+  `"auto"` no-ops without the file, so one workflow runs unchanged on hosted and self-hosted runners; the contract for host operators is docs/runner-services.md.
+- `sccache-stats`: hit/miss/request facts as `cache.sccache.*` rows in timing-report's Cache section, run as a late job step; never fails a job.
+- `crates-mirror`: writes the crates-io source replacement into `$CARGO_HOME/config.toml` from the host's `RUST_CI_CRATES_MIRROR` URL (source replacement is config-file-only, cargo#5416).
+  Lockfile checksums keep pinning canonical crates.io hashes, so the mirror is an availability dependency, not a trust dependency.
 - `cut-release`: stamps a `CITATION.cff` into the release commit, where the repository keeps one: top-level `version`, and `date-released` where the file has one, both on the cut's date.
   Keys match whole-line, so `cff-version` survives; a missing file skips and `citation: ""` disables.
 - `rust-cache`: opt-in `local-target` (requires `cache-target`) keeps `target/` on the runner between jobs instead of transferring it, by pointing `CARGO_TARGET_DIR` at the runner's work tree, outside the workspace where `git clean -ffdx` cannot reach it.

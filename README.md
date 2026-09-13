@@ -281,6 +281,47 @@ The restore-everywhere/save-on-main pattern: PR jobs omit this action (or pass `
     # stats: "true"          # record the pruned size and the prune ratio
 ```
 
+### `sccache`
+
+Installs a pinned [sccache](https://github.com/mozilla/sccache) as `RUSTC_WRAPPER`, backend configured by the **runner's host**: every `SCCACHE_*` line of the host's `.rust-ci-env` file is allowlist-checked and imported into the job environment ([docs/runner-services.md](docs/runner-services.md) is the contract).
+The action is backend-agnostic; the host names the backend (WebDAV, S3, Redis, a directory).
+
+`"auto"` activates only when that file offers `SCCACHE_*` configuration, so the same workflow runs unchanged on hosted and prepared self-hosted runners; a job env `RUST_CI_SCCACHE=1` counts as the offer.
+The binary is fetched by pinned version **and sha256** (per-arch, Linux musl) into `$RUNNER_TEMP`, so the absolute `RUSTC_WRAPPER` path works inside job containers without touching `PATH`.
+`CARGO_INCREMENTAL` defaults to 0; an explicit consumer value is obeyed.
+Linking (`bin`/`dylib`/`cdylib`/proc-macro crates) and build-script execution stay uncached; the wins are the `lib` compiles, shared across every job on the same backend.
+
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/sccache@main
+  # with:
+  #   mode: auto             # on | off; auto follows the host's .rust-ci-env
+```
+
+### `sccache-stats`
+
+Records what sccache delivered (hits, misses, compile requests) as `cache.sccache.*` facts in [timing-report](#timing-start--timing-mark--timing-report)'s Cache section, plus the raw `--show-stats` output in a log group.
+Run it late, after the builds it accounts for; composite actions have no post hooks, the same split as `rust-cache`/`rust-cache-save`.
+A no-op when sccache is inactive; statistics never fail a job.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/sccache-stats@main
+  if: always()
+```
+
+### `crates-mirror`
+
+Routes crates-io through a runner-local pull-through mirror: cargo's source replacement is config-file-only (cargo#5416), so this writes it into `$CARGO_HOME/config.toml`.
+The URL comes from the host's `.rust-ci-env` (`RUST_CI_CRATES_MIRROR=sparse+http://…/`), a job env of the same name, or the `url` input; `"auto"` no-ops without one, so hosted runners keep fetching from crates.io directly.
+`Cargo.lock` keeps the canonical crates.io checksums under source replacement and cargo verifies every download against them, so the mirror is an availability dependency, never a trust dependency.
+Place it before the first dependency resolution; an existing crates-io replacement in `$CARGO_HOME/config.toml` is refused rather than fought.
+
+```yaml
+- uses: gronke/rust-ci/.github/actions/crates-mirror@main
+  # with:
+  #   mode: auto             # on | off; auto follows the host's .rust-ci-env
+```
+
 ### `timing-start` / `timing-mark` / `timing-report`
 
 Per-stage build-performance tracking for one job: where the minutes went, and whether each stage was compute-bound.
