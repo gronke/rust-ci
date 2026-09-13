@@ -26,6 +26,15 @@ inputs:
       forces activation; without any SCCACHE_* configuration sccache falls
       back to its local-disk default, which an ephemeral runner throws away,
       so that is warned about. "off" changes nothing.
+
+      "gha" uses GitHub's own cache service as the backend; the explicit
+      choice for hosted runners, where no host file can exist. Explicit on
+      purpose: it exports ACTIONS_RUNTIME_TOKEN (masked) and
+      ACTIONS_RESULTS_URL into the job environment, which the runner hands
+      only to JavaScript action steps, and it spends the repository's cache
+      pool. GitHub scopes cache writes per ref, so pull-request objects
+      never reach the default branch's scope. The host file is ignored in
+      this mode. Needs sccache >= 0.10, far below the pin here.
     required: false
     default: auto
   version:
@@ -52,6 +61,31 @@ outputs:
 runs:
   using: composite
   steps:
+    # The runner injects the cache-service endpoint and token only into
+    # JavaScript action steps; this exports them for the compile processes.
+    # Gated on the explicit mode. The token can write this run's artifacts
+    # and caches, so putting it into the job env is a deliberate opt-in.
+    - name: Expose the cache-service runtime for the gha backend
+      if: inputs.mode == 'gha'
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const token = process.env.ACTIONS_RUNTIME_TOKEN
+          const url = process.env.ACTIONS_RESULTS_URL
+          if (!token || !url) {
+            core.setFailed('sccache: the runner exposed no cache-service runtime (ACTIONS_RESULTS_URL / ACTIONS_RUNTIME_TOKEN)')
+          } else {
+            core.setSecret(token)
+            core.exportVariable('ACTIONS_RESULTS_URL', url)
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', token)
+            // The backend speaks the twirp v2 protocol only when the runner's
+            // flag travels along; without it, reads degrade to clean misses
+            // and every write errors against the retired v1 API.
+            for (const k of ['ACTIONS_CACHE_SERVICE_V2', 'ACTIONS_CACHE_URL']) {
+              if (process.env[k]) core.exportVariable(k, process.env[k])
+            }
+          }
+
     - name: Install sccache and import the host backend configuration
       id: setup
       shell: bash

@@ -291,11 +291,15 @@ The binary is fetched by pinned version **and sha256** (per-arch, Linux musl) in
 `CARGO_INCREMENTAL` defaults to 0; an explicit consumer value is obeyed.
 Linking (`bin`/`dylib`/`cdylib`/proc-macro crates) and build-script execution stay uncached; the wins are the `lib` compiles, shared across every job on the same backend.
 
+`mode: gha` uses **GitHub's own cache service** as the backend, for runners without a host file (hosted ones).
+Explicit on purpose, never part of `auto`: it exports `ACTIONS_RUNTIME_TOKEN` (masked) and `ACTIONS_RESULTS_URL` into the job environment, and it spends the repository's Actions cache pool (10 GB free, expandable paid, 7-day-unused eviction).
+GitHub scopes cache writes per ref, so pull-request objects never reach the default branch's scope; cross-PR sharing therefore only flows through objects a default-branch build wrote.
+Every object is a network round-trip, so a host-local backend beats it wherever one exists.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/sccache@main
   # with:
-  #   mode: auto             # on | off; auto follows the host's .rust-ci-env
+  #   mode: auto             # on | off | gha; auto follows the host's .rust-ci-env
 ```
 
 ### `sccache-stats`

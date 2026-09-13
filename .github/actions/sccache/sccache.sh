@@ -22,7 +22,7 @@ env_file=""
 active=false
 case "$MODE" in
   off) ;;
-  on) active=true ;;
+  on|gha) active=true ;;
   auto)
     if [ "${RUST_CI_SCCACHE:-}" = "1" ]; then
       active=true
@@ -31,7 +31,7 @@ case "$MODE" in
     fi
     ;;
   *)
-    echo "::error::sccache: invalid mode '$MODE' (auto|on|off)"
+    echo "::error::sccache: invalid mode '$MODE' (auto|on|off|gha)"
     exit 1
     ;;
 esac
@@ -41,6 +41,18 @@ if [ "$active" != true ]; then
   exit 0
 fi
 
+# gha: GitHub's cache service is the backend; the host file is ignored. The
+# runtime endpoint and token come from the github-script step before this
+# one; absent here means that step failed or was skipped.
+if [ "$MODE" = "gha" ]; then
+  env_file=""
+  { [ -n "${ACTIONS_RESULTS_URL:-}" ] && [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; } || {
+    echo "::error::sccache: gha mode without the cache-service runtime (ACTIONS_RESULTS_URL / ACTIONS_RUNTIME_TOKEN)"
+    exit 1
+  }
+  echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+  export SCCACHE_GHA_ENABLED=true
+fi
 
 # Import the host's SCCACHE_* lines. Keys are allowlisted and values
 # charset-checked BEFORE anything reaches $GITHUB_ENV: the file is
@@ -141,4 +153,8 @@ if [ -z "${CARGO_INCREMENTAL:-}" ]; then echo "CARGO_INCREMENTAL=0" >> "$GITHUB_
 
 emit active true
 emit bin "$bin"
-echo "sccache: v$VERSION as RUSTC_WRAPPER ($imported key(s) imported from ${env_file:-the job env})."
+if [ "$MODE" = "gha" ]; then
+  echo "sccache: v$VERSION as RUSTC_WRAPPER (backend: the GitHub cache service)."
+else
+  echo "sccache: v$VERSION as RUSTC_WRAPPER ($imported key(s) imported from ${env_file:-the job env})."
+fi
