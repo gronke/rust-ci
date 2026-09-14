@@ -36,10 +36,12 @@ runners.
 | Key | Consumer | Meaning |
 |---|---|---|
 | `SCCACHE_*` | `sccache` action | Imported verbatim into the job environment as sccache's backend configuration (e.g. `SCCACHE_WEBDAV_ENDPOINT`, `SCCACHE_BUCKET` + `SCCACHE_ENDPOINT`, `SCCACHE_REDIS_ENDPOINT`). The host picks the backend and names it here. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | `sccache` action | The S3 backend's credentials, paired with `SCCACHE_BUCKET` + `SCCACHE_ENDPOINT`. The only non-`SCCACHE_*` keys the action imports; WebDAV and Redis carry their auth inside `SCCACHE_*` instead. |
 | `RUST_CI_CRATES_MIRROR` | `crates-mirror` action | A `sparse+http(s)://…/` registry URL of the host-local crates.io pull-through; written into `$CARGO_HOME/config.toml` as the crates-io source replacement. |
 
-Unknown `SCCACHE_*` keys flow through (they belong to sccache); any other
-key fails the consuming action.
+Unknown `SCCACHE_*` keys flow through (they belong to sccache), and the three
+S3 credential vars above are imported alongside them; any other key fails the
+consuming action.
 
 ## Operational expectations for the host
 

@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Added
 
-- `sccache`: installs a pinned sccache (version + per-arch sha256) as `RUSTC_WRAPPER`, backend-configured by the host's `.rust-ci-env` file beside the work directory (`SCCACHE_*` lines, allowlist-checked into the job env).
+- `sccache`: installs a pinned sccache (version + per-arch sha256) as `RUSTC_WRAPPER`, backend-configured by the host's `.rust-ci-env` file beside the work directory (`SCCACHE_*` lines, plus the three `AWS_*` credentials the S3 backend authenticates with, allowlist-checked into the job env).
   `"auto"` no-ops without the file, so one workflow runs unchanged on hosted and self-hosted runners; the contract for host operators is docs/runner-services.md.
   `mode: gha` targets GitHub's cache service instead; an explicit opt-in, since it exports the masked Actions runtime token into the job env and spends the repository's cache pool.
 - `sccache-stats`: hit/miss/request facts as `cache.sccache.*` rows in timing-report's Cache section, run as a late job step; never fails a job.
