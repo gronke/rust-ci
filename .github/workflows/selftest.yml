@@ -1493,6 +1493,10 @@ jobs:
           {
             echo "# selftest backend: local disk under RUNNER_TEMP"
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store"
+            # S3 credentials ride the same file though the backend here is
+            # local disk; they must import as ordinary env vars (masked).
+            echo "AWS_ACCESS_KEY_ID=selftest-access-key"
+            echo "AWS_SECRET_ACCESS_KEY=selftest-secret-key"
           } > "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
       - uses: ./.github/actions/sccache
         id: sccache
@@ -1503,7 +1507,9 @@ jobs:
           [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
           case "$RUSTC_WRAPPER" in /*) ;; *) echo "::error::RUSTC_WRAPPER is not absolute"; exit 1 ;; esac
           [ "${SCCACHE_DIR:-}" = "$RUNNER_TEMP/sccache-store" ] || { echo "::error::SCCACHE_DIR did not import"; exit 1; }
-          echo "✓ active, $RUSTC_WRAPPER wraps rustc, backend imported"
+          [ "${AWS_ACCESS_KEY_ID:-}" = "selftest-access-key" ] || { echo "::error::AWS_ACCESS_KEY_ID did not import"; exit 1; }
+          [ "${AWS_SECRET_ACCESS_KEY:-}" = "selftest-secret-key" ] || { echo "::error::AWS_SECRET_ACCESS_KEY did not import"; exit 1; }
+          echo "✓ active, $RUSTC_WRAPPER wraps rustc, backend + S3 creds imported"
       - name: first build stores, second build hits
         working-directory: fixtures/sample-crate
         run: |

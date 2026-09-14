@@ -75,10 +75,18 @@ if [ -n "$env_file" ]; then
     fi
     # Other consumers' keys (e.g. the crates-mirror URL) are not ours to import.
     case "$key" in RUST_CI_*) continue ;; esac
-    [[ "$key" =~ $key_re ]] || {
-      echo "::error::sccache: $env_file line $lineno: key '$key' is not an SCCACHE_* name"
-      exit 1
-    }
+    # Our own config is SCCACHE_*. The S3 backend also authenticates with the
+    # three AWS credential vars, which WebDAV and Redis do not need (they carry
+    # auth inside SCCACHE_* or the endpoint URL); those are the only
+    # non-SCCACHE_* keys we import. Anything else is a host misconfiguration.
+    case "$key" in
+      AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN) ;;
+      *)
+        [[ "$key" =~ $key_re ]] || {
+          echo "::error::sccache: $env_file line $lineno: key '$key' is not an SCCACHE_* name or an S3 credential (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN)"
+          exit 1
+        } ;;
+    esac
     [[ "$val" =~ $val_re ]] || {
       echo "::error::sccache: $env_file line $lineno: value of $key fails the charset check"
       exit 1

@@ -7,9 +7,10 @@ description: >-
   The host hands the configuration over in `.rust-ci-env`, a dotenv beside
   the runner's work directory; the same channel as rust-cache's
   local-target marker, because the work tree is bind-mounted into job
-  containers while the runner's env is not. Every `SCCACHE_*` line is
-  imported into the job env after an allowlist and charset check. The action
-  is backend-agnostic; the host names the backend. Contract:
+  containers while the runner's env is not. Every `SCCACHE_*` line, plus the
+  three `AWS_*` credentials the S3 backend authenticates with, is imported
+  into the job env after an allowlist and charset check. The action is
+  backend-agnostic; the host names the backend. Contract:
   docs/runner-services.md.
 
   "auto" activates only when that file offers SCCACHE_* configuration, so
