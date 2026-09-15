@@ -1380,22 +1380,27 @@ jobs:
           prefix: nosave-${{ github.run_id }}
           save: "false"
 
-  selftest-cache-no-save-assert:
-    name: rust-cache save:false left no entry
-    needs: selftest-cache-no-save
+  selftest-cache-uploaded-nothing:
+    name: rust-cache save:false and local-target uploaded nothing
+    needs: [selftest-cache-no-save, selftest-cache-local-target]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: no cache entry exists for the nosave prefix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
             --jq '[.[] | select(.key | startswith("nosave-${{ github.run_id }}-"))] | length')
           test "$COUNT" -eq 0
-
+      - name: no target entry exists for the local-target prefix
+        run: |
+          COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
+            --jq '[.[] | select(.key | startswith("localtgt-${{ github.run_id }}-Linux-target-"))] | length')
+          test "$COUNT" -eq 0 || { echo "::error::uploaded $COUNT target entries"; exit 1; }
+          echo "✓ nothing transferred"
   # The property the whole mode rests on: a target dir outside the workspace
   # survives the `git clean -ffdx` that actions/checkout runs.
   selftest-cache-local-target:
@@ -1436,27 +1441,49 @@ jobs:
             echo "::error::rust-cache-save pruned a tree it does not own"; exit 1; }
           echo "✓ nothing pruned"
 
-  selftest-cache-local-target-assert:
-    name: rust-cache local-target uploaded nothing
-    needs: selftest-cache-local-target
+  # A host's job-started hook hands its variables over as job environment,
+  # and the runner passes the job environment into every step of a
+  # container: job. This job proves that path on a hosted runner: the
+  # variable sits at job level, the action sees it inside the container, the
+  # wrapper lands under the bind-mounted work tree, and the round-trip hits.
+  selftest-sccache-container:
+    name: sccache inside a container job keyed on the job env
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
+    container: rust:1-bookworm
+    env:
+      SCCACHE_DIR: /tmp/sccache-store
     steps:
-      - name: no target entry exists for the prefix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v7
+      - run: apt-get update -qq && apt-get install -y -qq jq >/dev/null
+      - uses: ./.github/actions/sccache
+        id: sccache
+      - name: auto fired inside the container, wrapper under the mounted work tree
         run: |
-          COUNT=$(gh cache list --repo ${{ github.repository }} --limit 100 --json key \
-            --jq '[.[] | select(.key | startswith("localtgt-${{ github.run_id }}-Linux-target-"))] | length')
-          test "$COUNT" -eq 0 || { echo "::error::uploaded $COUNT target entries"; exit 1; }
-          echo "✓ nothing transferred"
+          [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
+          [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
+          case "$RUSTC_WRAPPER" in /__w/_temp/*) ;; *) echo "::error::RUSTC_WRAPPER is not under the mounted work tree: $RUSTC_WRAPPER"; exit 1 ;; esac
+          echo "✓ active, $RUSTC_WRAPPER wraps rustc inside the container"
+      - name: first build stores, second build hits
+        working-directory: fixtures/sample-crate
+        run: |
+          cargo build --locked --quiet
+          [ -d "$SCCACHE_DIR" ] || { echo "::error::sccache did not use the offered SCCACHE_DIR"; exit 1; }
+          rm -rf target
+          cargo build --locked --quiet
+          hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
+          [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $hits hit(s) through the backend inside the container"
 
-  # Without RUST_CI_LOCAL_TARGET, "auto" must stay off, or a hosted runner silently stops caching.
-  selftest-cache-local-target-off:
-    name: rust-cache local-target auto stays off
+  # Without RUST_CI_LOCAL_TARGET, SCCACHE_* or a mirror URL in the job env,
+  # every "auto" must stay off, or a hosted runner silently changes behaviour:
+  # rust-cache stops caching, sccache gains a wrapper nobody reads, cargo gets
+  # a source replacement. One job, a job-scoped CARGO_HOME so the runner's
+  # real cargo home stays untouched.
+  selftest-runner-services-off:
+    name: runner services stay off without a job-env offer
     runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /tmp/selftest-off
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
@@ -1466,11 +1493,11 @@ jobs:
           local-target: "auto"
           save: "false"
           lockfiles: fixtures/sample-crate/Cargo.lock
-      - name: the normal path ran
+      - name: rust-cache took the normal path
         run: |
           [ -z "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR was set: $CARGO_TARGET_DIR"; exit 1; }
           [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
-          echo "✓ auto stayed off; key handed over as usual"
+          echo "✓ local-target auto stayed off; key handed over as usual"
       - name: local-target true without cache-target refuses
         id: refuse
         continue-on-error: true
@@ -1484,7 +1511,23 @@ jobs:
         run: |
           [ "${{ steps.refuse.outcome }}" = "failure" ] || { echo "::error::local-target without cache-target was accepted"; exit 1; }
           echo "✓ refused"
-
+      - uses: ./.github/actions/sccache
+        id: sccache
+      - name: sccache wired nothing
+        run: |
+          [ "${{ steps.sccache.outputs.active }}" = "false" ] || { echo "::error::sccache activated without a backend"; exit 1; }
+          [ -z "${RUSTC_WRAPPER:-}" ] || { echo "::error::RUSTC_WRAPPER was set: $RUSTC_WRAPPER"; exit 1; }
+          echo "✓ sccache auto stayed off"
+      - uses: ./.github/actions/sccache-stats
+      - name: stats no-op without sccache
+        run: echo "✓ sccache-stats survived an inactive job"
+      - uses: ./.github/actions/crates-mirror
+        id: mirror
+      - name: crates-mirror wrote nothing
+        run: |
+          [ "${{ steps.mirror.outputs.active }}" = "false" ] || { echo "::error::crates-mirror activated without a URL"; exit 1; }
+          [ ! -e "$CARGO_HOME/config.toml" ] || { echo "::error::config.toml appeared: $(cat "$CARGO_HOME/config.toml")"; exit 1; }
+          echo "✓ crates-mirror auto stayed off"
   # sccache: the job offers a local-disk backend (SCCACHE_DIR) through
   # $GITHUB_ENV, the channel a host's job-started hook uses, which exercises
   # auto activation, the pinned install and the wrapper export plus a real
@@ -1556,24 +1599,6 @@ jobs:
           [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
           echo "✓ $writes write(s), $hits hit(s) through the cache service"
 
-  # Without SCCACHE_* in the job env, "auto" must stay off, or a hosted runner
-  # silently gains a wrapper (and a warning-free local disk cache nobody reads).
-  selftest-sccache-off:
-    name: sccache auto stays off without a backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/sccache
-        id: sccache
-      - name: nothing was wired
-        run: |
-          [ "${{ steps.sccache.outputs.active }}" = "false" ] || { echo "::error::activated without an offer"; exit 1; }
-          [ -z "${RUSTC_WRAPPER:-}" ] || { echo "::error::RUSTC_WRAPPER was set: $RUSTC_WRAPPER"; exit 1; }
-          echo "✓ auto stayed off"
-      - uses: ./.github/actions/sccache-stats
-      - name: stats no-op without sccache
-        run: echo "✓ sccache-stats survived an inactive job"
-
   # crates-mirror: a REAL sparse mirror, ten lines of setup: the upstream
   # config.json plus the one index file the fixture needs, served locally.
   # Pointing the replacement at index.crates.io itself would not do: cargo
@@ -1620,23 +1645,6 @@ jobs:
           count=$(grep -c '^\[source\.crates-io\]' "$CARGO_HOME/config.toml")
           [ "$count" -eq 1 ] || { echo "::error::$count crates-io blocks in config.toml"; exit 1; }
           echo "✓ idempotent"
-
-  # Without a URL, "auto" must write nothing: a hosted runner keeps
-  # fetching from crates.io directly.
-  selftest-crates-mirror-off:
-    name: crates-mirror auto stays off without a URL
-    runs-on: ubuntu-latest
-    env:
-      CARGO_HOME: /tmp/selftest-cargo-mirror-off
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/crates-mirror
-        id: mirror
-      - name: no config was written
-        run: |
-          [ "${{ steps.mirror.outputs.active }}" = "false" ] || { echo "::error::activated without an offer"; exit 1; }
-          [ ! -e "$CARGO_HOME/config.toml" ] || { echo "::error::config.toml appeared: $(cat "$CARGO_HOME/config.toml")"; exit 1; }
-          echo "✓ auto stayed off"
 
   # cargo-publish: the dry run is the default and reads no credential; an upload
   # without one refuses; already-published is decided before any credential is
