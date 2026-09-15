@@ -15,7 +15,7 @@ jobs:
     name: exercise the composite actions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: install-toolchain
         uses: ./.github/actions/install-toolchain
@@ -136,9 +136,9 @@ jobs:
         if: env.RUST_CI_TARGET_HIT != 'true'
         run: |
           deps=fixtures/sample-crate/target/debug/deps
-          ls "$deps" | grep -q '^liblibc-' || {
+          compgen -G "$deps/liblibc-*" >/dev/null || {
             echo "::error::dependency artifacts missing after prune"; exit 1; }
-          if ls "$deps" | grep -q '^cicd_rust_selftest_fixture-'; then
+          if compgen -G "$deps/cicd_rust_selftest_fixture-*" >/dev/null; then
             echo "::error::workspace member artifacts survived the prune"; exit 1
           fi
           echo "✓ prune kept libc, dropped the member"
@@ -158,7 +158,7 @@ jobs:
     name: exercise the changelog action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -347,10 +347,12 @@ jobs:
             echo
             echo '## [1.2.3] - 2026-01-01'
             echo
+            # shellcheck disable=SC2016  # the single quotes are the point
             echo 'A release with `code`, **bold**, an `@import` token, and a provider-* glob.'
             echo
             echo '### Added'
             echo
+            # shellcheck disable=SC2016  # the single quotes are the point
             echo '- The **thing** with `session_auth` support.'
             echo
             echo '[1.2.3]: https://example.invalid/x/releases/tag/v1.2.3'
@@ -391,7 +393,9 @@ jobs:
           out=nt/release-body.md
           test -f "$out"
           if [ "$(head -1 "$out")" = "v1.2.3" ]; then echo "::error::markdown body led with the title line"; exit 1; fi
+          # shellcheck disable=SC2016  # the single quotes are the point
           grep -q '`@import`' "$out" || { echo "::error::code span dropped — @tokens would autolink as @mentions"; exit 1; }
+          # shellcheck disable=SC2016  # the single quotes are the point
           grep -q '`code`' "$out" || { echo "::error::inline code stripped"; exit 1; }
           grep -q '\*\*bold\*\*' "$out" || { echo "::error::bold markers stripped"; exit 1; }
           grep -qx '### Added' "$out" || { echo "::error::### heading converted"; exit 1; }
@@ -414,7 +418,7 @@ jobs:
     name: exercise the cut-release action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -611,7 +615,7 @@ jobs:
     name: exercise the release guidance and the signed-tag gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # The action wiring writes the real step summary of this run.
       - name: release-guidance renders into the step summary
@@ -632,11 +636,12 @@ jobs:
           test "$(grep -c '^### ' "$S")" = "3"
           grep -q 'scripts/tag-release.sh 0123456789abcdef0123456789abcdef01234567 -s' "$S"
           grep -q '^git push origin v1.2.3$' "$S"
+          # shellcheck disable=SC2016  # the single quotes are the point
           grep -q 'never `git push --tags`' "$S"
           grep -q 'the draft release](https://example.invalid/v1.2.3)' "$S"
           GITHUB_ACTION_PATH=.github/actions/release-guidance \
             GITHUB_STEP_SUMMARY="$S.plain" INPUT_VERSION=1.2.3 INPUT_MARKER_TAG=v1.2.3-rc1 \
-            INPUT_COMMIT=abc0123 INPUT_TAG_SCRIPT= INPUT_DRAFT_URL= \
+            INPUT_COMMIT=abc0123 INPUT_TAG_SCRIPT='' INPUT_DRAFT_URL='' \
             bash .github/actions/release-guidance/release-guidance.sh >/dev/null
           grep -qF "git tag -s -F <(git tag -l --format='%(contents)' v1.2.3-rc1) v1.2.3 abc0123" "$S.plain"
           echo "✓ guidance blocks, commands, and the tag-script variant render"
@@ -833,7 +838,7 @@ jobs:
             GITHUB_ACTION_PATH="$GITHUB_WORKSPACE/.github/actions/release-guidance" \
             GITHUB_REPOSITORY=selftest/promote GITHUB_STEP_SUMMARY="$S" \
             INPUT_VERSION=9.9.0 INPUT_MARKER_TAG=v9.9.0-rc1 INPUT_COMMIT=abc0123 \
-            INPUT_GO_LIVE=publish-draft INPUT_TAG_SCRIPT= INPUT_DRAFT_URL=https://example.invalid/v9.9.0 \
+            INPUT_GO_LIVE=publish-draft INPUT_TAG_SCRIPT='' INPUT_DRAFT_URL=https://example.invalid/v9.9.0 \
             FAKE_RULESET_IDS="$1" FAKE_RULESET_JSON="$2" FAKE_RULESETS_FAIL="" FAKE_RULESET_DETAIL_FAIL="" \
             bash "$GITHUB_WORKSPACE/.github/actions/release-guidance/release-guidance.sh"
           }
@@ -842,6 +847,7 @@ jobs:
           grep -q '1. Merge the merge-back pull request' "$S"
           # the publish command must pin the target: an unpinned publish tags
           # whatever the default branch points at when the click happens
+          # shellcheck disable=SC2016  # the single quotes are the point
           grep -q 'gh release edit v9.9.0 --draft=false --prerelease=false --target "$target"' "$S"
           grep -q 'git ls-remote origin refs/heads/' "$S"
           grep -q 'v9.9.0-sig' "$S"
@@ -890,7 +896,7 @@ jobs:
             : > "$RUNNER_TEMP/rsr-out"
             PATH="$RUNNER_TEMP/rsrbin:$PATH" GITHUB_REPOSITORY=selftest/gate \
             GITHUB_OUTPUT="$RUNNER_TEMP/rsr-out" \
-            INPUT_VERSION=9.9.0 INPUT_TAG= INPUT_ATTESTATION_TAGS="$1" \
+            INPUT_VERSION=9.9.0 INPUT_TAG='' INPUT_ATTESTATION_TAGS="$1" \
             INPUT_ACCEPT_RELEASE_TAG=true INPUT_ACCEPT_ATTESTATION_TAG=true \
             INPUT_ACCEPT_SIGNED_COMMIT="$2" INPUT_ACCEPT_WEB_FLOW="$3" \
             bash .github/actions/require-signed-release/require-signed-release.sh
@@ -929,7 +935,7 @@ jobs:
             : > "$RUNNER_TEMP/rsr-out"
             PATH="$RUNNER_TEMP/rsrbin:$PATH" GITHUB_REPOSITORY=selftest/gate \
             GITHUB_OUTPUT="$RUNNER_TEMP/rsr-out" \
-            INPUT_VERSION= INPUT_TAG= INPUT_ATTESTATION_TAGS='*' \
+            INPUT_VERSION='' INPUT_TAG='' INPUT_ATTESTATION_TAGS='*' \
             INPUT_ACCEPT_RELEASE_TAG=true INPUT_ACCEPT_ATTESTATION_TAG=true \
             INPUT_ACCEPT_SIGNED_COMMIT=false INPUT_ACCEPT_WEB_FLOW=false \
             INPUT_ATTESTATION_TAG="$1" INPUT_REQUIRE_PUBLISHED=true \
@@ -967,7 +973,7 @@ jobs:
     env:
       CICD_PROBE: forwarded
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: build-image (local, cached, with a cross target)
         uses: ./.github/actions/build-image
@@ -1328,7 +1334,7 @@ jobs:
         runner: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/install-toolchain
         with:
           components: clippy
@@ -1348,7 +1354,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: passthrough
@@ -1364,7 +1370,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: seed a sentinel in the custom cargo home
         run: |
           mkdir -p "$CARGO_HOME/registry/index" "$CARGO_HOME/registry/cache" "$CARGO_HOME/git/db"
@@ -1380,7 +1386,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: cargohome-${{ github.run_id }}
@@ -1394,7 +1400,7 @@ jobs:
     name: rust-cache save:false saves nothing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
         with:
           prefix: nosave-${{ github.run_id }}
@@ -1642,7 +1648,7 @@ jobs:
           curl -sSfL https://index.crates.io/config.json -o /tmp/sparse-mirror/config.json
           curl -sSfL https://index.crates.io/li/bc/libc -o /tmp/sparse-mirror/li/bc/libc
           (cd /tmp/sparse-mirror && python3 -m http.server 8399 &>/tmp/sparse-mirror.log &)
-          for i in $(seq 1 20); do curl -sf http://127.0.0.1:8399/config.json >/dev/null && break; sleep 0.5; done
+          for _ in $(seq 1 20); do curl -sf http://127.0.0.1:8399/config.json >/dev/null && break; sleep 0.5; done
       - uses: ./.github/actions/crates-mirror
         id: mirror
       - name: the replacement was written
@@ -2186,6 +2192,7 @@ jobs:
           cat "$report"
           grep -q '^### Cache' "$report" \
             || { echo "::error::the Cache section is missing from the report"; exit 1; }
+          # shellcheck disable=SC2016  # the single quotes are the point
           grep -q '`cache.target`' "$report" \
             || { echo "::error::the hit kind did not reach the report"; exit 1; }
           echo "✓ Cache section rendered"
