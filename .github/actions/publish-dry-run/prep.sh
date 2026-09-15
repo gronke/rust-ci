@@ -118,6 +118,14 @@ if [ "$PUBLISHABLE" = "true" ]; then
   echo "::group::cargo package --no-verify (build the .crate)"
   cargo package --no-verify --locked -p "$NAME"
   echo "::endgroup::"
+  # A build tree or a cargo home inside the crate directory ends up in the
+  # .crate unless the manifest excludes it; a gate that validates that archive
+  # validates the wrong thing. Cargo skips its own target directory, but not a
+  # second one another step left behind.
+  if cargo package --list --no-verify --locked -p "$NAME" | grep -Eq '(^|/)(\.fingerprint|incremental)/|(^|/)registry/(index|cache|src)/'; then
+    echo "::error::the .crate for ${NAME} packages a cargo build tree or cargo home; keep every target-dir and cargo-cache outside the crate directory, or exclude them in Cargo.toml"
+    exit 1
+  fi
   crate_file="${CARGO_TARGET_DIR:-target}/package/${NAME}-${VERSION}.crate"
   warm="${CARGO_TARGET_DIR:-target}/.cicd-publish-warm"
   rm -rf "$warm" && mkdir -p "$warm"
