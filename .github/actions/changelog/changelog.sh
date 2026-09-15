@@ -64,7 +64,7 @@ case "${INPUT_MODE:-}" in
     if [ -z "$VERSION" ]; then
       # No crate and no version input: the bump rule needs the next version,
       # which only exists at dispatch time here. Check what the changelog
-      # itself declares instead — the newest released section must be tagged
+      # itself declares instead: the newest released section must be tagged
       # (a warning when not: a cut may be in flight before its merge-back).
       resolve_changelog_version "$CHANGELOG"
       if [ -z "$CHANGELOG_LATEST" ]; then
@@ -72,7 +72,7 @@ case "${INPUT_MODE:-}" in
       elif [ -n "$(git tag -l "v${CHANGELOG_LATEST}" 2>/dev/null)" ]; then
         echo "✓ [Unreleased] carries entries and the newest released section (v${CHANGELOG_LATEST}) is tagged; the version arrives at cut time"
       else
-        echo "::warning::the newest released section (${CHANGELOG_LATEST}) has no v${CHANGELOG_LATEST} tag — a release may be in flight, or was never finished"
+        echo "::warning::the newest released section (${CHANGELOG_LATEST}) has no v${CHANGELOG_LATEST} tag; a release may be in flight, or was never finished"
       fi
       exit 0
     fi
@@ -82,7 +82,7 @@ case "${INPUT_MODE:-}" in
     fi
     BASE="${INPUT_BASELINE_VERSION:-}"
     if [ -z "$BASE" ]; then
-      # The greatest release tag by SemVer precedence, pre-release tags included —
+      # The greatest release tag by SemVer precedence, pre-release tags included:
       # a v1.0.0 final outranks its v1.0.0-rcN candidates, unlike `sort -V`.
       # Candidate markers (vX.Y.Z-rcN) reserve nothing: a stable version is
       # measured against released tags only, a release-candidate version also
@@ -104,14 +104,14 @@ case "${INPUT_MODE:-}" in
       echo "::notice::no baseline-version input and no release tag in the checkout; using 0.0.0"
     fi
     if ! semver_gt "$VERSION" "$BASE"; then
-      echo "::error::[Unreleased] carries entries, but the crate version ($VERSION) does not exceed the last release ($BASE) — bump the version in Cargo.toml"
+      echo "::error::[Unreleased] carries entries, but the crate version ($VERSION) does not exceed the last release ($BASE); bump the version in Cargo.toml"
       exit 1
     fi
     # A release-candidate version is for stabilizing exactly that release: feature
     # content resets the version out of rc-space.
     if [ -n "$(semver_prerelease "$VERSION")" ]; then
       if printf '%s' "$BODY" | grep -Eq '^### (Added|Removed)|\*\*Breaking'; then
-        echo "::error::the crate version ($VERSION) is a pre-release, but [Unreleased] carries feature content (### Added, ### Removed, or a **Breaking entry) — feature work resets the version to the next regular release"
+        echo "::error::the crate version ($VERSION) is a pre-release, but [Unreleased] carries feature content (### Added, ### Removed, or a **Breaking entry); feature work resets the version to the next regular release"
         exit 1
       fi
     fi
@@ -134,7 +134,7 @@ case "${INPUT_MODE:-}" in
 
   cut)
     if [ -z "$VERSION" ]; then
-      echo "::error::cut needs a version — none given and no Cargo.toml declares one"
+      echo "::error::cut needs a version: none given and no Cargo.toml declares one"
       exit 1
     fi
     HEADINGS="$(grep -c '^## \[Unreleased\]' "$CHANGELOG" || true)"
@@ -183,7 +183,7 @@ case "${INPUT_MODE:-}" in
       resolve_changelog_version "$CHANGELOG"
       VERSION="$CHANGELOG_LATEST"
       if [ -z "$VERSION" ]; then
-        echo "::error::notes needs a version — none given, no Cargo.toml, and no released section"
+        echo "::error::notes needs a version: none given, no Cargo.toml, and no released section"
         exit 1
       fi
     fi
@@ -192,12 +192,12 @@ case "${INPUT_MODE:-}" in
       echo "::error::no [$VERSION] section in $CHANGELOG"
       exit 1
     fi
-    # The [VERSION] section body — heading and link block excluded, like
+    # The [VERSION] section body, heading and link block excluded, like
     # unreleased_body. Two renderings, selected by INPUT_FORMAT:
-    #   plain (default): de-Markdowned for a plain-text git tag message — ** and
+    #   plain (default): de-Markdowned for a plain-text git tag message: ** and
     #     backticks dropped, ### Group -> Group:, single * / _ and the wrapping left
     #     alone. This is the text that lands in git history.
-    #   markdown: the section as authored, for the GitHub release body — GFM renders
+    #   markdown: the section as authored, for the GitHub release body; GFM renders
     #     it, and inline code keeps @tokens (e.g. `@import`, `@v0`) from autolinking
     #     as bogus @mentions.
     # The trailing awk trims leading and trailing blank lines either way.
@@ -215,7 +215,7 @@ case "${INPUT_MODE:-}" in
       echo "::error::rendered notes for $VERSION are empty"
       exit 1
     fi
-    # A title leads as the first line — the git tag subject — for the plain render,
+    # A title leads as the first line (the git tag subject) for the plain render,
     # then a blank line, then the section. The GitHub release body (markdown) shows
     # its title separately, so it omits the line rather than repeat the release name.
     if [ -n "${INPUT_TITLE:-}" ] && [ "$FORMAT" = plain ]; then

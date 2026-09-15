@@ -1,19 +1,13 @@
 name: Publish draft release
 description: >-
-  Publish the reviewed candidate GitHub Release in one step: seal the human-pushed final tag
-  against the newest `v<version>-rcN` marker by TREE (a rebase-merged
-  merge-back rewrites the commit but carries the identical content), flip the
-  draft live — dropping the pre-release flag for a stable version — and
-  optionally advance the moving `v<MAJOR>` tag to the highest stable release
-  in its line, only ever onto a commit reachable from the default branch.
-  Publishing the crate to crates.io is a separate step — see `cargo-publish`.
+  Publish the reviewed candidate GitHub Release: seal the final tag against the newest `v<version>-rcN` marker by tree, flip the draft live (dropping the pre-release flag for a stable version), and optionally advance the moving `v<MAJOR>` tag to the highest stable release in its line.
+  Publishing the crate to crates.io is `cargo-publish`.
 
 inputs:
   seal-only:
     description: >-
-      "true" verifies the seal and stops — no flip, no moving major. Run it in
-      the gate so a tag that does not carry the reviewed content fails in
-      seconds, before any artifact job.
+      "true" verifies the seal and stops: no flip, no moving major.
+      Run it in the gate so a tag that does not carry the reviewed content fails before any artifact job.
     required: false
     default: "false"
   tag-sha:

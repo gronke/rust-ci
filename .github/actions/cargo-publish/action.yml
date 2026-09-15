@@ -1,24 +1,9 @@
 name: Cargo publish
 description: >-
-  Publish the crate to crates.io — or rehearse it. `publish` is "false" by
-  default, which runs `cargo publish --dry-run` and reads no credential at all,
-  so the step is safe anywhere in a pipeline. With `publish: true` the version
-  is checked against crates.io first and then uploaded, which is irreversible
-  (a published version can only be yanked, never replaced), so it belongs
-  behind whatever human gate the repository uses — a signed tag, an
-  environment with reviewers, or both.
-
-  Only releases matching `tag-pattern` are published — by default just stable
-  `vX.Y.Z`, so a prerelease can never reach the registry.
-
-  Credentials: prefer crates.io Trusted Publishing: run
-  `rust-lang/crates-io-auth-action` ahead of this step (with `id-token: write`)
-  and pass its `token` output as `registry-token`, so no long-lived secret is
-  stored. `registry-token` also takes a classic API token from a secret, and a
-  job-level `CARGO_REGISTRY_TOKEN` is honoured when the input is empty.
-
-  This publishes the *crate*. Publishing the GitHub Release is
-  `publish-draft-release`.
+  Publish the crate to crates.io, or rehearse it.
+  `publish` defaults to "false", which runs `cargo publish --dry-run` and reads no credential.
+  With `publish: true` only a version matching `tag-pattern` (stable vX.Y.Z by default) is checked against crates.io and uploaded.
+  Pass the `token` output of rust-lang/crates-io-auth-action as `registry-token`, or a classic token; a job-level CARGO_REGISTRY_TOKEN is the fallback.
 
 inputs:
   publish:
@@ -29,20 +14,14 @@ inputs:
     default: "false"
   tag-pattern:
     description: >-
-      Extended regex a release must match to be published, tested against
-      `v<version>` resolved from the manifest — which the release gate has
-      already asserted equals the tag. The default admits only stable releases,
-      excluding bare majors (v0) and every prerelease or build suffix
-      (v1.0.0-rc1, v1.0.0+build) by construction. A non-matching version is a
-      notice and a skip, not a failure. Empty disables the check.
+      Extended regex `v<version>` (resolved from the manifest) must match to be published; the default admits only stable vX.Y.Z releases.
+      A non-matching version is a notice and a skip, not a failure; empty disables the check.
     required: false
     default: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
   registry-token:
     description: >-
-      crates.io API token, named after cargo's own CARGO_REGISTRY_TOKEN: the
-      `token` output of rust-lang/crates-io-auth-action, or a classic token from
-      a secret. Leave empty when a job-level env of that name already provides
-      one. Required for an upload when neither does.
+      crates.io API token: the `token` output of rust-lang/crates-io-auth-action, or a classic token from a secret.
+      Leave empty when a job-level CARGO_REGISTRY_TOKEN already provides one.
     required: false
     default: ""
   package:
@@ -55,9 +34,8 @@ inputs:
     default: "true"
   allow-already-published:
     description: >-
-      When the version is already on crates.io: "true" skips with a notice,
-      otherwise the step fails. The check precedes the credential, so an
-      idempotent re-run needs no token.
+      When the version is already on crates.io: "true" skips with a notice, otherwise the step fails.
+      The check precedes the credential, so an idempotent re-run needs no token.
     required: false
     default: "false"
   working-directory:

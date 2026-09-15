@@ -1,7 +1,7 @@
 name: Release
 
 # The reference pipeline from docs/release-flow.md, dogfooded with local
-# action paths — in publish-go-live mode: no per-release signing. A candidate
+# action paths, in publish-go-live mode: no per-release signing. A candidate
 # run builds the draft and its rcN marker; the release manager merges the
 # merge-back PR and then publishes the draft, the one human gate. The draft's
 # target is pinned to the merged commit (the guidance summary prints the
@@ -15,7 +15,7 @@ on:
     branches: ["release/v**"]
     # Exclude the signed provenance companion (vX.Y.Z-sig): it attests the
     # release commit out of band and carries no changelog section or marker, so
-    # it must not drive the release pipeline — it routes to the attest workflow.
+    # it must not drive the release pipeline.
     tags: ["v*", "!v*-sig"]
   workflow_dispatch: # cut-release dispatches the first run explicitly
 
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     # The moving major (v1) names no version to check. The pipeline pushes it
     # with the workflow token, which fires no events, but a maintainer moving
-    # it by hand does — and without this the gate would derive "1" from the ref
+    # it by hand does, and without this the gate would derive "1" from the ref
     # and refuse the repository's own major tag.
     if: ${{ github.ref_type != 'tag' || contains(github.ref_name, '.') }}
     outputs:
@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Notes render, draft create/refresh, marker push — one step.
+      # Notes render, draft create/refresh, marker push: one step.
       - uses: ./.github/actions/draft-release
         id: draft
         with:
@@ -105,7 +105,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # Tree seal against the newest marker, the draft flip, and the moving
-      # major — one step.
+      # major: one step.
       - uses: ./.github/actions/publish-draft-release
         with:
           version: ${{ needs.gate.outputs.version }}

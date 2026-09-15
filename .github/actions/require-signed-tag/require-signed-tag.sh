@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verify that a tag is an annotated tag object with a GitHub-verified
-# signature, through the API — no keyring on the runner. Requiring the
+# signature, through the API; no keyring on the runner. Requiring the
 # signature is the workflow's preference; the repository's tag ruleset is the
 # enforcement, and the two are checked for alignment. Inputs arrive as env
 # vars from action.yml.
@@ -62,7 +62,7 @@ fi
 
 # Alignment: the gate refuses builds, but only a repository tag ruleset can
 # prevent an unsigned tag from existing. When the workflow enforces (not
-# warn-only), warn if no active signature rule covers this very tag — a rule
+# warn-only), warn if no active signature rule covers this very tag; a rule
 # scoped elsewhere (e.g. to v*-sig companions) does not protect it. A token
 # that cannot read the rulesets skips the check quietly.
 if [ "${INPUT_CHECK_RULESET:-true}" = "true" ] && [ "${INPUT_WARN_ONLY:-false}" != "true" ]; then
@@ -70,7 +70,7 @@ if [ "${INPUT_CHECK_RULESET:-true}" = "true" ] && [ "${INPUT_WARN_ONLY:-false}" 
   case "$SIGNATURE_RULE_VERDICT" in
     true) ;;
     false)
-      echo "::warning::the workflow requires a signed tag, but no active tag ruleset requires signatures on ${TAG} — the gate refuses builds, it cannot prevent an unsigned tag from existing; add a tag ruleset with required signatures covering it to align the repository with this preference"
+      echo "::warning::the workflow requires a signed tag, but no active tag ruleset requires signatures on ${TAG}. The gate refuses builds, it cannot prevent an unsigned tag from existing; add a tag ruleset with required signatures covering it to align the repository with this preference"
       ;;
     *)
       echo "::notice::could not read the repository rulesets to verify signature-rule alignment; skipping"

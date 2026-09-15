@@ -1,188 +1,84 @@
 # The release flow
 
-How a crate goes from `[Unreleased]` entries to a published GitHub release sealed by a signed tag, composed from the release actions in this repository:
-[`changelog`](../README.md#changelog), [`cut-release`](../README.md#cut-release), [`check-release-readiness`](../README.md#check-release-readiness), [`require-signed-tag`](../README.md#require-signed-tag), and [`release-guidance`](../README.md#release-guidance).
+How a repository goes from `[Unreleased]` changelog entries to a published GitHub release, and for a crate to a crates.io upload, composed from the ten release actions in this repository:
+[`changelog`](../.github/actions/changelog/README.md), [`cut-release`](../.github/actions/cut-release/README.md), [`check-release-readiness`](../.github/actions/check-release-readiness/README.md), [`draft-release`](../.github/actions/draft-release/README.md), [`release-guidance`](../.github/actions/release-guidance/README.md), [`promote-release`](../.github/actions/promote-release/README.md), [`publish-draft-release`](../.github/actions/publish-draft-release/README.md), [`require-signed-tag`](../.github/actions/require-signed-tag/README.md), [`require-signed-release`](../.github/actions/require-signed-release/README.md), and [`cargo-publish`](../.github/actions/cargo-publish/README.md).
+Every gate is a step a repository can replace or drop.
 
-This document is the showcased composition, not a requirement: every gate in it is a condition a repository can replace or drop, and the base operations — readiness, the signature gates, `cargo-publish` — carry no flow assumptions.
-A pipeline with its own release process publishes with the registry ending alone; [Registry publication behind a signature](#registry-publication-behind-a-signature) has the shapes.
+The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a draft pre-release, and the final `vX.Y.Z` tag publishes that draft once.
+Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the loop can run, fail, and be deleted without consequence.
+Publication is the one irreversible step: a published release is immutable and its tag name stays consumed even if the release is deleted, and a crates.io upload can only be yanked.
 
-The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a **draft** pre-release, and the signed `vX.Y.Z` tag publishes that draft, exactly once.
-Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the whole loop can run, fail, and be deleted without consequence.
-Publication is the one irreversible step: a published release is immutable — assets frozen, tag locked, and the tag name permanently consumed even if the release is deleted afterwards.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/cut.yml`](../.github/workflows/cut.yml) are the reference pipeline; this repository releases itself with them in the publish-draft mode.
 
-## The release manager's runbook
+## Runbook
 
-The signed path (`sign-tags: manual`, the mode an active signature-requiring tag ruleset implies), start to finish:
+1. Cut: dispatch the cut workflow on the default branch; on a repository without a Cargo.toml, type the version into the dispatch form.
+2. Candidate loop: watch the build on `release/vX.Y.Z`, which refreshes the draft pre-release and pushes a `vX.Y.Z-rcN` marker on the built commit; push fixes to the branch, and each push refreshes the same draft as the next candidate.
+3. Go live per the table below; the run's step summary carries the exact commands with the marker and commit filled in.
+4. Merge-back: merge the pull request the cut opened, so the default branch carries the released section.
+   In the publish-draft mode this happens before publishing, always; in the signed mode it may happen first, and the rebased tip is a valid tag target.
+5. Delete the release branch.
 
-1. Dispatch **Cut release** on the default branch — on a repository without a Cargo.toml, type the version into the dispatch form.
-2. Watch the candidate build on `release/vX.Y.Z`: it refreshes the draft pre-release with the rendered notes and seals a `vX.Y.Z-rcN` marker on the built commit.
-3. On a rebase-only repository, merge the merge-back pull request now (one "Approve and run" click on its CI when the cut ran with the workflow token) — the tree seal accepts the rebased tip, and your tag will live on the default branch.
-4. Run the two commands from the run's guidance summary: fetch the markers, then `git tag -s -F <(…marker message…) vX.Y.Z <commit>` on the marker's commit — or the rebase-merged tip — and push the tag by name.
-5. The tag push runs the final path: signature gate, tree seal, draft flip, and the moving major where enabled.
-6. For a crates.io crate, `cargo publish` stays a deliberate manual step; then delete the release branch.
+## The version ladder
 
-When something refuses:
-
-- The marker push is rejected (GH013) — the tag ruleset must let Actions create unsigned `v*-rc*`; import [`tags-signed.json`](../.github/rulesets/tags-signed.json) and [`tags-maintainer-only.json`](../.github/rulesets/tags-maintainer-only.json), which carry the exclusions.
-- The seal refuses your tag — the branch moved past the candidate, or the tag's tree differs from the newest marker's; push the intended tip as the release branch, let the candidate reseal it, and `gh run rerun <run-id> --failed` on the tag run.
-- The full refusal list is at the end of this guide.
-
-## Versions come from Cargo.toml
-
-Every stage reads the version the manifest declares (through `cargo metadata`); nothing else names a version.
-The first change after a release bumps the version; later pull requests in the same window ride along without bumping again.
-The `changelog` check enforces this on every pull request: while `CHANGELOG.md` carries `[Unreleased]` entries, the crate version must exceed the last released baseline by SemVer precedence, and a `**Breaking:**` entry demands more than a patch bump.
-
-### Repositories without a Cargo.toml
-
-The flow releases repositories that are not crates — this one dogfoods it.
-The version ladder everywhere is: the explicit `version` input, else Cargo.toml, else the changelog's newest released section (the manifest equivalent of a repository whose only version record is its changelog).
-The cut names the version as a `workflow_dispatch` input, `check-release-readiness` and `notes` fall back to the newest released section, and the pull-request `check` — with no next version to test — degrades to section/tag coherence: the newest released section must carry its tag, warning when it does not (a cut may be in flight before its merge-back).
-An empty `[Unreleased]` with the newest section untagged names the release in flight; with the tag present, nothing is left to release.
-
-### Cargo workspaces
-
-A multi-member workspace names the crate whose version is the release version: pass `package:` to [`check-release-readiness`](../README.md#check-release-readiness) (and to `changelog`, when a changelog gates that crate).
-`cargo metadata` resolves `version.workspace = true` inheritance, so a workspace with one unified `[workspace.package] version` names any inheriting member — typically the product crate — and the assert holds against the shared number.
-This shape is proven in production: one repo-wide `vX.Y.Z` tag, one workspace version, `package:` selecting the representative crate — first exercised against a 61-member workspace with `publish = false` throughout, where the coherence check runs and the registry steps skip.
-Per-crate tags and independently-versioned members are NOT covered: the tag convention is repo-wide `v*`, and each action invocation checks exactly one package.
+`changelog`, `cut-release` and `check-release-readiness` read the version the same way: the explicit `version` input, else Cargo.toml through `cargo metadata`, else (for `check-release-readiness` and the `notes` mode) the changelog's newest released section; `cut-release` needs the input on a repository without a crate.
+The candidate and go-live actions take the version as a required input, and `cargo-publish` reads it from Cargo.toml only.
+The first change after a release bumps the version; later pull requests in the same window ride along.
+The `changelog` action's `check` mode enforces this on every pull request: while `CHANGELOG.md` carries `[Unreleased]` entries, the version must exceed the greatest release tag by SemVer precedence (`1.0.0-rc1 < 1.0.0`), and a `**Breaking` entry demands a minor bump on 0.x or a major bump from 1.x.
+A multi-member workspace passes `package:` to name the crate whose version is the release version; the tag convention is repo-wide `v*`, and each action invocation checks exactly one package.
+Without a Cargo.toml, `check` degrades to section/tag coherence: the newest released section must carry its tag, warning when it does not.
 
 ### Release-candidate versions
 
-A manifest version with a pre-release suffix (`1.0.0-rc1`) declares a release candidate, and the candidate is a release: it gets the full flow below, a signed `v1.0.0-rc1` tag, and a GitHub release flagged as a pre-release.
-`-rc` versions are reserved for stabilizing exactly that release: the check refuses a pre-release version whose `[Unreleased]` carries feature content (`### Added`, `### Removed`, or a `**Breaking:**` entry) — feature work resets the version to the next regular release, while `### Fixed` and `### Security` entries iterate `rc2`, `rc3`, ….
-SemVer orders `1.0.0-rc1 < 1.0.0` and the baseline scan sees pre-release tags, so the final release exceeds its candidates and its compare link starts at the last one.
-Number candidates `-rc.9`, `-rc.10` (numeric identifiers) when double digits are in reach: the spec compares `rc9`/`rc10` lexically, so `rc10` would order below `rc9`.
+A version with a pre-release suffix (`1.0.0-rc1`) is a release in its own right: the full flow, a `v1.0.0-rc1` tag, and a GitHub release flagged pre-release.
+`check` refuses a pre-release version whose `[Unreleased]` carries `### Added`, `### Removed`, or a `**Breaking` entry; feature work moves the version to the next regular release, while `### Fixed` and `### Security` entries iterate `rc2`, `rc3`.
+A stable version's baseline skips `-rcN` tags, since candidate markers reserve nothing.
+Number candidates `-rc.9`, `-rc.10` when double digits are in reach: SemVer compares `rc9` and `rc10` lexically, so `rc10` orders below `rc9`.
+Marker tags append `-rcN` to the tag name, so `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
 
-## Cutting the release branch
+## Phases
 
-Dispatch a workflow that runs `cut-release` on the default branch.
-It rewrites `[Unreleased]` into `[X.Y.Z] - <date>` for the version Cargo.toml declares, pushes that as `release/vX.Y.Z`, opens the merge-back pull request, and dispatches the release pipeline on the branch — explicitly, because pushes made with the workflow token trigger no workflows.
-The cut refuses an empty `[Unreleased]` section and an existing release branch.
-A `CITATION.cff` in the repository is stamped into the same commit, taking the release version and the cut's date, so the citation metadata GitHub renders never names the previous release. Repositories without one are unaffected.
+**Cut** (`cut-release`): a `workflow_dispatch` on the default branch rewrites `[Unreleased]` into `[X.Y.Z] - <date>`, stamps `CITATION.cff` where one exists, pushes `release/vX.Y.Z`, opens the merge-back pull request, and dispatches the release pipeline on the branch, since a push made with the workflow token triggers no workflows.
+It refuses an empty `[Unreleased]` section and an existing release branch.
 
-```yaml
-name: Cut release
-on:
-  workflow_dispatch:
-permissions:
-  contents: write        # push the release branch
-  pull-requests: write   # open the merge-back pull request
-  actions: write         # dispatch the release pipeline
-jobs:
-  cut:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # the changelog baseline and the merge-back need history and tags
-      - uses: gronke/rust-ci/.github/actions/install-toolchain@v1
-      - uses: gronke/rust-ci/.github/actions/cut-release@v1
-```
+**Gate** (`check-release-readiness`, `require-signed-tag`, `publish-draft-release` with `seal-only`): every run checks that the ref-derived version equals the declared one, and for a publishable crate that `cargo publish --dry-run` passes and the version is not on crates.io.
+On a tag run the signed mode adds `require-signed-tag`, and the seal-only step fails a tag that does not carry the newest marker's tree before any artifact job runs.
 
-## The candidate loop
+**Candidate** (`draft-release`, `release-guidance`, `promote-release`): every push to the release branch renders the changelog section into `release-notes.md`, creates or refreshes the `vX.Y.Z` draft pre-release, pushes an annotated unsigned `vX.Y.Z-rcN` marker on the built commit carrying the same notes as its message, and writes the release manager's next steps into the step summary.
+`promote-release` then defers or promotes, as the go-live table says.
 
-Every push to `release/vX.Y.Z` runs the pipeline's candidate path: the readiness gate, the build, a create-or-refresh of the `vX.Y.Z` draft pre-release, an annotated (unsigned) `vX.Y.Z-rcN` marker tag on the built commit — carrying `release-notes.md` as its message, or a bare candidate label when there is none — and the guidance summary for the release manager.
-Fixes land as ordinary pushes to the branch; rc2, rc3, … refresh the same draft.
-Marker tags append one `-rcN` to the version's tag name — including on a release-candidate version, where `v1.0.0-rc1-rc2` marks the second build of the `1.0.0-rc1` release.
+**Go-live** (`publish-draft-release`): the final `vX.Y.Z` tag arrives, and the tag run seals it against the newest marker by tree, flips the draft live (a stable version sheds the pre-release flag), and with `moving-major` advances `v<MAJOR>` to the highest stable release in its line.
 
-## Choosing a go-live mode
+**Registry** (`require-signed-release`, `cargo-publish`): the publish job uploads the crate only when a verified human signature covers the release commit; an unsigned release rehearses with `--dry-run` instead.
 
-Three ways for a reviewed candidate to become a release; the trust anchor decides which:
+**Merge-back**: the pull request the cut opened lands on the default branch; on a repository without a Cargo.toml, `check` warns until the newest released section carries its tag.
 
-| Trust anchor | How to configure it | Who creates the final tag |
-| --- | --- | --- |
-| A human signing key, per release | the default — `release-guidance` with `go-live: signed-tag`, `promote-release` resolving to `manual` | the release manager, signed |
-| The workflow token | `promote-release` with `sign-tags: off` | the candidate run, unsigned |
-| One admin's publish click, frozen by immutable releases | `release-guidance` with `go-live: publish-draft`, no `promote-release` step | GitHub, when the draft is published |
+## Go-live modes
 
-Unconfigured, `promote-release` reads the repository's own tag rules and picks between the first two — never pushing an unsigned tag where signatures are required, or where the rules cannot be read.
-Whether the registry follows a release is a separate decision from all three: gate `cargo-publish` on a signature and an unattested release rehearses instead of uploading.
+| Who creates the final tag | Configuration |
+| --- | --- |
+| A human signs and pushes `vX.Y.Z` on the marker's commit or the rebase-merged tip (`git tag -s -F <(git tag -l --format='%(contents)' vX.Y.Z-rcN) vX.Y.Z <commit>`, then `git push origin vX.Y.Z`, never `git push --tags`); the tag push runs the final path. | `release-guidance` with `go-live: signed-tag` (the default), `promote-release` in `sign-tags: manual`, `require-signed-tag` in the gate, rulesets `tags-signed` and `tags-maintainer-only`. |
+| The candidate run creates the annotated, unsigned tag with the marker's message, publishes the draft, and with `moving-major` advances the moving major in one job. | `promote-release` with `sign-tags: off`; no signature-requiring rule may cover `vX.Y.Z`. |
 
-## Signing: the sign-tags mode
+Left empty, `sign-tags` auto-detects: an active signature-requiring tag ruleset covering `vX.Y.Z` means `manual`, none means `off`, unreadable rulesets mean `manual`.
+Publish-draft mode in one line: `release-guidance` with `go-live: publish-draft` and no `promote-release` step; the release manager merges the merge-back and then publishes the draft with `--target` pinned to the merged commit, GitHub creates the tag on that commit and the tag push runs the final path, and signatures live on an optional `vX.Y.Z-sig` companion governed by `tags-sig-signed`.
 
-Whether a human seals the release is a mode, resolved by the `promote-release` step at the end of every candidate build:
-
-- **`manual`** — the pipeline stops at the guidance summary and the release manager signs and pushes the final tag (the runbook above).
-  The signature binds the release's provenance to a human key that GitHub verifies; this is the mode for anything other people consume.
-- **`off`** — the pipeline promotes the candidate itself: an annotated, unsigned final tag on the built commit carrying the marker's message, the draft published, and optionally the moving major advanced — one job, no ceremony.
-  Provenance then rests on whoever holds the workflow token.
-- **Unconfigured** — the repository's own enforcement decides: an active signature rule covering the final tag resolves to `manual` (a rule scoped to `v*-sig` companions does not), none resolves to `off`, and unreadable rulesets resolve to `manual` (never push an unsigned tag on a repository whose policy is unknown).
-
-Repositories that enforce signed tags apply the shipped ruleset files, so the enforcement and the detection agree:
+## Tag rulesets
 
 ```sh
 gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-signed.json
 gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-maintainer-only.json
-```
-
-(Or Settings → Rules → Rulesets → New ruleset → Import a ruleset.)
-Both exclude the `v*-rc*` markers and the bare moving majors, and the maintainer rule carries a Repository-admin bypass for the final signed push.
-
-## The publish-go-live mode
-
-An alternative to the signed final tag, for repositories where the admin's publish click is the trust anchor: no per-release signing, and the one human gate is turning the draft into a release — with immutable releases enabled, that click freezes the result.
-
-The candidate build passes `go-live: publish-draft` to `release-guidance` and drops the `promote-release` step; the gate drops `require-signed-tag`.
-The runbook:
-
-1. Review the draft pre-release.
-2. Merge the merge-back pull request.
-3. Publish the draft with its target pinned to the merged commit:
-
-   ```sh
-   target=$(git ls-remote origin refs/heads/main | cut -f1)
-   gh release edit vX.Y.Z --draft=false --prerelease=false --target "$target"
-   ```
-
-A release's `target_commitish` is where its tag gets created, so the pinned SHA — not the branch — decides what the tag seals.
-That is what makes the flow deterministic: the tree seal passes by construction, and a push landing on the default branch between the merge-back and the click cannot end up inside an immutable release.
-Publishing from the web dialog is equivalent as long as the target there names that commit.
-
-The tag name binds in the other direction too: pushing a lightweight tag whose name a bound draft carries publishes that draft on arrival — before the merge-back, the review, or any gate — and immutable releases make the result final.
-An annotated tag of the same name does not trigger this; the draft waits for the click.
-Never push `vX.Y.Z` in this mode: the publish click is the only go-live.
-
-A `release` environment pause does not hold this mode's go-live either: publishing is a web or tag event outside Actions, so required reviewers gate only what the pipeline runs afterwards (the final path, any registry upload), never whether the release is already live.
-
-The order of steps 2 and 3 is the whole discipline of this mode.
-Publishing before the merge-back lands creates the tag on a default branch that does not yet carry the release commit, so the tag names a version its own changelog does not declare: the gate refuses it, the moving major never advances, and with immutable releases enabled that tag can no longer be moved or reused.
-Nothing downstream runs, so nothing is damaged — but the version is spent, and the release has to be cut again under a new number.
-
-The tag push then runs the final path unchanged: version coherence, the tree seal against the newest marker, the (idempotent) flip, and the moving major.
-
-A signature statement stays available out of band as a companion tag on the release commit:
-
-```sh
-git fetch origin 'refs/tags/vX.Y.Z:refs/tags/vX.Y.Z'
-git tag -s -m "vX.Y.Z" vX.Y.Z-sig 'vX.Y.Z^{}'
-git push origin refs/tags/vX.Y.Z-sig
-```
-
-The `tags-sig-signed` ruleset below governs the companion's *form* — if one exists it must carry a verified signature — and nothing requires one to exist.
-What makes the companion load-bearing is a step that reads it: [`require-signed-release`](#registry-publication-behind-a-signature) gates registry publication on exactly this, so on a crate repository an unattested release rehearses the upload instead of performing it.
-A repository with nothing to publish — this one — gets provenance only, and the companion is genuinely optional.
-Any tag name works; `attestation-tags` narrows what counts, so a repository that would rather keep the `v*` namespace to releases can attest with `sig/vX.Y.Z` and leave `git describe` alone.
-
-The tag ruleset must not require signatures on the versions themselves — GitHub creates them unsigned — so signatures are required only on the companions. Import the shipped ruleset (the publish-go-live counterpart to `tags-signed.json`):
-
-```sh
+# publish-draft mode: in place of tags-signed.json
 gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-sig-signed.json
 ```
 
-It requires a verified signature on the `vX.Y.Z-sig` companions and leaves the release tags unsigned. An existing all-`v*` `tags-signed` ruleset must be removed or retargeted first, or it rejects the unsigned release tag GitHub creates on publish.
-
-The guidance step checks this alignment at candidate time and errors while everything is still a draft when a signature rule covers the version itself — the misconfiguration never gets as far as a tag the repository would reject, or one an admin bypass would let fail the gate after going live.
-This repository releases itself in this mode; the signed mode stays the reference default.
+`tags-signed` requires signatures and `tags-maintainer-only` restricts creation, update and deletion on every tag except the `v*-rc*` markers and the bare `v<MAJOR>` tags; the maintainer rule carries a repository-admin bypass for the final push.
+`tags-sig-signed` requires signatures only on `vX.Y.Z-sig` companions, so the tag GitHub creates on publish stays unsigned; an all-`v*` signature rule must be removed or retargeted first, and `release-guidance` errors at candidate time while one still covers the version.
 
 ## Registry publication behind a signature
 
-The GitHub release and the registry need not share a trust anchor: crates.io publication is the one irreversible, ecosystem-facing step, and `require-signed-release` gates exactly it on a human signature — whichever go-live mode the repository runs.
-
-Three sources satisfy the gate, checked in order: the release tag itself is annotated and GitHub-verified (the signed flow); another verified-signed tag points at the same commit (the attestation companion — the name is the repository's choice, `vX.Y.Z-sig` by convention, narrowed with `attestation-tags`); or, opt-in, the commit itself carries a verified signature.
-The commit source defaults off: GitHub signs UI-made rebase and squash merges with its own web-flow key, which would satisfy the check on virtually every UI-merged commit — and even opted in, web-flow counts only with `accept-web-flow`.
-
-Unsigned is an answer, not a failure — feed it into cargo-publish's own `publish` input and an unsigned release rehearses instead of uploading:
+`require-signed-release` answers whether a verified signature covers the release commit: the release tag itself, another verified-signed tag on the same commit (`vX.Y.Z-sig` by convention, narrowed with `attestation-tags`), or, opt-in, the commit signature.
+Unsigned is an answer, not a failure; the job needs `id-token: write` for `rust-lang/crates-io-auth-action`, whose `token` output is the credential:
 
 ```yaml
       - id: sig
@@ -200,258 +96,29 @@ Unsigned is an answer, not a failure — feed it into cargo-publish's own `publi
           allow-already-published: "true"
 ```
 
-`attestation-tags` defaults to `*`, so any verified-signed tag on the release commit counts: a signature there is a human statement about that content whatever the tag is called, and a gate that demanded a particular name would reject a valid statement.
-Name the shape where the statement should be deliberate rather than incidental.
+The companion's push can be the trigger: a workflow on `push: tags: ["v*-sig"]` passes `attestation-tag: ${{ github.ref_name }}` and `require-published: "true"`, the release is derived by commit, and a signature pushed later for an old release completes a publication that was waiting for it.
 
-The signature can also be the trigger — the companion's push *is* the go signal, so no release run has to fail and be re-run while a signature is pending:
+## Repository settings the flow relies on
 
-```yaml
-on:
-  push:
-    tags: ["v*-sig"]
-
-jobs:
-  attest:
-    runs-on: ubuntu-latest
-    environment: crates-io          # where a reviewer gate belongs, if you want one
-    permissions:
-      contents: write               # the moving major, when the reconcile still owes it
-      id-token: write               # crates.io Trusted Publishing
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0            # the moving major checks the target is on the default branch
-      # The companion names the release: the tag it seals is looked up by
-      # commit, and a draft is an error — a signature completes automation, it
-      # does not publish drafts.
-      - id: sig
-        uses: gronke/rust-ci/.github/actions/require-signed-release@v1
-        with:
-          attestation-tag: ${{ github.ref_name }}
-          require-published: "true"
-      # Reconcile whatever the go-live still owes: re-seal, flip (a no-op when
-      # published), and the moving major.
-      - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
-        with:
-          version: ${{ steps.sig.outputs.version }}
-          tag-sha: ${{ github.sha }}
-          moving-major: "true"
-      - if: steps.sig.outputs.signed == 'true'
-        id: auth
-        uses: rust-lang/crates-io-auth-action@v1
-      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
-        with:
-          publish: ${{ steps.sig.outputs.signed }}
-          registry-token: ${{ steps.auth.outputs.token }}
-          allow-already-published: "true"
-```
-
-The derivation is by commit identity, not by name: the companion's commit is read, and the published release on that same commit is the one gated — so `vX.Y.Z-sig`, `sig/vX.Y.Z` or any other convention works, and a commit carrying no published release (or more than one) is refused rather than guessed.
-Because the gate reads live state, attestation works retroactively: pushing a signed companion for an old release completes a registry publication that was waiting for it, and `allow-already-published` keeps a companion pushed for an already-published crate a green no-op.
-
-## What to do with the draft pre-release
-
-The `release-guidance` step writes these answers into every candidate build's step summary; this is the same content in prose.
-
-### Accept — seal and publish
-
-Whoever holds a release-signing key registered with their GitHub account:
-
-```sh
-git fetch origin 'refs/tags/vX.Y.Z-rc*:refs/tags/vX.Y.Z-rc*'
-git tag -s -F <(git tag -l --format='%(contents)' vX.Y.Z-rcN) vX.Y.Z vX.Y.Z-rcN^{commit}
-git push origin vX.Y.Z
-```
-
-The tag must be annotated, signed with a key GitHub can verify, and carry exactly the content the newest marker sealed — the pipeline compares trees, so the marker's commit and a rebase-merged merge-back's tip (the identical patch under a new SHA) are both valid targets.
-On a rebase-only repository, merge the merge-back first and sign the rebased tip: the tag then lives on the default branch instead of an orphaned release commit.
-Its message is copied from the marker (your `release-notes.md`, when you produced one), so there is nothing to retype; the `release-guidance` step prints this command with the newest `rcN` filled in.
-Push the tag by name; never `git push --tags`, which pushes every local tag along.
-A repository tagging script can still override the message via the guidance step's `tag-script` input.
-
-### Reject — nothing to unwind
-
-Delete the draft release and the release branch; the marker tags reserve nothing and can stay or be deleted.
-Or push a fix to the release branch instead: the next build refreshes the same draft as the following candidate.
-A rejected version number is only consumed if the draft was published — an unpublished draft's name is free to reuse on the next cut.
-
-### What the tag push triggers
-
-The pipeline's final path runs the signature gate, asserts the tag carries the newest marker's tree, attests and signs the assets where the repository is public, and the publish job flips the draft live.
-Never publish the draft by hand in this mode — the pipeline flips it, and a hand-published draft makes GitHub create an unsigned tag that fails the gate after the release is already live; where that click is the intended gate, use the publish-go-live mode above.
-The same binding works in reverse: a hand-pushed lightweight tag under the draft's tag name publishes the draft the instant it lands, ahead of the signature gate.
-The runbook's signed annotated tag is the safe form — it leaves the flip to the pipeline.
-After publication: registry publishing (`cargo publish`) stays a manual, deliberate step; promote the pre-release flag and merge the merge-back pull request per your process.
-
-## The reference pipeline
-
-The consumer-specific parts are marked as slots: what you build into the draft (SBOMs, binaries, provenance) and any extra gates (license sweeps, policy checks) are yours.
-
-```yaml
-name: Release
-on:
-  push:
-    branches: ["release/v**"]
-    # `!v*-sig` keeps the signed provenance companion out of this pipeline: it
-    # carries no changelog section or marker and routes to the attest workflow.
-    tags: ["v*", "!v*-sig"]
-  workflow_dispatch: # cut-release dispatches the first run explicitly
-
-permissions:
-  contents: write
-
-jobs:
-  gate:
-    name: release readiness gate
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.expect.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Derive the expected version from the ref
-        id: expect
-        run: |
-          set -euo pipefail
-          # A v* tag keeps its full version. A release-candidate manifest
-          # (1.0.0-rc1) is a first-class release whose final tag is v1.0.0-rc1 —
-          # not a marker to strip. Only human-pushed final tags reach the pipeline;
-          # workflow-token marker pushes trigger nothing.
-          case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
-            branch:release/v*) version="${GITHUB_REF_NAME#release/v}" ;;
-            tag:v*)            version="${GITHUB_REF_NAME#v}" ;;
-            *)                 version="" ;;
-          esac
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-      - name: Require a verified signed tag (final path only)
-        if: github.ref_type == 'tag'
-        uses: gronke/rust-ci/.github/actions/require-signed-tag@v1
-      - uses: gronke/rust-ci/.github/actions/install-toolchain@v1
-      - uses: gronke/rust-ci/.github/actions/check-release-readiness@v1
-        with:
-          expected-version: ${{ steps.expect.outputs.version }}
-          # verify: "false"   # the tests already compiled it; keep the packaging checks
-      # The seal costs four API calls and no build, so gate on it here: a tag
-      # that does not carry the reviewed content fails in seconds rather than
-      # after the artifact jobs below.
-      - name: The tag must seal the newest candidate marker (early gate)
-        if: github.ref_type == 'tag'
-        uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
-        with:
-          version: ${{ steps.expect.outputs.version }}
-          seal-only: "true"
-      # SLOT: extra gates (license sweep, policy checks) run here.
-
-  draft:
-    name: build the draft pre-release (candidate path)
-    needs: gate
-    # Only release branches build candidates: a workflow_dispatch from any other
-    # branch derives no version and must not create a draft.
-    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release/v')
-    runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ needs.gate.outputs.version }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v7
-
-      # Notes render (Keep a Changelog), draft create/refresh, marker push — one
-      # step. The title leads the message so the signed tag's subject is the
-      # version. A repository with another notes format keeps the expanded steps
-      # this action grew from (the changelog action's `notes` mode shows the
-      # rendering contract).
-      - uses: gronke/rust-ci/.github/actions/draft-release@v1
-        id: draft
-        with:
-          version: ${{ env.VERSION }}
-
-      # SLOT: build the release assets (SBOMs, binaries, …) into ./dist and
-      # attach them to the draft. A library / publish = false crate produces
-      # none, so guard the glob — an unguarded dist/* fails when empty.
-      - name: Upload build assets
-        run: |
-          set -euo pipefail
-          if compgen -G 'dist/*' >/dev/null; then
-            gh release upload "v${VERSION}" dist/* --clobber
-          fi
-
-      - uses: gronke/rust-ci/.github/actions/release-guidance@v1
-        with:
-          version: ${{ env.VERSION }}
-          marker-tag: ${{ steps.draft.outputs.marker }}
-          commit: ${{ github.sha }}
-          draft-url: ${{ steps.draft.outputs.url }}
-
-      # sign-tags governs what happens next: an active signature-requiring tag
-      # ruleset (or `sign-tags: manual`) defers to the release manager and the
-      # guidance above; without one the pipeline promotes the candidate itself —
-      # unsigned final tag with the marker's message, draft published, one job.
-      - uses: gronke/rust-ci/.github/actions/promote-release@v1
-        with:
-          version: ${{ env.VERSION }}
-          marker-tag: ${{ steps.draft.outputs.marker }}
-          # sign-tags: manual        # explicit; empty auto-detects from the rulesets
-          # moving-major: "true"     # advance v<MAJOR> on an off-mode promotion
-
-  publish:
-    name: publish the release (final path)
-    needs: gate
-    # Any tag reaching the pipeline is a human-pushed final tag: marker tags are
-    # pushed with the workflow token and trigger nothing, and require-signed-tag
-    # rejects unsigned tags. A first-class rc-manifest release (v1.0.0-rc1)
-    # publishes here too.
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    environment: release # add required reviewers here for a human pause
-    permissions:
-      contents: write # the draft flip and the moving major
-      id-token: write # the crates.io Trusted Publishing exchange
-    steps:
-      - uses: actions/checkout@v7
-      # SLOT: attest / sign the draft's assets (only meaningful on a public repository).
-
-      # Tree seal against the newest marker, the draft flip (a stable version
-      # sheds the pre-release flag), and the moving major advancing to the
-      # highest stable release in its line — one step. Drop `moving-major` to
-      # keep re-tagging a manual, signed act.
-      - uses: gronke/rust-ci/.github/actions/publish-draft-release@v1
-        with:
-          version: ${{ needs.gate.outputs.version }}
-          moving-major: "true"
-
-      # The crate goes last: re-drafting a release is trivial, a crates.io
-      # upload can only be yanked. Trusted Publishing mints a short-lived token
-      # from the job's OIDC identity, so no registry secret is stored; bind the
-      # publisher to this workflow file (and this environment) on crates.io.
-      - id: auth
-        uses: rust-lang/crates-io-auth-action@v1
-      - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
-        with:
-          publish: "true"
-          registry-token: ${{ steps.auth.outputs.token }}
-```
-
-## Repository configuration the flow relies on
-
-- **Actions may create pull requests** (Settings → Actions → General) — `cut-release` opens the merge-back pull request with the workflow token; without the setting the cut fails at that step.
-- **Tag ruleset**: let Actions create `v*-rc*` marker tags; keep final `v*` tags restricted to release managers and — to back the workflow's signature preference with real enforcement — require signatures.
-  The shipped [`tags-signed.json`](../.github/rulesets/tags-signed.json) and [`tags-maintainer-only.json`](../.github/rulesets/tags-maintainer-only.json) carry exactly this shape.
-  In the publish-go-live mode, import [`tags-sig-signed.json`](../.github/rulesets/tags-sig-signed.json) in place of `tags-signed.json`: signatures are required only on the `vX.Y.Z-sig` companions, and the release tags GitHub creates on publish stay unsigned.
-  The markers are pushed unsigned with the workflow token, so a rule covering all tags blocks the candidate loop: exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule, and give the release managers a bypass on the final `v*` restriction so the signed tag can be pushed at all.
-  The optional moving-major step force-moves a bare `v<MAJOR>` tag unsigned, so automating it means excluding those names too; without the step, re-tagging the major stays a manual, signed act.
-  `require-signed-tag` warns when the workflow enforces signatures but no active tag ruleset does.
-- **Branch ruleset**: restrict `release/v*` creation and pushes to release managers and Actions.
-- **A `release` environment** on the publish job; add required reviewers where a human pause before publication is wanted.
-- The merge-back pull request's CI needs one "Approve and run" click when the cut ran with the workflow token: workflows do not start on pull requests authored by `github-actions`.
-  A machine-user or App identity (the `cut-release` `token` and `git-user-*` inputs) removes that click.
+- Settings > Actions > General: "Allow GitHub Actions to create and approve pull requests", or `cut-release` fails at the merge-back.
+- A tag ruleset that lets Actions create `v*-rc*` markers (and the bare `v<MAJOR>` tags when `moving-major` is on) and restricts final `v*` tags to release managers; the shipped files carry this shape.
+- A branch ruleset restricting `release/v*` creation and pushes to release managers and Actions.
+- A `release` environment on the publish job, with required reviewers where a human pause before publication is wanted; in the publish-draft mode it gates only what the pipeline runs after the click, not the publication itself.
+- The merge-back pull request triggers no CI when the cut ran with the workflow token; a machine-user or App token through `cut-release`'s `token` and `git-user-*` inputs does.
+- Trusted Publishing on crates.io for the publishing workflow, plus `id-token: write` on the publish job.
 
 ## When a gate refuses
 
-- *Lightweight tag* or *not a verified signed tag* — recreate the tag annotated (`git tag -s`) with a key your GitHub account knows, and force-push it by name.
-- *The tag does not carry the content the last build sealed* — the branch moved after the candidate you meant to seal, or the merge-back rebase brought other changes along; re-tag the newest marker commit (or a tree-identical tip), or push the branch and let a new candidate build first.
-- *Expected version != Cargo.toml version* — the ref name, the crate version, and the changelog section must agree; fix the branch content.
-  In the publish-go-live mode this is what publishing before the merge-back looks like: the tag landed on a default branch whose changelog still declares the previous release. The tag is spent (immutable releases freeze it), so cut the next number rather than trying to repair it.
-- *already published on crates.io* / *a published release exists* — immutable names cannot be reused, not even after deleting the release; bump the version and cut again.
-- *GH013 / Cannot create ref on the marker push* — a tag ruleset restricts `v*-rc*`: the markers are pushed unsigned with the workflow token, so exclude `v*-rc*` from every creation-restricting and signature-requiring tag rule (the final `v*` rules stay).
-  `require-signed-tag`'s ruleset warning covers the final tag's signature rule, not the markers.
-- *The cut refuses* — `[Unreleased]` is empty, or the release branch already exists.
-- *feature content on a pre-release version* — the changelog check found `### Added`, `### Removed`, or `**Breaking:**` while Cargo.toml declares `-rcN`; move the version to the next regular release.
+| Refusal | What happened, what to do |
+| --- | --- |
+| lightweight tag, or not a verified signed tag | Recreate the tag annotated (`git tag -s`) with a key your GitHub account knows and force-push it by name. |
+| does not carry the content the last build sealed | The branch moved after the candidate, or the merge-back rebase brought other changes; re-tag the newest marker commit (or a tree-identical tip), or push the branch and let a new candidate build. |
+| tag/expected version != declared version | The ref name, the crate version and the changelog section must agree; fix the branch content. In the publish-draft mode this is publishing before the merge-back: the tag is spent under immutable releases, cut the next number. |
+| already published on crates.io | A published version cannot be replaced; bump the version and cut again. |
+| GH013 on the marker push | A tag ruleset restricts `v*-rc*`; exclude the markers from every creation-restricting and signature-requiring tag rule. |
+| GH013 on the final tag push (`sign-tags: off`) | A ruleset restricts final `v*` tags; let Actions create them, or switch to `sign-tags: manual`. |
+| an active tag ruleset requires signatures on vX.Y.Z (`sign-tags: off` or `go-live: publish-draft`) | The mode contradicts the repository's policy; retarget the rule to `v*-sig` companions or use the signed mode. |
+| no candidate marker for vX.Y.Z | The tag arrived without a candidate build; cut a release branch first. |
+| the cut refuses | `[Unreleased]` is empty, or the release branch already exists. |
+| feature content on a pre-release version | `### Added`, `### Removed` or `**Breaking` while the version declares `-rcN`; move the version to the next regular release. |
+| still a draft (`require-published`) | A signature completes automation, it does not publish drafts; publish the release first. |

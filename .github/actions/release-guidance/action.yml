@@ -1,17 +1,8 @@
 name: Release guidance
 description: >-
-  Tell the release manager what to do with the draft pre-release, in the
-  place they are already looking: the run's step summary. Three blocks —
-  accept, reject (delete the draft and branch; nothing is consumed), and what
-  goes live next. `go-live` picks the accept road: "signed-tag" renders the
-  sign-and-push runbook; "publish-draft" renders merge-then-publish — the
-  admin publishing the draft creates the tag and is the flow's one human gate
-  — plus the optional signed vX.Y.Z-sig attestation companion. In
-  publish-draft mode the step errors at candidate time when an active tag
-  ruleset still requires signatures on the version itself, so CI never sets
-  up a tag the repository's own policy rejects — or one a bypass would let
-  fail the gate after the release is live. Run it as the last step of a
-  successful candidate build.
+  Write the release manager's next steps for a freshly built draft pre-release into the step summary: accept, reject, and what goes live next.
+  `go-live: signed-tag` renders the sign-and-push runbook; `publish-draft` renders merge-then-publish plus the optional vX.Y.Z-sig companion, and errors while an active tag ruleset requires signatures on the version itself.
+  Run it as the last step of a candidate build.
 
 inputs:
   version:
@@ -21,7 +12,7 @@ inputs:
     description: The candidate marker tag this build created (e.g. v1.2.3-rc2).
     required: true
   commit:
-    description: The commit the marker sealed — the only commit the final tag may point at.
+    description: The commit the marker sealed, which the accept commands tag.
     required: true
   go-live:
     description: >-
@@ -30,8 +21,7 @@ inputs:
     default: "signed-tag"
   tag-script:
     description: >-
-      Repository-relative tagging helper to feature in the accept commands
-      (called as `<tag-script> <commit> -s`); plain git commands when empty.
+      Repository-relative tagging helper to feature in the accept commands (called as `<tag-script> <commit> -s`); plain git commands when empty.
       signed-tag mode only.
     required: false
     default: ""

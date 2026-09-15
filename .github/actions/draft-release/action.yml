@@ -1,15 +1,7 @@
 name: Draft release
 description: >-
-  Build the reviewable candidate in one step: render the changelog's released
-  section into `release-notes.md`, create or refresh the draft pre-release
-  whose body it becomes, and push the next unsigned `v<version>-rcN` marker
-  carrying the same text as its tag message — so the runbook's signed tag and
-  the published Release all say exactly what the changelog says. Pair with
-  `release-guidance` (the runbook) and, optionally, `promote-release`.
-
-  The marker tags the run's own commit and is created locally first, so run it
-  on a checkout without fetched tags (actions/checkout's default) — a stale
-  local rcN would shadow the push.
+  Build the reviewable release candidate: render the changelog's released section into `release-notes.md`, create or refresh the draft pre-release whose body it becomes, and push the next unsigned `v<version>-rcN` marker tag on the run's commit, carrying the same text as its message.
+  Pair with `release-guidance` and, optionally, `promote-release`.
 
 inputs:
   version:

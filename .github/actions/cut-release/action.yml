@@ -1,16 +1,7 @@
 name: Cut release
 description: >-
-  Start a release for the version Cargo.toml declares — or the `version`
-  input where there is no crate: cut the changelog's
-  [Unreleased] section (the sibling changelog action's cut mode), push the
-  release branch, stamp the citation file where the repository keeps one,
-  open the merge-back pull request, and dispatch the release
-  pipeline on the branch — a push made with the workflow token triggers no
-  workflows by itself, so the dispatch is explicit. Refuses when the release
-  branch already exists. The job needs `contents: write` (push the branch),
-  `pull-requests: write` (the merge-back), and `actions: write` (the
-  dispatch), and the repository setting "Allow GitHub Actions to create and
-  approve pull requests" for the merge-back to open.
+  Start a release for the version Cargo.toml declares, or the `version` input where there is no crate: cut the changelog's [Unreleased] section, push the release branch, stamp the citation file where the repository keeps one, open the merge-back pull request, and dispatch the release pipeline on the branch.
+  Refuses when the release branch already exists.
 
 inputs:
   branch-prefix:
@@ -53,11 +44,8 @@ inputs:
     default: ""
   citation:
     description: >-
-      Citation File Format path, relative to the working directory. The cut
-      stamps its top-level `version`, and `date-released` where the file keeps
-      one, so the citation metadata GitHub renders does not lag the release.
-      A missing file is skipped, so a repository without a CITATION.cff needs
-      no configuration; an empty value disables the stamp outright.
+      Citation File Format path, relative to the working directory; the cut stamps its top-level `version`, and `date-released` where the file keeps one.
+      A missing file is skipped, an empty value disables the stamp.
     required: false
     default: "CITATION.cff"
   token:
@@ -70,12 +58,8 @@ inputs:
     default: "github-actions[bot]"
   git-user-email:
     description: >-
-      Committer email for the release commit. The default is the
-      github-actions bot's canonical address (41898282 is that account's user
-      id), which GitHub attributes to the bot. Pass a machine-user or App
-      identity together with a matching token when the merge-back pull
-      request must trigger CI — events created with the workflow token do
-      not.
+      Committer email for the release commit; the default is the github-actions bot's canonical address.
+      Pass a machine-user or App identity together with a matching token when the merge-back pull request must trigger CI, which events created with the workflow token do not.
     required: false
     default: "41898282+github-actions[bot]@users.noreply.github.com"
   dry-run:

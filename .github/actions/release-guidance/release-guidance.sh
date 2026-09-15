@@ -34,14 +34,14 @@ case "$GO_LIVE" in
 esac
 
 # publish-draft: publishing will make GitHub create ${TAG} unsigned on main's
-# tip. A signature rule still covering it means that tag gets rejected — or
+# tip. A signature rule still covering it means that tag gets rejected, or
 # slips through an admin bypass and fails the gate after the immutable
 # publish. The misalignment errors here, at candidate time.
 if [ "$GO_LIVE" = "publish-draft" ]; then
   signature_rule_covers_ref "refs/tags/${TAG}"
   case "$SIGNATURE_RULE_VERDICT" in
     true)
-      echo "::error::go-live: publish-draft, but an active tag ruleset requires signatures on ${TAG} — retarget the rule (e.g. to v*-sig companions) or use go-live: signed-tag"
+      echo "::error::go-live: publish-draft, but an active tag ruleset requires signatures on ${TAG}; retarget the rule (e.g. to v*-sig companions) or use go-live: signed-tag"
       exit 1
       ;;
     false) ;;
@@ -55,14 +55,14 @@ if [ "$GO_LIVE" = "publish-draft" ]; then
   CONSUMED="nothing is consumed until the draft is published."
   DRAFT_LINE=""
   if [ -n "${INPUT_DRAFT_URL:-}" ]; then
-    DRAFT_LINE="Review [the draft release](${INPUT_DRAFT_URL}) — assets and notes — before publishing."
+    DRAFT_LINE="Review [the draft release](${INPUT_DRAFT_URL}), assets and notes, before publishing."
   fi
   # Publishing creates the tag from the release's target_commitish, so the
   # target is the whole game: pinned to the merged commit, the tag lands on the
   # content the marker sealed and no later push can move it.
   DEFAULT_BRANCH="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch 2>/dev/null || echo main)"
   ACCEPT="$(cat <<EOF
-### Accept — merge, then publish
+### Accept: merge, then publish
 
 1. Merge the merge-back pull request.
 2. Publish the draft with its target pinned to the merged commit:
@@ -72,7 +72,7 @@ if [ "$GO_LIVE" = "publish-draft" ]; then
    gh release edit ${TAG} ${FLIP_FLAGS} --target "\$target"
    \`\`\`
 
-   The tag is created from the target, so the resolved SHA — the merge-back's commit — is what ${TAG} seals; a later push to ${DEFAULT_BRANCH} cannot move it.
+   The tag is created from the target, so the resolved SHA (the merge-back's commit) is what ${TAG} seals; a later push to ${DEFAULT_BRANCH} cannot move it.
    Publishing from the web dialog does the same, as long as the target there names that commit rather than the branch.
 3. Optionally attest the release commit with your signature:
 
@@ -87,7 +87,7 @@ EOF
 ### What publishing triggers
 
 The tag GitHub creates on publish runs the pipeline's final path: version coherence, the tree seal against the newest marker, and the moving major advancing.
-Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever — even deleting the release does not free it.
+Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever (deleting the release does not free it).
 Which is why the target is pinned: the seal then passes by construction, rather than depending on how long the click took.
 EOF
 )"
@@ -95,17 +95,17 @@ else
   CONSUMED="nothing is consumed until the signed final tag publishes the draft."
   DRAFT_LINE=""
   if [ -n "${INPUT_DRAFT_URL:-}" ]; then
-    DRAFT_LINE="Review [the draft release](${INPUT_DRAFT_URL}) — assets and notes — before sealing."
+    DRAFT_LINE="Review [the draft release](${INPUT_DRAFT_URL}), assets and notes, before sealing."
   fi
   if [ -n "${INPUT_TAG_SCRIPT:-}" ]; then
     SIGN_COMMAND="${INPUT_TAG_SCRIPT} ${COMMIT} -s"
   else
     # Copy the candidate marker's message (the rendered changelog section) into the
-    # signed final tag, so promoting is a pure-git two-liner — no message to retype.
+    # signed final tag, so promoting is a pure-git two-liner with no message to retype.
     SIGN_COMMAND="git tag -s -F <(git tag -l --format='%(contents)' ${MARKER}) ${TAG} ${COMMIT}"
   fi
   ACCEPT="$(cat <<EOF
-### Accept — seal and publish
+### Accept: seal and publish
 
 Whoever holds a release-signing key registered with their GitHub account:
 
@@ -115,17 +115,17 @@ ${SIGN_COMMAND}
 git push origin ${TAG}
 \`\`\`
 
-The tag must be annotated, signed with a key GitHub can verify, and carry exactly \`${COMMIT}\`'s content — a rebase-merged merge-back's tip has the identical tree and passes the seal too.
-Its message is copied from the marker \`${MARKER}\` — the changelog section rendered for ${TAG}.
+The tag must be annotated, signed with a key GitHub can verify, and carry exactly \`${COMMIT}\`'s content; a rebase-merged merge-back's tip has the identical tree and passes the seal too.
+Its message is copied from the marker \`${MARKER}\`, the changelog section rendered for ${TAG}.
 Push the tag by name; never \`git push --tags\`, which pushes every local tag along.
 EOF
 )"
   TRIGGERS="$(cat <<EOF
 ### What the tag push triggers
 
-The pipeline's final path runs the signature gate, asserts the tag seals the newest marker commit, attests and signs the assets where the repository is public, and the publish job flips the draft live.
-Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever — even deleting the release does not free it.
-Never publish the draft by hand — the pipeline flips it; a hand-published draft makes GitHub create an unsigned tag that fails this gate after the release is already live.
+The pipeline's final path runs the signature gate, asserts the tag seals the newest marker commit, and the publish job flips the draft live.
+Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever (deleting the release does not free it).
+Never publish the draft by hand: the pipeline flips it, and a hand-published draft makes GitHub create an unsigned tag that fails this gate after the release is already live.
 EOF
 )"
 fi
@@ -134,12 +134,12 @@ GUIDANCE="$(cat <<EOF
 ## Release candidate ready: ${TAG} (${MARKER})
 
 The draft pre-release for ${TAG} was rebuilt from \`${COMMIT}\`, marked by \`${MARKER}\`.
-Drafts are invisible and mutable, and marker tags reserve nothing — ${CONSUMED}
+Drafts are invisible and mutable, and marker tags reserve nothing; ${CONSUMED}
 ${DRAFT_LINE}
 
 ${ACCEPT}
 
-### Reject — nothing to unwind
+### Reject: nothing to unwind
 
 Delete the draft release and the release branch; the marker tags reserve nothing and can stay or be deleted.
 Or push a fix to the release branch instead: the next build refreshes the same draft as the following candidate.

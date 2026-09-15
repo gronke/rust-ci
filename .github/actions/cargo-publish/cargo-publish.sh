@@ -54,8 +54,8 @@ esac
 # --- what may be published ---------------------------------------------------
 # The dry run above is deliberately exempt: a candidate still rehearses
 # packaging in full. This governs what reaches the registry. The pattern is
-# tested against v<version> — the release gate has already asserted the tag is
-# exactly that — so the check needs no ref context and works on a `release`
+# tested against v<version> (the release gate has already asserted the tag is
+# exactly that), so the check needs no ref context and works on a `release`
 # event, a tag push and a dispatch alike.
 PATTERN="${INPUT_TAG_PATTERN-}"
 if [ -n "$PATTERN" ] && ! printf 'v%s' "$VERSION" | grep -Eq "$PATTERN"; then
@@ -66,7 +66,7 @@ fi
 
 # --- already published? -------------------------------------------------------
 # Decided before the credential: the probe is unauthenticated, so a duplicate
-# fails (or, when allowed, skips) in one line without demanding a token — an
+# fails (or, when allowed, skips) in one line without demanding a token; an
 # idempotent re-run needs no credential at all.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -H "User-Agent: rust-ci cargo-publish" \
@@ -77,12 +77,12 @@ if [ "$CODE" = "200" ]; then
     write_outputs false "$VERSION" true
     exit 0
   fi
-  echo "::error::${NAME} ${VERSION} is already on crates.io — bump the version, or set allow-already-published for an idempotent re-run"
+  echo "::error::${NAME} ${VERSION} is already on crates.io; bump the version, or set allow-already-published for an idempotent re-run"
   exit 1
 elif [ "$CODE" = "404" ]; then
   echo "✓ ${NAME} ${VERSION} is not yet on crates.io"
 else
-  echo "::warning::crates.io check inconclusive (HTTP ${CODE}); continuing — the registry rejects a duplicate regardless"
+  echo "::warning::crates.io check inconclusive (HTTP ${CODE}); continuing (the registry rejects a duplicate regardless)"
 fi
 
 # --- the credential -----------------------------------------------------------

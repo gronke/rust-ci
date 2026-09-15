@@ -1,6 +1,6 @@
 name: Cut release
 
-# This repository has no Cargo.toml — the version arrives here, and the local
+# This repository has no Cargo.toml: the version arrives here, and the local
 # actions release the very commit that carries them.
 on:
   workflow_dispatch:

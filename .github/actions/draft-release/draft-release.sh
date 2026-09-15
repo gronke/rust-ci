@@ -19,7 +19,7 @@ TITLE="${INPUT_TITLE:-v${VERSION}}"
 # Two renderings of the released section. Markdown for the GitHub release body:
 # GFM renders it, and inline code keeps @tokens (e.g. `@import`, `@v0`) from
 # autolinking as bogus @mentions. Plain text for the annotated tag messages that
-# live in git history — the rcN marker below, and (through the runbook's -F
+# live in git history: the rcN marker below, and (through the runbook's -F
 # command) the signed release tag.
 INPUT_MODE="notes" INPUT_FORMAT="markdown" INPUT_OUT="release-notes.md" INPUT_TITLE="$TITLE" \
   bash "$GITHUB_ACTION_PATH/../changelog/changelog.sh"
@@ -39,7 +39,7 @@ url="$(gh release view "v${VERSION}" --json url --jq .url)"
 # --- the marker ----------------------------------------------------------------
 git config user.name "$INPUT_GIT_USER_NAME"
 git config user.email "$INPUT_GIT_USER_EMAIL"
-# One past the highest existing rcN, from one refs listing — probing rc1,
+# One past the highest existing rcN, from one refs listing; probing rc1,
 # rc2, … would stop at a numbering gap and renumber a candidate under an
 # existing higher one.
 latest="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
@@ -53,7 +53,7 @@ else
   git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
 fi
 git push origin "refs/tags/v${VERSION}-rc${n}" || {
-  echo "::error::the marker push was rejected (GH013) — the tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting and signature-requiring tag rules."
+  echo "::error::the marker push was rejected (GH013). The tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting and signature-requiring tag rules."
   exit 1
 }
 
