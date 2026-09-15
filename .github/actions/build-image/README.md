@@ -1,58 +1,44 @@
 # build-image
 
-Build the rust-ci toolchain image locally from [`image/Dockerfile`](../../../image/Dockerfile) and load it into the Docker daemon, so the Docker actions run against a local tag with no registry pull.
-
-## How it works
-
-The image is `rust:<rust-version>` plus clippy, rustfmt, and jq — plus any cross-compile `targets` you request, so the sealed Docker actions can `cargo check --target <triple>` against them (e.g. `wasm32-unknown-unknown`).
-`build-image` builds it for the requested Rust version and `--load`s it into the daemon under `tag`; the Docker actions (`cargo-fetch`, `lint-and-test-docker`, `cargo-docker`, `cargo-use`, `cargo-install`, `publish-dry-run`) then `docker run` that tag — point their `image:` input at it, or use the matching default.
-
-With `cache: "true"` the build runs under buildx with the GitHub Actions cache (`type=gha,mode=min`): only the added layer (clippy/rustfmt/jq) is cached, scoped per Rust version, while the `rust:<version>` base is pulled from Docker Hub.
-Caching is off by default, so a consumer opts in before anything writes to their Actions cache.
-
-Pass `rust-version: msrv` to build at the crate's **declared MSRV** instead of a literal tag: the version is read from `Cargo.toml` (`rust-version`) under `working-directory` and validated as numeric, so the whole sealed Docker pipeline can run on the support floor and a dependency that raises its MSRV fails the normal lint-and-test gate rather than the release.
-The cache is scoped per *resolved* version (`rust-ci-<version>`), so a latest image and an MSRV image cache independently.
+Build the rust-ci toolchain image from [`image/Dockerfile`](../../../image/Dockerfile) and load it into the Docker daemon, so the Docker actions run against a local tag; the built image is not pushed to a registry.
+Run it once before `cargo-fetch`, `lint-and-test-docker`, `cargo-docker`, `cargo-install`, `cargo-use` and `publish-dry-run`; point their `image` input at `tag`, or keep the shared default `rust-ci:latest`.
 
 ## Usage
 
 ```yaml
-- uses: gronke/rust-ci/.github/actions/build-image@main
+- uses: gronke/rust-ci/.github/actions/build-image@v1
   with:
     rust-version: "1"          # any rust:<tag>; default "latest"
     tag: rust-ci:latest        # the Docker actions' default image
-    cache: "true"              # opt in to caching the added layer
-    # targets: wasm32-unknown-unknown   # cross targets to add to the image
-    # rust-version: msrv       # or build at the crate's declared MSRV (Cargo.toml)
+    cache: "true"              # cache the added layer in the Actions cache
+    # targets: wasm32-unknown-unknown   # cross targets baked into the image
+    # rust-version: msrv       # build at the crate's declared MSRV (Cargo.toml)
     # working-directory: .     # where that Cargo.toml lives (for rust-version: msrv)
-- uses: gronke/rust-ci/.github/actions/lint-and-test-docker@main
+- uses: gronke/rust-ci/.github/actions/lint-and-test-docker@v1
   with:
     working-directory: .       # image defaults to rust-ci:latest
-```
-
-A sealed cross-target check off that image is then just a `cargo-docker` call:
-
-```yaml
-- uses: gronke/rust-ci/.github/actions/cargo-fetch@main
-  with:
-    working-directory: .
-- uses: gronke/rust-ci/.github/actions/cargo-docker@main
-  with:
-    working-directory: .
-    args: "check --workspace --target wasm32-unknown-unknown --locked"
 ```
 
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `rust-version` | `latest` | The `rust:<version>` base tag to build on. `msrv` resolves to the crate's declared `rust-version` from `Cargo.toml`. |
+| `rust-version` | `latest` | The `rust:<version>` base tag to build on. `msrv` resolves to the crate's declared `rust-version` from `Cargo.toml` under `working-directory`. |
 | `tag` | `rust-ci:latest` | Tag for the built image. |
 | `cache` | `"false"` | Cache the added layer across runs (GitHub Actions cache via buildx `type=gha`). |
 | `working-directory` | `.` | Directory whose `Cargo.toml` supplies the version when `rust-version: msrv` (ignored otherwise). |
-| `targets` | `""` | Space-separated rustup targets to add to the image (e.g. `wasm32-unknown-unknown`), so the sealed Docker actions can cross-check against them. |
+| `targets` | `""` | Space-separated rustup targets to add to the image (e.g. `wasm32-unknown-unknown`). Empty adds none. |
 
 ## Outputs
 
 | Output | Description |
 | --- | --- |
 | `image` | The built image tag. |
+
+## Notes
+
+- The image is `rust:<rust-version>` plus clippy, rustfmt, jq and any `targets`; a sealed `cargo-docker` step can then run `check --target <triple>` against it.
+- `cache: "true"` builds under buildx with `type=gha,mode=min`: only the added layer is cached, scoped per resolved Rust version (`rust-ci-<version>`), and the `rust:<version>` base is pulled from Docker Hub, not from the Actions cache.
+- `cache: "true"` also exports the masked `ACTIONS_RUNTIME_TOKEN` and `ACTIONS_RESULTS_URL` into the job environment, because buildx needs them for the cache; a cache error is ignored and the image still loads.
+- `rust-version: msrv` accepts only a numeric `major[.minor[.patch]]` from `Cargo.toml`; any other `rust-version` value is passed through as the base tag.
+- The build retries on transient registry output (timeouts, resets, rate limits) and fails at once on a genuine build error.

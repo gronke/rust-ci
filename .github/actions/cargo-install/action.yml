@@ -4,21 +4,19 @@ description: Install a cargo-based CLI tool into a shared, hardened cargo cache 
 inputs:
   tool:
     description: >-
-      Crate name to install (e.g. cargo-audit). Validated on the host against
-      ^[A-Za-z0-9][A-Za-z0-9_-]*$ and rejected otherwise, so a crafted value cannot
-      smuggle a leading flag or shell metacharacters.
+      Crate name to install (e.g. cargo-audit).
+      Validated on the host against ^[A-Za-z0-9][A-Za-z0-9_-]*$ and rejected otherwise, so a crafted value cannot smuggle a leading flag or shell metacharacters.
     required: true
   version:
     description: >-
-      Version / version-req passed as `--version` (e.g. 0.21.2 or ^0.21). Validated
-      to a conservative charset. Empty (default) installs the latest.
+      Version or version requirement passed as `--version` (e.g. 0.21.2 or ^0.21), validated to a conservative charset.
+      Empty (default) installs the latest.
     required: false
     default: ""
   args:
     description: >-
-      Extra flags appended to `cargo install` (e.g. --no-default-features --features
-      rustls-tls). Word-split INSIDE the container — it never reaches the host shell
-      in docker mode. Do NOT put the crate name or --version here.
+      Extra flags appended to `cargo install` (e.g. --no-default-features --features rustls-tls), word-split inside the container and never on the host shell in docker mode.
+      Do not put the crate name or --version here.
     required: false
     default: ""
   locked:
@@ -27,8 +25,8 @@ inputs:
     default: "true"
   docker:
     description: >-
-      Install inside the sealed container (default). Set "false" to run `cargo
-      install` directly on the host runner.
+      Install inside the sealed container (default).
+      Set "false" to run `cargo install` directly on the host runner.
     required: false
     default: "true"
   image:
@@ -37,8 +35,8 @@ inputs:
     default: rust-ci:latest
   cargo-cache:
     description: >-
-      Host dir mounted RW as CARGO_HOME (/cache/cargo); the tool installs to its
-      bin/ and is shared with later sealed runs. Reuse the same value in cargo-use.
+      Host dir mounted RW as CARGO_HOME (/cache/cargo); the tool installs to its bin/ and is shared with later sealed runs.
+      Reuse the same value in cargo-use.
     required: false
     default: .cargo-cache
   working-directory:
@@ -47,20 +45,19 @@ inputs:
     default: "."
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
-      container, anchored full-name. Default forwards cargo's own vars.
+      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
+      Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
       Defaults to the action-owned vars.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
   env:
     description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
-      regardless of env-include/env-exclude.
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
     required: false
     default: ""
 
@@ -74,10 +71,10 @@ runs:
   steps:
     # Host-side gate, BEFORE either branch. The tool/version inputs reach this
     # script only as env vars (never as ${{ }} interpolated into the run body), so
-    # they can't become host shell code; the allowlist is belt-and-braces on top —
+    # they can't become host shell code; the allowlist is belt-and-braces on top:
     # it rejects a name that could smuggle a leading flag or a metacharacter into
     # any later cargo invocation. `args` is intentionally NOT allowlisted (flags are
-    # open-ended); it is contained instead — word-split only inside the container.
+    # open-ended); it is contained instead, word-split only inside the container.
     - name: validate inputs
       id: validate
       shell: bash
@@ -90,7 +87,7 @@ runs:
         set -euo pipefail
         # Allowlist patterns live in variables and are matched with [[ =~ ]], so no
         # glob/redirection metacharacter is ever seen by the shell tokenizer (a
-        # bracket like [..<>..] in a `case` glob is NOT shielded — bash tokenizes
+        # bracket like [..<>..] in a `case` glob is NOT shielded: bash tokenizes
         # the <> as a redirection). The tool must start alphanumeric (so a value
         # can't pose as a leading flag); the version charset is deliberately narrow.
         tool_re='^[A-Za-z0-9][A-Za-z0-9_-]*$'
@@ -126,8 +123,8 @@ runs:
         export CICD_DIR="$GITHUB_ACTION_PATH"
         # Networked: downloading crates needs egress. seal.sh still applies
         # --cap-drop=ALL, no-new-privileges, non-root and repo-RO (OFFLINE toggles
-        # ONLY --network=none), so the install — and the build.rs / proc-macros it
-        # runs — is contained even while networked. No TARGET_DIR: `cargo install`
+        # ONLY --network=none), so the install (and the build.rs / proc-macros it
+        # runs) is contained even while networked. No TARGET_DIR: `cargo install`
         # builds in its own temp dir, not the workspace target/.
         export OFFLINE=false
         # TOOL/VERSION/ARGS/LOCKED aren't CARGO_* (env-include won't forward them);

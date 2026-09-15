@@ -6,7 +6,7 @@
 #
 # The spec is `cargo pkgid` output; the messages file is the stdout of a
 # `cargo build --message-format=json` run in the same workspace (and, for a
-# container build, under the same mount layout — both sides then carry the
+# container build, under the same mount layout; both sides then carry the
 # same path form, so host paths never enter the comparison). Every build
 # script in the graph emits a build-script-executed message; exact
 # package_id equality picks the requested one (cargo ≥1.77 prints the same

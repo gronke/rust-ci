@@ -3,7 +3,7 @@
 # in the sealed container and <cargo-cache>/bin on the host; prepend it so the tool
 # AND `cargo <subcommand>` (cargo finds cargo-<sub> on PATH) resolve. The same script
 # serves both paths so they cannot drift. ARGS is the command line, intentionally
-# word-split — the same containment cargo-docker.sh applies to its ARGS.
+# word-split, the same containment cargo-docker.sh applies to its ARGS.
 set -euo pipefail
 
 export PATH="${USE_BIN_DIR:?cargo-use: USE_BIN_DIR required}:$PATH"

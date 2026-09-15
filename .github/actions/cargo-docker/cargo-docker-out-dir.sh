@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Resolve a build script's OUT_DIR from a sealed build and translate it to
-# the host — the runner-side companion of cargo-docker.sh. It runs two extra
+# the host (the runner-side companion of cargo-docker.sh). It runs two extra
 # sealed invocations against the warm target: the exact package id, then a
 # JSON-messages `cargo build` replay of the out-dir-package. The
 # JSON parsing is host-side (_lib/out-dir.sh); the container only ever runs
@@ -18,7 +18,7 @@ source "$GITHUB_ACTION_PATH/../_lib/out-dir.sh"
 export CICD_DIR="$GITHUB_ACTION_PATH"
 
 if [ -z "${TARGET_DIR:-}" ]; then
-  echo "::error::out-dir-package needs a target-dir — without the RW target mount there is no host path to expose"
+  echo "::error::out-dir-package needs a target-dir: without the RW target mount there is no host path to expose"
   exit 1
 fi
 # The package name is spliced into env-file lines; a strict crate-name

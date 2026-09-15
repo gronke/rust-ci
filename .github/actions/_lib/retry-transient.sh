@@ -7,8 +7,8 @@
 # Needs bash 4.4 for `local -`, which confines the pipefail this function
 # depends on to the function itself.
 #
-# A command that fails on its own terms — a bad Dockerfile, a compile error, a
-# missing file — fails on its first attempt and keeps its exit status: only
+# A command that fails on its own terms (a bad Dockerfile, a compile error, a
+# missing file) fails on its first attempt and keeps its exit status: only
 # output naming a registry timeout, a reset connection or a rate limit is worth
 # trying again. That distinction is the point; a blanket retry would triple the
 # wall clock of every genuine failure.
@@ -16,7 +16,7 @@
 # RETRY_ATTEMPTS (default 5) bounds the tries, RETRY_DELAY (default 5) the first
 # pause; each further pause triples up to RETRY_MAX_DELAY (default 60), so the
 # default budget waits about two minutes in total. Registry degradation lasts
-# minutes rather than seconds — a budget that only rides out a blip fails the
+# minutes rather than seconds; a budget that only rides out a blip fails the
 # job for the same reason having no retry did.
 
 # Conditions a second attempt can plausibly survive.

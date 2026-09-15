@@ -1,46 +1,40 @@
 # msrv
 
-Compile a crate on its **declared minimum supported Rust version** to catch a dependency that raises its own MSRV — on the PR that pulls it in, not only at release time.
-
-## How it works
-
-The action reads `rust-version` from the crate's `Cargo.toml`, builds the toolchain image at *exactly* that Rust version (`image/Dockerfile` on `rust:<msrv>`), and runs `cargo check` inside it, sealed.
-Because the container's compiler **is** the declared MSRV, a plain `cargo check` is the MSRV check — there is no separate MSRV tool to install and no toolchain to select.
-
-**When you need it:** if your main CI already runs the sealed Docker pipeline, set `build-image`'s `rust-version: msrv` instead and the normal `lint-and-test` gate enforces the MSRV across fmt/clippy/test — this action is then redundant. It earns its place when CI runs **natively** or on **stable**: a dedicated, cheap (`cargo check`) floor gate you add as a single job without converting the rest of the pipeline.
-
-The check runs through the same hardened `docker run` as the other Docker actions (non-root, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, repo mounted read-only).
-By default it is **networked** (otherwise sealed), so dependencies resolve fresh with no `cargo-fetch` warmup and a newer release within range is caught; set `offline: "true"` (after a `cargo-fetch`) for a `--network none` run.
-Resolution is **unlocked** by default (`locked: "false"`): because the source is mounted read-only the lockfile cannot be written during the check, so it is resolved at the MSRV up front — in a **disposable copy** of the source under the runner's temp dir, never in the checkout itself.
-The checkout is therefore never modified: a crate without a `Cargo.lock` gains none, and a committed one stays byte-identical while the fresh in-range resolution (which it would otherwise hide) still happens in the copy.
-The copy shares the checkout's cargo cache and target dir, so caching behaves as usual, and it carries a self-contained snapshot of the checkout's git metadata (`.git` as a directory, or as a file for linked worktrees and submodules) — so a `build.rs` that runs `git describe` or reads the commit hash behaves the same as in a `locked: "true"` run.
-Set `locked: "true"` to require a committed `Cargo.lock` and check exactly those pinned versions, straight from the checkout.
+Compile a crate on its declared minimum supported Rust version: the action reads `rust-version` from `Cargo.toml`, builds the toolchain image at exactly that version and runs a sealed `cargo check` inside it.
+Use it as the MSRV gate when the main CI runs natively or on stable; a pipeline that already runs the sealed Docker actions can instead pass `rust-version: msrv` to `build-image`, and the normal `lint-and-test-docker` gate then enforces the MSRV.
 
 ## Usage
 
 ```yaml
-# Runs on every PR + push to main — the timing that catches MSRV drift early.
-- uses: actions/checkout@v4
-- uses: gronke/rust-ci/.github/actions/msrv@main
+- uses: actions/checkout@v7
+- uses: gronke/rust-ci/.github/actions/msrv@v1
   with:
-    package: my-crate          # required for a workspace with >1 member
+    package: my-crate           # required for a workspace with more than one member
     features: "--features full" # optional; the flag passed to cargo check
-    # rust-version: "1.95"     # optional override; default reads Cargo.toml
+    # rust-version: "1.95"      # optional override; default reads Cargo.toml
 ```
 
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `package` | `""` | Package to check (`-p`); required for a multi-member workspace. |
-| `features` | `""` | Feature flag passed to `cargo check` (e.g. `--features full`). |
-| `rust-version` | `""` | MSRV to test. Empty reads `rust-version` from `Cargo.toml`. |
-| `working-directory` | `.` | Crate/workspace directory (Cargo.toml read from here; mounted read-only). |
-| `locked` | `"false"` | `"false"` resolves a fresh lock at the MSRV (in a disposable copy — the checkout is never modified); `"true"` requires a committed `Cargo.lock` and checks exactly that. |
-| `offline` | `"false"` | Sealed `--network none` + `--offline` (needs a prior `cargo-fetch`). |
+| `package` | `""` | Package to check (`-p`); required for a workspace with more than one member. |
+| `features` | `""` | Feature flag passed to `cargo check` (e.g. `--features full`, `--all-features`). |
+| `rust-version` | `""` | MSRV to test. Empty reads `rust-version` from the crate's `Cargo.toml`. |
+| `working-directory` | `.` | Crate or workspace directory, mounted read-only; `Cargo.toml` is read from here. |
+| `locked` | `"false"` | `"false"` resolves a fresh `Cargo.lock` at the MSRV in a disposable copy of the source; `"true"` requires a committed `Cargo.lock` and checks exactly those versions. |
+| `offline` | `"false"` | `"true"` runs `--network=none` plus `cargo --offline` and needs a prior `cargo-fetch`. |
 | `image-tag` | `rust-ci:msrv` | Local tag for the MSRV image, distinct from `rust-ci:latest`. |
-| `target-dir` | `target` | Host dir for cargo target (read-write, cacheable). |
-| `cargo-cache` | `.cargo-cache` | Host dir for `CARGO_HOME`. |
-| `env-include` / `env-exclude` / `env` | cargo vars | Env forwarding into the container (see `lint-and-test-docker`). |
+| `target-dir` | `target` | Host dir for the cargo target, mounted read-write. |
+| `cargo-cache` | `.cargo-cache` | Host dir for `CARGO_HOME`, mounted read-write. |
+| `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
+| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
 
-The declared MSRV must be numeric (`1.95` or `1.95.0`); a non-numeric value is rejected before it can reach a docker tag.
+## Notes
+
+- The image is the full toolchain image (`image/Dockerfile` on `rust:<msrv>`: clippy, rustfmt, jq), built without the Actions cache under `image-tag` on every run; the check is `cargo check [-p <package>] --locked [<features>]` after `rustc --version`.
+- The declared or overridden version must be numeric (`1.95` or `1.95.0`); anything else is rejected before it can become a Docker tag.
+- `locked: "false"` copies the source under `RUNNER_TEMP` (skipping the top-level `target-dir`, `cargo-cache` and `.git` entries), materialises a self-contained `.git` there so a `build.rs` that reads `git describe` behaves as in the checkout, symlinks the cache and target dirs in, runs `cargo generate-lockfile` with a read-write mount of that copy, and checks the copy; the checkout is never written.
+- By default the check is networked (dependencies resolve fresh, no `cargo-fetch`); the rest of the seal (non-root, `--cap-drop=ALL`, `no-new-privileges`, source read-only) still applies.
+- `locked: "true"` with no committed `Cargo.lock` fails before the image is built.

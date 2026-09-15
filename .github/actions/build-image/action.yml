@@ -1,16 +1,13 @@
 name: Build image (local)
 description: >-
-  Build the rust-ci toolchain image from image/Dockerfile for a Rust version and
-  load it into the Docker daemon, so the Docker actions run against a local tag
-  with no registry. With cache:true the added layer (clippy/rustfmt/jq) is cached
-  via the GitHub Actions cache; the rust base is pulled from Docker Hub.
+  Build the rust-ci toolchain image from image/Dockerfile for a Rust version and load it into the Docker daemon, so the Docker actions run against a local tag with no registry.
+  With cache:true the added layer (clippy/rustfmt/jq) is cached via the GitHub Actions cache; the rust base is pulled from Docker Hub.
 
 inputs:
   rust-version:
     description: >-
-      Rust base version — the rust:<version> tag to build on. The literal `msrv`
-      resolves to the crate's declared `rust-version` from Cargo.toml (see
-      working-directory), so the image is built on the support floor.
+      Rust base version: the rust:<version> tag to build on.
+      The literal `msrv` resolves to the crate's declared `rust-version` from Cargo.toml under working-directory, so the image is built on the support floor.
     required: false
     default: latest
   tag:
@@ -23,15 +20,13 @@ inputs:
     default: "false"
   working-directory:
     description: >-
-      Directory whose Cargo.toml supplies the version when rust-version is `msrv`
-      (ignored for any other rust-version).
+      Directory whose Cargo.toml supplies the version when rust-version is `msrv` (ignored for any other rust-version).
     required: false
     default: "."
   targets:
     description: >-
-      Space-separated rustup targets to add to the image (e.g.
-      "wasm32-unknown-unknown"), so the sealed Docker actions can cross-check /
-      cross-compile against them. Empty (default) adds none.
+      Space-separated rustup targets to add to the image (e.g. "wasm32-unknown-unknown"), so the sealed Docker actions can cross-check or cross-compile against them.
+      Empty (default) adds none.
     required: false
     default: ""
 

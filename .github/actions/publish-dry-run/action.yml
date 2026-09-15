@@ -1,10 +1,6 @@
 name: Publish dry-run (Docker, sealed)
 description: >-
-  Release gate split into network-with-no-code then code-with-no-network: a networked
-  prep does the publish checks WITHOUT a build (cargo fetch warm-up + tag<->version
-  assert + not-already-published probe + cargo publish --dry-run --no-verify), then the
-  verify-BUILD runs SEALED (cargo package --offline under --network=none) so the
-  dependency build.rs / proc-macros it compiles and executes cannot reach the network.
+  Gate a crates.io release in two halves: a networked prep runs the publish checks without a build (cargo fetch warm-up, tag/version assert, not-already-published probe, cargo publish --dry-run --no-verify), then the verify-build runs sealed (cargo package --offline under --network=none) so the dependency build.rs and proc-macros it compiles cannot reach the network.
   Requires a committed Cargo.lock.
 
 inputs:
@@ -17,7 +13,7 @@ inputs:
     required: false
     default: "."
   target-dir:
-    description: Host dir for cargo target (read-write; also carries the prep→verify handoff).
+    description: Host dir for cargo target (read-write; also carries the prep-to-verify handoff).
     required: false
     default: target
   cargo-cache:
@@ -25,7 +21,7 @@ inputs:
     required: false
     default: .cargo-cache
   package:
-    description: Package name to check (required for a workspace with >1 publishable member).
+    description: Package name to check (required for a workspace with more than one member).
     required: false
     default: ""
   expected-version:
@@ -34,26 +30,24 @@ inputs:
     default: ""
   require-deps-published:
     description: >-
-      Gate the package's workspace path dependencies: each must already be
-      published on crates.io at the version the manifest requires, so a
-      multi-crate release fails early (and legibly) when tagged out of order.
+      Gate the package's workspace path dependencies: each must already be published on crates.io at the version the manifest requires, so a multi-crate release fails early when tagged out of order.
     required: false
     default: "false"
   git-token:
     description: >-
-      Token for cloning PRIVATE git dependencies during the prep fetch. Masked and
-      forwarded to the container's git as x-access-token; leave empty for public deps.
+      Token for cloning private git dependencies during the prep fetch.
+      Masked and forwarded to the container's git as x-access-token; leave empty for public deps.
     required: false
     default: ""
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward into the container (anchored).
+      Regex (POSIX ERE) of env-var names to forward into the container, anchored full-name.
       Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
       Widening env-include to ".*" forwards secrets like GITHUB_TOKEN; prefer a tight include.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compile the crate inside the MSRV image (its toolchain already IS the declared MSRV, so a
 # plain `cargo check` is the MSRV check). PACKAGE / FEATURES (each may be empty) shape the
-# command. The lockfile is resolved up front by the action — the source is mounted read-only
+# command. The lockfile is resolved up front by the action; the source is mounted read-only
 # here, so the check always runs --locked and only reads it. OFFLINE=true appends --offline
 # (assumes a prior cargo-fetch + the action's --network none). cargo runs in the mounted workdir.
 set -euo pipefail
