@@ -19,9 +19,11 @@
 #
 # Config is read from the environment (an action sets these before calling):
 #   IMAGE        (required) the CI image to run
-#   CARGO_CACHE  (required) host dir for CARGO_HOME (registry/git cache), mounted RW
+#   CARGO_CACHE  (required) host dir for CARGO_HOME (registry/git cache), mounted RW;
+#                relative to $PWD or absolute
 #   OFFLINE      "true" → --network=none (sealed); anything else → networked
-#   TARGET_DIR   if non-empty: mount it RW at /work/target + set CARGO_TARGET_DIR
+#   TARGET_DIR   if non-empty: mount it RW at /work/target + set CARGO_TARGET_DIR;
+#                relative to $PWD or absolute (rust-cache's local-target exports one)
 #   CICD_DIR     if non-empty: mount it RO at /cicd (so `bash /cicd/<script>` resolves)
 #   ENV_INCLUDE / ENV_EXCLUDE   POSIX-ERE name filters for env forwarding (exclusion wins)
 #   INPUT_ENV    extra literal KEY=VALUE lines (the action's `env` input), forwarded verbatim
@@ -31,6 +33,14 @@
 # The owner vars (CARGO_HOME / RUSTUP_HOME / CARGO_TARGET_DIR) are pinned as explicit
 # `-e` AFTER --env-file (last-wins), so no env-include/-exclude tinkering can redirect
 # the mounted cache or target.
+
+# A host directory input is relative to $PWD unless absolute.
+_seal_host_dir() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "$PWD" "$1" ;;
+  esac
+}
 
 # Private runner. The /work mount mode is its explicit first argument — exactly
 # "ro" or "rw", anything else is fatal — so the mode is fixed at each call site
@@ -46,15 +56,19 @@ _seal_run() {
       ;;
   esac
   : "${IMAGE:?seal_run: IMAGE required}" "${CARGO_CACHE:?seal_run: CARGO_CACHE required}"
-  mkdir -p "$CARGO_CACHE"
+  local cache_host
+  cache_host="$(_seal_host_dir "$CARGO_CACHE")"
+  mkdir -p "$cache_host"
 
   local net=""
   [ "${OFFLINE:-}" = "true" ] && net="--network=none"
 
   local target_args=()
   if [ -n "${TARGET_DIR:-}" ]; then
-    mkdir -p "$TARGET_DIR"
-    target_args=(-e CARGO_TARGET_DIR=/work/target -v "$PWD/$TARGET_DIR:/work/target")
+    local target_host
+    target_host="$(_seal_host_dir "$TARGET_DIR")"
+    mkdir -p "$target_host"
+    target_args=(-e CARGO_TARGET_DIR=/work/target -v "$target_host:/work/target")
   fi
 
   local cicd_args=()
@@ -84,7 +98,7 @@ _seal_run() {
     -e RUSTUP_HOME=/usr/local/rustup \
     "${target_args[@]}" \
     -v "$PWD:/work:$work_mount" \
-    -v "$PWD/$CARGO_CACHE:/cache/cargo" \
+    -v "$cache_host:/cache/cargo" \
     "${cicd_args[@]}" \
     -w /work \
     "$IMAGE" "$@" || rc=$?
@@ -108,23 +122,24 @@ seal_run_rw_lockresolve() {
 }
 
 # Translates a container path under the RW target mount back to its host
-# location, mirroring the mount expression above (`$PWD/$TARGET_DIR` ↔
-# /work/target) — this file owns the mount, so it owns the translation.
+# location, mirroring the mount expression above (the resolved TARGET_DIR ↔
+# /work/target); this file owns the mount, so it owns the translation.
 # Call it from the same $PWD as the `seal_run` that created the mount, and
 # call it directly (not in `$(...)`), so `::error::` annotations surface;
 # the result lands in HOST_PATH. Paths outside the target mount are
 # refused — nothing else the container sees is writable, so nothing else
 # can be a build output.
 seal_host_path() {
-  local p="$1"
+  local p="$1" target_host
   : "${TARGET_DIR:?seal_host_path: TARGET_DIR required}"
+  target_host="$(_seal_host_dir "$TARGET_DIR")"
   # shellcheck disable=SC2034  # out-var: read by callers after sourcing
   case "$p" in
     /work/target)
-      HOST_PATH="$PWD/$TARGET_DIR"
+      HOST_PATH="$target_host"
       ;;
     /work/target/*)
-      HOST_PATH="$PWD/$TARGET_DIR/${p#/work/target/}"
+      HOST_PATH="$target_host/${p#/work/target/}"
       ;;
     *)
       echo "::error::seal_host_path: '$p' is outside the target mount"
