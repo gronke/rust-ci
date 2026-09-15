@@ -12,7 +12,7 @@ fn env_passthrough_matches_expectation() {
         Ok("present") => assert_eq!(
             std::env::var("CICD_PROBE").as_deref(),
             Ok("forwarded"),
-            "CICD_EXPECT=present but CICD_PROBE did not arrive — env-include is broken",
+            "CICD_EXPECT=present but CICD_PROBE did not arrive: env-include is broken",
         ),
         Ok("absent") => assert!(
             std::env::var("CICD_PROBE").is_err(),

@@ -1,20 +1,15 @@
 name: Cargo build-script OUT_DIR
 description: >-
-  Build a package and expose its build script's OUT_DIR — the directory
-  where build.rs bakes generated assets. This action IS the build step that
-  produces what it resolves: it runs a JSON-messages `cargo build` and
-  selects the build-script-executed message whose package id equals
-  `cargo pkgid` exactly. Don't pair it as a resolver after a
-  differently-configured build — a different feature or profile set owns a
-  different fingerprint directory; give it the same `profile`/`args`
-  instead.
+  Build a package and expose its build script's OUT_DIR, the directory where build.rs writes generated files.
+  The action is the build step itself: it runs cargo build with JSON messages and resolves the directory from that run.
+  Give it the same profile and args as the build that consumes the output.
+  Needs jq on the runner.
 
 inputs:
   package:
     description: >-
-      Package whose build script to resolve (`cargo build -p`). Empty
-      resolves the workspace's sole or root package via `cargo pkgid` — a
-      larger workspace needs the name.
+      Package whose build script to resolve (`cargo build -p`).
+      Empty resolves the workspace's sole or root package via `cargo pkgid`; a larger workspace needs the name.
     required: false
     default: ""
   working-directory:

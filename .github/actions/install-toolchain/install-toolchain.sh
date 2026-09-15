@@ -15,15 +15,15 @@ if command -v rustup >/dev/null 2>&1; then
   rustup default "$TOOLCHAIN"
   # `command -v rustup` only proves rustup is on THIS step's PATH; a preinstalled
   # rustup that is not on the runner's persisted PATH would leave every later
-  # step with no cargo — a silent, total failure. Append it unconditionally, as
+  # step with no cargo, a silent, total failure. Append it unconditionally, as
   # the install branches below already do.
   echo "$cargo_bin" >> "$GITHUB_PATH"
   export PATH="$cargo_bin:$PATH"
 else
   case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*)
-      # Windows runners — notably windows-11-arm — can ship no Rust at all, and the Unix
-      # sh.rustup.rs installer doesn't apply here. Fetch the arch-appropriate rustup-init.exe.
+      # A Windows runner without rustup cannot use the Unix sh.rustup.rs installer.
+      # Fetch the arch-appropriate rustup-init.exe instead.
       # git-bash's `uname -m` can't be trusted under x64 emulation, so read the true machine arch
       # from Windows' own PROCESSOR_ARCHITE(W6432) variables.
       winarch="${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-$(uname -m)}}"

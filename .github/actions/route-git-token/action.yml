@@ -1,41 +1,30 @@
 name: Route git token
 description: >-
-  Route git fetches on the RUNNER through a short-lived token: an url.insteadOf rewrite that
-  authenticates https fetches with the token, plus CARGO_NET_GIT_FETCH_WITH_CLI=1 so cargo's
-  fetches go through the git CLI, which honors the rewrite (cargo's libgit2 path does not). This is
-  the unsealed sibling of `cargo-fetch`'s git-token input — for jobs that run plain `cargo build`
-  or `git clone` on the runner instead of inside the sealed container. The rewrite lives in
-  GIT_CONFIG_* environment entries exported via $GITHUB_ENV, NOT in a gitconfig file: it dies with
-  the job, which matters on self-hosted runners, and it appends to (never clobbers) entries a
-  previous invocation exported. The defaults speak GitHub, but any authenticated https git host
-  works — the username carries the host's convention (GitHub App tokens: x-access-token; GitLab
-  OAuth: oauth2; Bitbucket: x-token-auth; Gitea accepts the token under any username). Minting is
-  the caller's business (e.g. actions/create-github-app-token, whose post step revokes the token);
-  scope the token there — the rewrite is a transport detail, the token is the security boundary.
+  Route git fetches on the runner through a short-lived token.
+  Exports an url.insteadOf rewrite as GIT_CONFIG_* entries via GITHUB_ENV and sets CARGO_NET_GIT_FETCH_WITH_CLI so cargo's fetches honor it.
+  Use it for jobs that run plain cargo build or git clone on the runner; cargo-fetch's git-token input is the sealed equivalent.
+  Any authenticated https git host works.
 
 inputs:
   token:
     description: >-
-      Token the fetches authenticate with. Pass a secret carrying read access on the repositories
-      the job needs; the action masks it in logs either way.
+      Token the fetches authenticate with.
+      Pass a secret with read access on the repositories the job needs; the action masks it in logs.
     required: true
   host:
-    description: >-
-      Git host to route, optionally with a port (my.gitlab.example:8443). Default github.com.
+    description: Git host to route, optionally with a port (my.gitlab.example:8443).
     required: false
     default: "github.com"
   username:
     description: >-
-      Userinfo name the token is presented under — the host's convention, not a real user.
-      Default x-access-token (GitHub App installation tokens; GitHub PATs accept it too).
+      Userinfo name the token is presented under: the host's convention, not a real user.
+      x-access-token fits GitHub App installation tokens and PATs; GitLab OAuth uses oauth2, Bitbucket x-token-auth.
     required: false
     default: "x-access-token"
   path:
     description: >-
-      Restrict the rewrite to a namespace under the host (an owner, or a nested group like
-      my-group/sub-group). Empty routes every fetch on the host, matching `cargo-fetch`'s
-      in-container behavior. Restricting is about predictability, not security — a rewrite for a
-      repository the token cannot read fails exactly like no rewrite at all.
+      Restrict the rewrite to a namespace under the host (an owner, or a nested group like my-group/sub-group).
+      Empty routes every fetch on the host, matching cargo-fetch's in-container behavior.
     required: false
     default: ""
 

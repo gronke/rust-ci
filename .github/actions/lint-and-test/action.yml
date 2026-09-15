@@ -1,8 +1,8 @@
 name: Lint and test
 description: >-
-  Run cargo fmt --check, clippy (deny warnings), and cargo test for one feature
-  universe. Call it once per universe to build a default / all-features /
-  no-default-features matrix; enable `fmt` on a single leg to avoid repeating it.
+  Run cargo fmt --check, cargo clippy with -D warnings and cargo test for one feature set.
+  Clippy and test run with --workspace.
+  Call it once per feature set to build a default / all-features / no-default-features matrix, and enable fmt on a single leg only.
 
 inputs:
   working-directory:
@@ -11,12 +11,12 @@ inputs:
     default: "."
   features:
     description: >-
-      Feature flag applied to clippy and test (e.g. "--all-features" or
-      "--no-default-features"). Empty means the default feature set.
+      Feature flag applied to clippy and test (e.g. "--all-features" or "--no-default-features").
+      Empty means the default feature set.
     required: false
     default: ""
   fmt:
-    description: Run `cargo fmt --all -- --check` (universe-independent).
+    description: Run `cargo fmt --all -- --check` (independent of the feature set).
     required: false
     default: "true"
   clippy:

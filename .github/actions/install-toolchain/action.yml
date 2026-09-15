@@ -1,13 +1,12 @@
 name: Install Rust toolchain
 description: >-
-  Install Rust via rustup (toolchain, components, targets) and put
-  ~/.cargo/bin on PATH. Works on Linux, macOS and Windows — including
-  windows-11-arm, which ships no preinstalled Rust. Avoids third-party
-  toolchain actions so behaviour does not drift with the runner image.
+  Install a Rust toolchain via rustup and put cargo's bin directory on PATH for later steps.
+  Installs the toolchain, then the requested components and targets.
+  Works on Linux, macOS and Windows, and bootstraps rustup on a runner without it.
 
 inputs:
   toolchain:
-    description: Toolchain passed to rustup (e.g. stable, 1.77.2).
+    description: Toolchain passed to rustup (e.g. stable, 1.77.2). It becomes the default toolchain.
     required: false
     default: stable
   components:

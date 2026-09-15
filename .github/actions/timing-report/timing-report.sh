@@ -23,10 +23,8 @@ if [ -f "$dir/sampler.pid" ]; then
   rm -f "$dir/sampler.pid"
 fi
 
-# Stage boundaries, written to marks.tsv as `epoch_ms <TAB> name`, ascending.
-# When a workflow places no manual marks, GitHub's own per-step timings are the
-# source: no timing-mark steps are needed and even pre-step stages such as
-# "Initialize containers" that in-job marks cannot see are captured. Emits the
+# Stage boundaries from the Actions API, in marks.tsv form (`epoch_ms <TAB>
+# name`, ascending), for a workflow that places no manual marks. Emits the
 # current job's completed steps plus a closing "__report" sentinel at the last
 # step's end. Prints nothing (and returns non-zero) whenever the token, jq/curl,
 # or the API response is unavailable, so the caller falls back to any marks.
@@ -69,10 +67,9 @@ marks_from_api() {
 }
 
 if [ -s "$dir/marks.tsv" ]; then
-  # Manual marks win. A workflow that still calls timing-mark instrumented its
-  # stages on purpose, so honor them rather than overriding with raw step names;
-  # dropping the marks is what opts a workflow into the API-derived stages below.
-  # The last mark has no end until this sentinel closes it; the table drops it.
+  # Manual marks win; dropping them opts a workflow into the API-derived stages
+  # below. The last mark has no end until this sentinel closes it; the table
+  # drops it.
   timing_mark "__report"
 elif marks_from_api > "$dir/marks.api.tsv" 2>/dev/null && [ -s "$dir/marks.api.tsv" ]; then
   # No manual marks: derive the stages from the Actions API. Its output already
@@ -261,11 +258,8 @@ fmt_ms() {
   fi
 } > "$dir/report.md"
 
-# Rendered to a file first, then appended. $GITHUB_STEP_SUMMARY is a SEPARATE
-# file per step: the runner concatenates each step's file into the job summary,
-# so a later step that opens it sees an empty one. Keeping the report on disk is
-# what lets a consumer assert on it, diff two runs, or upload it as an artifact,
-# none of which the step summary can support.
+# Rendered to a file first, then appended: $GITHUB_STEP_SUMMARY is a separate
+# file per step, so a later step cannot read it back; report.md can be.
 cat "$dir/report.md" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
 slowest="$(head -1 "${stats}.sorted" 2>/dev/null || sort -t"$(printf '\t')" -k2,2nr "$stats" | head -1)"

@@ -1,6 +1,6 @@
 //! Trivial fixture crate exercised by cicd-rust's self-test workflow.
 //!
-//! It exists only to give the actions a real, green crate to run against — and,
+//! It exists only to give the actions a real, green crate to run against and,
 //! via its one dependency, to prove that a sealed `--network none` build can
 //! compile a fetched dependency entirely offline.
 
