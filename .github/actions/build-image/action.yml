@@ -50,6 +50,9 @@ runs:
       uses: actions/github-script@v9
       with:
         script: |
+          // The token can write this run's artifacts and caches; mask it before it
+          // becomes job environment.
+          if (process.env.ACTIONS_RUNTIME_TOKEN) core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
           for (const k of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL']) {
             if (process.env[k]) core.exportVariable(k, process.env[k]);
           }

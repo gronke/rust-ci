@@ -47,7 +47,7 @@ runs:
     # and caches, so putting it into the job env is a deliberate opt-in.
     - name: Expose the cache-service runtime for the gha backend
       if: inputs.mode == 'gha'
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       with:
         script: |
           const token = process.env.ACTIONS_RUNTIME_TOKEN
