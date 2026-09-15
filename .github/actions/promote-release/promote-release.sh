@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Promote a candidate from within the pipeline, or defer to the release
-# manager — governed by sign-tags. Inputs arrive as env vars from action.yml;
+# manager, as sign-tags selects. Inputs arrive as env vars from action.yml;
 # git and gh run in the step's working-directory.
 #   INPUT_VERSION        the version being released (no leading "v")
 #   INPUT_MARKER_TAG     the candidate marker this build created
@@ -29,7 +29,7 @@ write_outputs() {
 # The explicit input wins; otherwise the repository's own enforcement decides:
 # an active signature rule covering the final tag means manual (a rule scoped
 # to v*-sig companions does not), none means off, and unreadable rulesets mean
-# manual — never push an unsigned tag on a repository whose policy is unknown.
+# manual; never push an unsigned tag on a repository whose policy is unknown.
 MODE="${INPUT_SIGN_TAGS:-}"
 if [ -z "$MODE" ]; then
   signature_rule_covers_ref "refs/tags/${TAG}"
@@ -54,9 +54,9 @@ case "$MODE" in
 esac
 
 if [ "$MODE" = "manual" ]; then
-  echo "sign-tags: manual — the release manager signs and pushes ${TAG}; the guidance above has the commands"
+  echo "sign-tags: manual. The release manager signs and pushes ${TAG}; the guidance above has the commands"
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-    echo "**sign-tags: manual** — the release manager signs and pushes \`${TAG}\`; the guidance above has the commands." >>"$GITHUB_STEP_SUMMARY"
+    echo "**sign-tags: manual**: the release manager signs and pushes \`${TAG}\`; the guidance above has the commands." >>"$GITHUB_STEP_SUMMARY"
   fi
   write_outputs "false" "manual"
   exit 0
@@ -65,12 +65,12 @@ fi
 # --- off: the pipeline promotes ------------------------------------------------
 # An explicit sign-tags: off must not collide with the repository's own policy:
 # an unsigned ${TAG} that an active signature rule covers would be rejected at
-# push time — or slip through a bypass and fail the gate after the release is
+# push time, or slip through a bypass and fail the gate after the release is
 # live. The contradiction errors here, before anything is created.
 signature_rule_covers_ref "refs/tags/${TAG}"
 case "$SIGNATURE_RULE_VERDICT" in
   true)
-    echo "::error::sign-tags: off, but an active tag ruleset requires signatures on ${TAG} — retarget the rule (e.g. to v*-sig companions) or use sign-tags: manual"
+    echo "::error::sign-tags: off, but an active tag ruleset requires signatures on ${TAG}; retarget the rule (e.g. to v*-sig companions) or use sign-tags: manual"
     exit 1
     ;;
   false) ;;
@@ -85,7 +85,7 @@ git config user.email "$INPUT_GIT_USER_EMAIL"
 # --- the moving major, decided first ---------------------------------------------
 # Read-only, before anything is pushed: nothing about the decision can fail a
 # promotion that is already live. The major advances only when the promoted
-# version is the highest stable in its line — promoting a backport publishes
+# version is the highest stable in its line; promoting a backport publishes
 # the release and leaves the major alone. The target is the very commit this
 # run promotes, so no separate provenance check applies.
 MOVE_MAJOR="false" MAJOR=""
@@ -99,14 +99,14 @@ if [ "${INPUT_MOVING_MAJOR:-false}" = "true" ]; then
       if [ "$MAJOR_HIGHEST" = "v${VERSION}" ]; then
         MOVE_MAJOR="true"
       else
-        echo "::notice::${MAJOR_HIGHEST} is newer than v${VERSION}; ${MAJOR} stays — a backport publishes without advancing the major"
+        echo "::notice::${MAJOR_HIGHEST} is newer than v${VERSION}; ${MAJOR} stays (a backport publishes without advancing the major)"
       fi
       ;;
   esac
 fi
 
 # Idempotent re-run: a completed promotion's tag already points at this very
-# commit — skip the push and proceed to the flip and the major, which are
+# commit; skip the push and proceed to the flip and the major, which are
 # idempotent themselves. The same version on a different commit is a conflict,
 # named as such.
 EXISTING="$(git ls-remote origin "refs/tags/${TAG}" | head -1 | cut -f1)"
@@ -114,7 +114,7 @@ if [ -n "$EXISTING" ]; then
   git fetch --quiet origin "refs/tags/${TAG}:refs/tags/${TAG}" --no-tags --force
   EXISTING_COMMIT="$(git rev-list -n1 "refs/tags/${TAG}")"
   if [ "$EXISTING_COMMIT" != "$GITHUB_SHA" ]; then
-    echo "::error::${TAG} already exists on ${EXISTING_COMMIT}, not ${GITHUB_SHA} — a different promotion owns this version"
+    echo "::error::${TAG} already exists on ${EXISTING_COMMIT}, not ${GITHUB_SHA}; a different promotion owns this version"
     exit 1
   fi
   echo "::notice::${TAG} already exists on ${GITHUB_SHA}; skipping the tag push (idempotent re-run)"
@@ -128,7 +128,7 @@ else
   fi
   git tag -a -F "$MESSAGE_FILE" "$TAG" "$GITHUB_SHA"
   git push origin "refs/tags/${TAG}" || {
-    echo "::error::the ${TAG} push was rejected (GH013) — with sign-tags off the tag ruleset must let Actions create final v* tags, or switch to sign-tags: manual and let the release manager sign"
+    echo "::error::the ${TAG} push was rejected (GH013); with sign-tags off the tag ruleset must let Actions create final v* tags, or switch to sign-tags: manual and let the release manager sign"
     exit 1
   }
   echo "✓ ${TAG} promoted on ${GITHUB_SHA} with the marker's message"

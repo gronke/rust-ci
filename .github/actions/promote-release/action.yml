@@ -1,16 +1,8 @@
 name: Promote release
 description: >-
-  Promote a candidate from within the pipeline, or defer to the release
-  manager — governed by `sign-tags`. With `manual` (the mode a repository's
-  active signature-requiring tag ruleset implies when nothing is configured)
-  the step is a no-op beside the guidance summary: a human signs and pushes
-  the final tag. With `off` the pipeline creates the annotated final tag on
-  the built commit — carrying the newest marker's message — pushes it,
-  publishes the draft, and optionally advances the moving major, all in one
-  job: a workflow-token tag push triggers no second run. An unsigned
-  promotion binds the release's provenance to whoever holds the token; the
-  repository ruleset files under `.github/rulesets/` set up the signed
-  alternative.
+  Promote a candidate from within the pipeline, or defer to the release manager, as `sign-tags` selects.
+  With `manual` the step is a no-op beside the guidance summary and a human signs and pushes the final tag.
+  With `off` the pipeline creates the annotated final tag carrying the newest marker's message, pushes it, publishes the draft, and optionally advances the moving major.
 
 inputs:
   version:
@@ -21,17 +13,14 @@ inputs:
     required: true
   sign-tags:
     description: >-
-      "manual" defers to the release manager; "off" promotes from the
-      pipeline. Empty auto-detects: an active signature-requiring tag ruleset
-      means manual, none means off, unreadable rulesets mean manual (never
-      push an unsigned tag on a repository whose policy is unknown).
+      "manual" defers to the release manager; "off" promotes from the pipeline.
+      Empty auto-detects: an active signature-requiring tag ruleset means manual, none means off, unreadable rulesets mean manual.
     required: false
     default: ""
   moving-major:
     description: >-
-      Advance the moving v<MAJOR> tag after an `off`-mode promotion;
-      prereleases skip, and a backport (a higher stable exists in the line)
-      publishes without advancing it.
+      Advance the moving v<MAJOR> tag after an `off`-mode promotion.
+      Prereleases skip, and a backport (a higher stable exists in the line) publishes without advancing it.
     required: false
     default: "false"
   token:

@@ -9,7 +9,7 @@
 # signature-enforced. It is "unknown" whenever the policy cannot be
 # established: the ruleset listing or a ruleset's detail is unreadable, or a
 # condition pattern is one this probe cannot faithfully evaluate. Callers treat
-# unknown as the conservative case — a signature rule that might cover the ref
+# unknown as the conservative case: a signature rule that might cover the ref
 # must never read as absent.
 #
 # Call it directly, never in `$(...)`: a subshell would discard the ruleset
@@ -45,7 +45,7 @@ _load_tag_rulesets() {
 }
 
 # GitHub matches ruleset conditions with fnmatch; shell globs agree for the
-# plain patterns this flow uses — literals, `*`, `?`, and simple `[...]`
+# plain patterns this flow uses: literals, `*`, `?`, and simple `[...]`
 # classes. Anything else (an escape, a negated class, an unterminated class)
 # is a pattern this probe cannot claim to evaluate, and its ruleset resolves
 # to unknown rather than "does not match".
@@ -99,7 +99,7 @@ signature_rule_covers_ref() {
     done < <(printf '%s' "$doc" | jq -r '.conditions.ref_name.exclude[]?')
     [ -n "$excluded" ] && continue
 
-    # Included and not excluded — unless an unevaluable exclusion could lift it.
+    # Included and not excluded, unless an unevaluable exclusion could lift it.
     if [ -n "$unsure" ]; then
       verdict="unknown"
       continue

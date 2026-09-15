@@ -13,7 +13,7 @@ set -euo pipefail
 
 # --- the declared version -----------------------------------------------------
 # The ladder: the explicit input, else Cargo.toml, else the changelog's newest
-# released section — the manifest equivalent of a repository without a crate.
+# released section, the manifest equivalent of a repository without a crate.
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
 source "$GITHUB_ACTION_PATH/../_lib/changelog-version.sh"
 NAME="" VERSION="" PUBLISHABLE="false"
@@ -28,7 +28,7 @@ else
   resolve_changelog_version "${INPUT_CHANGELOG:-CHANGELOG.md}"
   VERSION="$CHANGELOG_LATEST"
   if [ -z "$VERSION" ]; then
-    echo "::error::no Cargo.toml, no version input, and no released changelog section — nothing declares a version"
+    echo "::error::no Cargo.toml, no version input, and no released changelog section; nothing declares a version"
     exit 1
   fi
   echo "declared version (the changelog's newest released section): $VERSION"

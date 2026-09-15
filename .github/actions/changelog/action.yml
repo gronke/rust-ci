@@ -1,18 +1,7 @@
 name: Changelog
 description: >-
-  Keep a "Keep a Changelog" CHANGELOG.md coherent with the crate's declared
-  version. `check` gates a pull request: entries under [Unreleased] require the
-  crate version to exceed the last released baseline by SemVer precedence
-  (1.0.0-rc1 < 1.0.0), a breaking entry requires more than a patch bump, and a
-  pre-release version tolerates only stabilization content — feature entries
-  (### Added, ### Removed, **Breaking) reset the version to the next regular
-  release. `cut` turns [Unreleased] into the released section for the crate's
-  version, rewrites the compare link, and exports CHANGELOG_VERSION into the
-  job environment. `notes` renders a released section for a git tag message or a
-  GitHub release body: `format: plain` (default) strips inline Markdown for a
-  plain-text tag message, `format: markdown` keeps the section as authored for the
-  release body — where inline code stops @tokens (e.g. `@import`, `@v0`)
-  autolinking as bogus @mentions; a `title` subject line optionally leads plain.
+  Keep a "Keep a Changelog" CHANGELOG.md coherent with the crate's declared version.
+  `check` gates a pull request on the version bump rule, `cut` turns [Unreleased] into the released section and exports CHANGELOG_VERSION, and `notes` renders a released section as plain text or Markdown for a tag message or release body.
 
 inputs:
   mode:
@@ -32,10 +21,8 @@ inputs:
     default: "CHANGELOG.md"
   version:
     description: >-
-      The version, overriding Cargo.toml resolution in every mode — for notes
-      the section to render, for check the version the bump rule tests, for
-      cut the released section's number. Required alternative for a repository
-      without a crate (check falls back to section/tag coherence without it).
+      The version, overriding Cargo.toml resolution in every mode: for notes the section to render, for check the version the bump rule tests, for cut the released section's number.
+      Required for cut on a repository without a crate (check falls back to section/tag coherence without it).
     required: false
     default: ""
   out:
@@ -55,10 +42,8 @@ inputs:
     default: "plain"
   baseline-version:
     description: >-
-      check: the last released version the crate must exceed while [Unreleased]
-      carries entries. Defaults to the greatest release tag in the checkout by
-      SemVer precedence, vX.Y.Z-prerelease tags included (fetch tags for that —
-      e.g. actions/checkout with fetch-depth 0), or 0.0.0 when there is none.
+      check: the last released version the crate must exceed while [Unreleased] carries entries.
+      Defaults to the greatest release tag in the checkout by SemVer precedence (fetch tags for that, e.g. actions/checkout with fetch-depth 0), or 0.0.0 when there is none.
     required: false
     default: ""
   date:

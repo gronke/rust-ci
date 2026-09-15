@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared resolver for the version a changelog declares — the manifest
+# Shared resolver for the version a changelog declares, the manifest
 # equivalent of a repository without a Cargo.toml. Source it, then call:
 #
 #   resolve_changelog_version <changelog-path>   # sets CHANGELOG_LATEST

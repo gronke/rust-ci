@@ -20,11 +20,11 @@ set -euo pipefail
 source "$GITHUB_ACTION_PATH/../_lib/crate-version.sh"
 
 # The version: the explicit input, else Cargo.toml. A repository without a
-# crate has nothing to resolve — the input is the only source.
+# crate has nothing to resolve; the input is the only source.
 VERSION="${INPUT_VERSION:-}"
 if [ -z "$VERSION" ]; then
   if [ ! -f Cargo.toml ]; then
-    echo "::error::no Cargo.toml here and no version input — a non-crate repository must name the version to cut"
+    echo "::error::no Cargo.toml here and no version input; a non-crate repository must name the version to cut"
     exit 1
   fi
   resolve_crate "${INPUT_PACKAGE:-}"
@@ -89,7 +89,7 @@ if [ "${INPUT_DRY_RUN:-false}" = "true" ]; then
   exit 0
 fi
 
-# The default identity is the github-actions bot's canonical pair — 41898282
+# The default identity is the github-actions bot's canonical pair; 41898282
 # is that account's user id, so GitHub attributes the commit to the bot. A
 # machine-user or App identity (with a matching token) makes the merge-back
 # pull request trigger CI, which events from the workflow token do not.

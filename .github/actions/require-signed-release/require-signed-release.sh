@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Answer whether a release commit carries a human signature — the gate for
+# Answer whether a release commit carries a human signature, the gate for
 # registry publication. Unsigned is an answer, not an error: the workflow
 # feeds `signed` into cargo-publish's `publish` input, so an unsigned release
 # rehearses (--dry-run) instead of uploading. Inputs arrive as env vars from
@@ -11,7 +11,7 @@
 #   INPUT_ATTESTATION_TAGS         glob another tag must match to count (default *)
 #   INPUT_ACCEPT_RELEASE_TAG       "true": a verified-signed release tag satisfies
 #   INPUT_ACCEPT_ATTESTATION_TAG   "true": a verified-signed tag on the same commit satisfies
-#   INPUT_ACCEPT_SIGNED_COMMIT     "false": opt-in — a verified commit signature satisfies
+#   INPUT_ACCEPT_SIGNED_COMMIT     "false": opt-in; a verified commit signature satisfies
 #   INPUT_ACCEPT_WEB_FLOW          "false": GitHub's web-flow (UI merge) signature does not count
 set -euo pipefail
 
@@ -65,7 +65,7 @@ all_tag_refs() {
 }
 
 # Only published releases are reachable by tag name; a draft reserves nothing.
-release_state() { # <tag> — prints "published" | "draft" | "none"
+release_state() { # <tag>; prints "published" | "draft" | "none"
   if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$1" >/dev/null 2>&1; then
     printf 'published'
   elif [ "$(gh release view "$1" --json isDraft --jq .isDraft 2>/dev/null || true)" = "true" ]; then
@@ -108,9 +108,9 @@ if [ -n "$ATTESTATION_TAG" ]; then
     1) TAG="${published[0]}" ;;
     0)
       if [ "${#drafted[@]}" -gt 0 ]; then
-        echo "::error::the release for ${drafted[*]} on ${COMMIT} is still a draft — publish it first; a signature completes automation, it does not publish drafts"
+        echo "::error::the release for ${drafted[*]} on ${COMMIT} is still a draft; publish it first (a signature completes automation, it does not publish drafts)"
       else
-        echo "::error::${ATTESTATION_TAG} seals ${COMMIT}, which carries no published release — nothing to attest"
+        echo "::error::${ATTESTATION_TAG} seals ${COMMIT}, which carries no published release; nothing to attest"
       fi
       exit 1
       ;;
@@ -137,7 +137,7 @@ if [ "${INPUT_REQUIRE_PUBLISHED:-false}" = "true" ]; then
   case "$(release_state "$TAG")" in
     published) ;;
     draft)
-      echo "::error::the ${TAG} release is still a draft — publish it first"
+      echo "::error::the ${TAG} release is still a draft; publish it first"
       exit 1
       ;;
     *)
@@ -177,7 +177,7 @@ fi
 
 # --- 3 (opt-in): the commit's own signature ------------------------------------------
 # GitHub signs UI-made rebase/squash merges with its own web-flow key, which
-# would satisfy this check on virtually every UI-merged commit — so web-flow
+# would satisfy this check on virtually every UI-merged commit, so web-flow
 # does not count unless explicitly accepted.
 if [ "${INPUT_ACCEPT_SIGNED_COMMIT:-false}" = "true" ]; then
   C="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${COMMIT}" 2>/dev/null || true)"
@@ -185,7 +185,7 @@ if [ "${INPUT_ACCEPT_SIGNED_COMMIT:-false}" = "true" ]; then
   C_COMMITTER="$(jq -r '.committer.login // ""' <<<"$C")"
   if [ "$C_VERIFIED" = "true" ]; then
     if [ "$C_COMMITTER" = "web-flow" ] && [ "${INPUT_ACCEPT_WEB_FLOW:-false}" != "true" ]; then
-      echo "::notice::${COMMIT} is signed by GitHub's web-flow key (a UI merge); not counted — set accept-web-flow to accept it"
+      echo "::notice::${COMMIT} is signed by GitHub's web-flow key (a UI merge), not counted; set accept-web-flow to accept it"
     else
       echo "✓ commit ${COMMIT} carries a verified signature"
       write_outputs true commit "" "$COMMIT" "$TAG"
@@ -194,7 +194,7 @@ if [ "${INPUT_ACCEPT_SIGNED_COMMIT:-false}" = "true" ]; then
   fi
 fi
 
-echo "::notice::no verified signature for ${TAG} on ${COMMIT} — sign the release tag, push a signed tag on that commit, or (opt-in) sign the commit; until then the registry step rehearses instead of uploading"
+echo "::notice::no verified signature for ${TAG} on ${COMMIT}. Sign the release tag, push a signed tag on that commit, or (opt-in) sign the commit; until then the registry step rehearses instead of uploading"
 
 # Opt-in: put the way forward where the release manager is already
 # looking, with the companion's name derived from the attestation glob.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared SemVer precedence for the release actions, so pre-release versions
-# order the way cargo and the spec order them (1.0.0-rc1 < 1.0.0 — the
+# order the way cargo and the spec order them (1.0.0-rc1 < 1.0.0, the
 # opposite of `sort -V`). Source it, then call:
 #
 #   semver_valid <version>       # 0 when the grammar is accepted
@@ -14,7 +14,7 @@
 # compare numerically when both are numeric, byte-lexically otherwise, and a
 # numeric identifier orders below an alphanumeric one; a shorter identifier
 # list orders below a longer one sharing its prefix. Note the spec's lexical
-# rule means `rc9 > rc10` — number your candidates `-rc.9`, `-rc.10` (numeric
+# rule means `rc9 > rc10`; number your candidates `-rc.9`, `-rc.10` (numeric
 # identifiers) when double digits are in reach.
 #
 # `semver_gt` returns 2 (with an `::error::` on stdout) for a version outside

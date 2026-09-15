@@ -1,22 +1,8 @@
 name: Require signed release
 description: >-
-  Answer whether a release commit carries a human signature — the gate for
-  registry publication. Three sources, checked in order: the release tag
-  itself is annotated and GitHub-verified (the signed flow); another
-  verified-signed tag points at the same commit (the attestation companion,
-  e.g. vX.Y.Z-sig — the name is the repository's choice, narrowed by
-  `attestation-tags`); or, opt-in, the commit itself carries a verified
-  signature. Unsigned is an answer, not a failure: feed `signed` into
-  cargo-publish's `publish` input and an unsigned release rehearses
-  (--dry-run) instead of uploading — pushing a signed tag on the release
-  commit later completes the publication, retroactive attestations included.
-
-  The commit source defaults off because GitHub signs UI-made rebase and
-  squash merges with its own web-flow key — on UI-merged repositories that
-  would satisfy the check for virtually every commit; even when enabled,
-  web-flow signatures only count with `accept-web-flow`.
-
-  Reads everything through the API — no checkout needed.
+  Answer whether a release commit carries a verified human signature, as the gate for registry publication.
+  Three sources are checked in order: a verified-signed release tag, another verified-signed tag on the same commit (an attestation companion such as vX.Y.Z-sig), or, opt-in, the commit's own verified signature.
+  Unsigned is an answer, not a failure: feed `signed` into cargo-publish's `publish` input.
 
 inputs:
   version:
@@ -29,39 +15,26 @@ inputs:
     default: ""
   attestation-tag:
     description: >-
-      A pushed companion (e.g. `github.ref_name` on a `v*-sig` trigger)
-      whose release is derived from it: the tag it seals is looked up by
-      commit, and the published release on that same commit is the one gated.
-      Which suffix or prefix a repository attests with stays its own business,
-      and the derivation refuses rather than guesses when a commit carries no
-      published release or more than one. Sets `release-tag` and `version`,
-      so a signature-triggered job needs no string surgery of its own.
+      A pushed companion (e.g. `github.ref_name` on a `v*-sig` trigger): the published release on the commit it seals is the one gated, and `release-tag` and `version` are derived from it.
+      A commit carrying no published release, or more than one, is refused.
     required: false
     default: ""
   require-published:
     description: >-
-      "true": a release that is still a draft, or absent, is an error rather
-      than an unsigned answer — for jobs that complete a published release's
-      automation and must never act on a draft.
+      "true": a release that is still a draft, or absent, is an error rather than an unsigned answer.
+      For jobs that complete a published release's automation and must never act on a draft.
     required: false
     default: "false"
   unsigned-guidance:
     description: >-
-      "true": an unsigned verdict also writes the way forward into the step
-      summary — the exact commands that create and push the signed companion
-      on the release commit, its name derived from `attestation-tags`
-      (v*-sig suggests vX.Y.Z-sig; the default glob suggests <tag>-sig).
-      Off by default for pipelines that print their own guidance.
+      "true": an unsigned verdict also writes the commands that create and push the signed companion on the release commit into the step summary.
+      The companion's name derives from `attestation-tags` (v*-sig suggests vX.Y.Z-sig; the default glob suggests <tag>-sig).
     required: false
     default: "false"
   attestation-tags:
     description: >-
       Glob another tag must match to count as an attestation (e.g. v*-sig).
-      The default counts any verified-signed tag on the release commit: such a
-      signature is a human statement about that content whatever the tag is
-      named, and demanding a name would reject a valid one. Name the shape
-      where the statement should be deliberate rather than incidental — it
-      also keeps the per-candidate API reads few on tag-heavy repositories.
+      The default counts any verified-signed tag on the release commit; a narrower glob also keeps the API reads few on tag-heavy repositories.
     required: false
     default: "*"
   accept-release-tag:
@@ -74,8 +47,8 @@ inputs:
     default: "true"
   accept-signed-commit:
     description: >-
-      "true": a verified signature on the release commit itself satisfies the
-      gate. Off by default — see the web-flow caveat above.
+      "true": a verified signature on the release commit itself satisfies the gate.
+      Off by default, because GitHub signs UI-made rebase and squash merges with its own web-flow key.
     required: false
     default: "false"
   accept-web-flow:
@@ -101,7 +74,7 @@ outputs:
     description: The commit the release tag points at.
     value: ${{ steps.gate.outputs.commit }}
   release-tag:
-    description: The release tag that was gated — derived from `attestation-tag` when given.
+    description: The release tag that was gated; derived from `attestation-tag` when given.
     value: ${{ steps.gate.outputs.release-tag }}
   version:
     description: That tag without its leading "v".

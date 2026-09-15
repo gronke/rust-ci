@@ -1,16 +1,8 @@
 name: Require signed tag
 description: >-
-  Gate a release pipeline on a verified signed tag: the ref must be an
-  annotated tag object whose signature GitHub verifies (a signature from a
-  key the pushing account has not registered fails). Lightweight tags are
-  refused. The check reads GitHub's own verification through the API, so it
-  needs no keyring on the runner. Requiring signatures is the workflow's
-  preference, opted into by including this step — the gate refuses builds,
-  it cannot prevent an unsigned tag from existing; only a repository tag
-  ruleset enforces that, so the action warns when the preference is not
-  backed by an active tag ruleset with required signatures. `warn-only`
-  turns refusals into warnings for consumers who want the signal without
-  the gate.
+  Gate a release pipeline on a verified signed tag: the ref must be an annotated tag object whose signature GitHub verifies, read through the API with no keyring on the runner.
+  Lightweight and unverified tags are refused, or warned about with `warn-only`.
+  The action warns when no active tag ruleset with required signatures backs the workflow's preference.
 
 inputs:
   tag:
@@ -23,9 +15,8 @@ inputs:
     default: "false"
   check-ruleset:
     description: >-
-      When enforcing, warn if no active tag ruleset requires signatures — the
-      workflow preference without the repository rule is advisory. Skipped
-      quietly when the token cannot read the rulesets.
+      When enforcing, warn if no active tag ruleset requires signatures on the tag.
+      Skipped quietly when the token cannot read the rulesets.
     required: false
     default: "true"
   token:

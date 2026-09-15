@@ -1,12 +1,7 @@
 name: Check release readiness
 description: >-
-  Verify a cargo crate is ready to release: the git tag matches the crate
-  version, and (for publishable crates) `cargo publish --dry-run` succeeds and
-  the version is not already on crates.io. Crates with `publish = false` are
-  validated for tag/version coherence only, so the action is equally useful for
-  internal crates. A repository without a Cargo.toml declares its version
-  through the `version` input — or, absent both, through its changelog's
-  newest released section — and is validated for tag/version coherence only.
+  Verify a cargo crate is ready to release: the git tag matches the declared version, and for a publishable crate `cargo publish --dry-run` succeeds and the version is not already on crates.io.
+  Crates with `publish = false` and repositories without a Cargo.toml are checked for tag/version coherence only.
 
 inputs:
   package:
@@ -15,8 +10,8 @@ inputs:
     default: ""
   version:
     description: >-
-      The declared version, overriding Cargo.toml resolution — for a repository
-      without a crate. Skips the crates.io checks (nothing is publishable).
+      The declared version, overriding Cargo.toml resolution, for a repository without a crate.
+      Skips the crates.io checks (nothing is publishable).
     required: false
     default: ""
   working-directory:
@@ -25,9 +20,8 @@ inputs:
     default: "."
   expected-version:
     description: >-
-      Version the crate must declare. Defaults to the pushed tag when the ref is
-      refs/tags/v* (the leading "v" is stripped). Empty plus a non-tag ref skips
-      the coherence check.
+      Version the crate must declare; defaults to the pushed tag when the ref is refs/tags/v* (the leading "v" is stripped).
+      Empty plus a non-tag ref skips the coherence check.
     required: false
     default: ""
   changelog:
@@ -38,9 +32,8 @@ inputs:
     default: "CHANGELOG.md"
   verify:
     description: >-
-      "false" packages with `--no-verify`, skipping the verify build the test
-      suite already performed — the gate still checks packaging, tag/version
-      coherence and that the version is not on crates.io.
+      "false" packages with `--no-verify`, skipping the verify build the test suite already performed.
+      The gate still checks packaging, tag/version coherence and that the version is not on crates.io.
     required: false
     default: "true"
   run-tests:

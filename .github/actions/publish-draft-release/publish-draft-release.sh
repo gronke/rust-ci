@@ -15,12 +15,12 @@ VERSION="$INPUT_VERSION"
 TAG_SHA="${INPUT_TAG_SHA:-$GITHUB_SHA}"
 
 # --- the seal ------------------------------------------------------------------
-# The newest candidate is the highest rcN, from one refs listing — probing
+# The newest candidate is the highest rcN, from one refs listing; probing
 # rc1, rc2, … would stop at a numbering gap and seal against an older marker.
 n="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
   | sed -n 's|.*-rc\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)"
 [ -n "$n" ] || {
-  echo "::error::no candidate marker for v${VERSION} — the pipeline publishes only reviewed candidates (cut a release branch first)"
+  echo "::error::no candidate marker for v${VERSION}; the pipeline publishes only reviewed candidates (cut a release branch first)"
   exit 1
 }
 MARKER="v${VERSION}-rc${n}"
@@ -28,7 +28,7 @@ marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MARKER}" --jq
 marker_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${marker_commit}" --jq '.object.sha' 2>/dev/null || printf '%s' "$marker_commit")"
 # The seal is the content, not the commit: a rebase-merged merge-back rewrites
 # the SHA but carries the identical tree, and that tip is a valid tag target.
-# Trees resolve through the API — no history needed.
+# Trees resolve through the API; no history needed.
 tag_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG_SHA}" --jq '.commit.tree.sha')"
 marker_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${marker_commit}" --jq '.commit.tree.sha')"
 if [ "$tag_tree" != "$marker_tree" ]; then
@@ -48,7 +48,7 @@ fi
 
 # --- the moving major: resolve and validate -------------------------------------
 # Read-only, and BEFORE the flip: a refused move must fail the job while the
-# release is still a draft — with immutable releases a flipped release is
+# release is still a draft: with immutable releases a flipped release is
 # final, so a red run after the flip could not take it back.
 MAJOR="" MAJOR_HIGHEST="" MAJOR_TARGET=""
 if [ "$INPUT_MOVING_MAJOR" = "true" ]; then
@@ -58,7 +58,7 @@ if [ "$INPUT_MOVING_MAJOR" = "true" ]; then
     ;;
   *)
     MAJOR="v${VERSION%%.*}"
-    # The highest STABLE tag in this line — publishing an older patch (e.g. a
+    # The highest STABLE tag in this line: publishing an older patch (e.g. a
     # backport) must not rewind the major.
     git fetch --tags --force --quiet origin
     MAJOR_HIGHEST="$(git tag --list "${MAJOR}.*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)" || true
