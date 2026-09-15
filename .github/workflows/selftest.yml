@@ -1069,8 +1069,10 @@ jobs:
           image: rust-ci:selftest
           working-directory: fixtures/sample-crate
           offline: "false"
-          cargo-cache: .cargo-cache-online
-          target-dir: target-online
+          # Absolute, outside the crate: a second build tree inside it would end
+          # up in the .crate the publish-dry-run leg below packages.
+          cargo-cache: ${{ runner.temp }}/cargo-cache-online
+          target-dir: ${{ runner.temp }}/target-online
           # Exclusion wins: CICD_PROBE matches env-include but is also in
           # env-exclude, so it must NOT cross (CICD_EXPECT=absent asserts that).
           env-include: "CICD_.*"
