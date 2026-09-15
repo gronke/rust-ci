@@ -26,6 +26,11 @@ pidfile="${3:-}"
 # for the rest of the job.
 [ -n "$pidfile" ] && echo "$$" > "$pidfile"
 
+# Two exits besides the report's kill, so a cancelled or timed-out job leaves
+# no sampler looping until the next job wipes the temp dir: the pid file
+# disappearing (the report removes it) and a wall-clock cap.
+deadline=$(( $(date +%s) + 21600 ))
+
 # Cumulative jiffies since boot: busy is everything except idle and iowait.
 cpu_totals() {
   awk '/^cpu /{
@@ -42,6 +47,8 @@ read -r prev_total prev_idle <<<"$(cpu_totals)"
 
 while :; do
   sleep "$interval"
+  if [ -n "$pidfile" ] && [ ! -f "$pidfile" ]; then exit 0; fi
+  [ "$(date +%s)" -lt "$deadline" ] || exit 0
 
   now="$(date +%s%3N 2>/dev/null || true)"
   case "$now" in
