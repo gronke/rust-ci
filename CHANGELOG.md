@@ -34,6 +34,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `release-guidance`: a release-candidate version keeps its pre-release flag in the rendered publish command.
 - `timing-start`: the sampler exits when its pid file disappears or after six hours, so a cancelled job leaves no loop behind.
 
+### Documentation
+
+- Every action has a README under `.github/actions/<name>/README.md` with inputs, outputs and one example; the top-level README is an index by pipeline phase, and the action descriptions are one paragraph each.
+- New guides: `docs/sealed-builds.md` (the seal and environment forwarding), `docs/showcase.md` (QA, test, release and publish end to end), `docs/cache-operations.md`; `docs/release-flow.md` is a runbook that links the reference pipeline instead of copying it.
+- Unsupported claims are gone: the asset attestation clause in `release-guidance`, the lightweight-tag warning, the production anecdote; `cargo-out-dir` states its jq requirement, `lint-and-test` its `--workspace`.
+- `scripts/lint.sh` and `.yamllint` run shellcheck, yamllint, actionlint and the em-dash check locally; the text carries no em-dashes.
+- `release-guidance` summary headings read `Accept: seal and publish`, `Accept: merge, then publish` and `Reject: nothing to unwind`.
+
 ## [1.8.0] - 2026-09-06
 
 ### Added
