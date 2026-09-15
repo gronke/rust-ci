@@ -244,12 +244,11 @@ It sets `CARGO_TARGET_DIR` to a directory in the runner's work tree, **outside t
 A target directory inside the workspace cannot survive a checkout, however persistent the disk is.
 **Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.**
 
-`"auto"` activates only when the host leaves a `.rust-ci-local-target` marker beside the runner's work directory, so the same workflow runs unchanged on a hosted runner (no marker, transfer as before) and on a self-hosted one (marker, no transfer).
-A job env `RUST_CI_LOCAL_TARGET=1` counts as the marker, for a workflow that controls its runner but not the host.
-A marker rather than an env var because the runner does not forward its own environment into a job container, while the work tree is bind-mounted into it.
+`"auto"` activates when the job environment carries `RUST_CI_LOCAL_TARGET=1`, which a host whose work tree persists provides ([docs/self-hosted.md](docs/self-hosted.md)), so the same workflow runs unchanged on a hosted runner (transfer as before) and on a prepared self-hosted one (no transfer).
+Ephemeral runners must not set it: the directory dies with the instance.
 
 Only the target entry is affected; the registry entry still uses `actions/cache`, since `$CARGO_HOME` usually lives in the toolchain image rather than the work tree.
-`rust-cache-save` needs no flag, because this mode hands over no key.
+`rust-cache-save` needs no flag, because this mode hands over no key and its steps skip.
 The directory sits at the work root, is shared per prefix across every repo on the runner, and is never pruned: the host owns it and can wipe `.rust-ci-target` to reclaim disk.
 
 ```yaml
@@ -283,23 +282,22 @@ The restore-everywhere/save-on-main pattern: PR jobs omit this action (or pass `
 
 ### `sccache`
 
-Installs a pinned [sccache](https://github.com/mozilla/sccache) as `RUSTC_WRAPPER`, backend configured by the **runner's host**: every `SCCACHE_*` line of the host's `.rust-ci-env` file is allowlist-checked and imported into the job environment ([docs/runner-services.md](docs/runner-services.md) is the contract).
-The action is backend-agnostic; the host names the backend (WebDAV, S3, Redis, a directory).
-
-`"auto"` activates only when that file offers `SCCACHE_*` configuration, so the same workflow runs unchanged on hosted and prepared self-hosted runners; a job env `RUST_CI_SCCACHE=1` counts as the offer.
+Installs a pinned [sccache](https://github.com/mozilla/sccache) as `RUSTC_WRAPPER`; the backend is whatever `SCCACHE_*` the job environment carries, and sccache reads it itself, so every backend it supports works (WebDAV, S3, Redis, a directory).
+`"auto"` activates when a non-empty `SCCACHE_*` variable is set, so the same workflow runs unchanged on hosted and self-hosted runners; [docs/self-hosted.md](docs/self-hosted.md) shows how a host provides the variables.
 The binary is fetched by pinned version **and sha256** (per-arch, Linux musl) into `$RUNNER_TEMP`, so the absolute `RUSTC_WRAPPER` path works inside job containers without touching `PATH`.
 `CARGO_INCREMENTAL` defaults to 0; an explicit consumer value is obeyed.
 Linking (`bin`/`dylib`/`cdylib`/proc-macro crates) and build-script execution stay uncached; the wins are the `lib` compiles, shared across every job on the same backend.
+The sealed Docker actions are untouched: they pin `CARGO_HOME`, forward `CARGO_.*` only and build offline.
 
-`mode: gha` uses **GitHub's own cache service** as the backend, for runners without a host file (hosted ones).
-Explicit on purpose, never part of `auto`: it exports `ACTIONS_RUNTIME_TOKEN` (masked) and `ACTIONS_RESULTS_URL` into the job environment, and it spends the repository's Actions cache pool (10 GB free, expandable paid, 7-day-unused eviction).
+`mode: gha` uses **GitHub's own cache service** as the backend, the choice for hosted runners.
+Explicit on purpose, never part of `auto`: it exports `ACTIONS_RUNTIME_TOKEN` (masked) and `ACTIONS_RESULTS_URL` into the job environment, and it spends the repository's Actions cache pool (10 GB per repository by default, entries removed after 7 days without access).
 GitHub scopes cache writes per ref, so pull-request objects never reach the default branch's scope; cross-PR sharing therefore only flows through objects a default-branch build wrote.
-Every object is a network round-trip, so a host-local backend beats it wherever one exists.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/sccache@main
-  # with:
-  #   mode: auto             # on | off | gha; auto follows the host's .rust-ci-env
+  with:
+    # hosted: GitHub's cache service; self-hosted: the SCCACHE_* backend the host put into the job env
+    mode: ${{ runner.environment == 'github-hosted' && 'gha' || 'auto' }}
 ```
 
 ### `sccache-stats`
@@ -316,14 +314,15 @@ A no-op when sccache is inactive; statistics never fail a job.
 ### `crates-mirror`
 
 Routes crates-io through a runner-local pull-through mirror: cargo's source replacement is config-file-only (cargo#5416), so this writes it into `$CARGO_HOME/config.toml`.
-The URL comes from the host's `.rust-ci-env` (`RUST_CI_CRATES_MIRROR=sparse+http://…/`), a job env of the same name, or the `url` input; `"auto"` no-ops without one, so hosted runners keep fetching from crates.io directly.
+The URL comes from the `url` input or from `RUST_CI_CRATES_MIRROR` in the job environment; `"auto"` no-ops without one, so hosted runners keep fetching from crates.io directly.
 `Cargo.lock` keeps the canonical crates.io checksums under source replacement and cargo verifies every download against them, so the mirror is an availability dependency, never a trust dependency.
 Place it before the first dependency resolution; an existing crates-io replacement in `$CARGO_HOME/config.toml` is refused rather than fought.
 
 ```yaml
 - uses: gronke/rust-ci/.github/actions/crates-mirror@main
   # with:
-  #   mode: auto             # on | off; auto follows the host's .rust-ci-env
+  #   mode: auto             # on | off; auto follows RUST_CI_CRATES_MIRROR in the job env
+  #   url: sparse+http://cache.internal:9980/crates/index/
 ```
 
 ### `timing-start` / `timing-mark` / `timing-report`
