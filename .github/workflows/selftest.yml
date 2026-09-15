@@ -291,10 +291,19 @@ jobs:
           mode: check
           working-directory: ${{ runner.temp }}/rc
 
+      - name: a stale candidate marker of a higher release does not block a stable version
+        run: |
+          git -C "$RUNNER_TEMP/rc" tag v2.0.0-rc1
+          sed -i 's/^version = "1.0.0"/version = "1.0.1"/' "$RUNNER_TEMP/rc/Cargo.toml"
+      - uses: ./.github/actions/changelog
+        with:
+          mode: check
+          working-directory: ${{ runner.temp }}/rc
+
       - name: a pre-release tag is a baseline of its own
         run: |
-          git -C "$RUNNER_TEMP/rc" tag -d v1.0.0
-          sed -i 's/^version = "1.0.0"/version = "1.0.0-rc2"/' "$RUNNER_TEMP/rc/Cargo.toml"
+          git -C "$RUNNER_TEMP/rc" tag -d v1.0.0 v2.0.0-rc1
+          sed -i 's/^version = "1.0.1"/version = "1.0.0-rc2"/' "$RUNNER_TEMP/rc/Cargo.toml"
       - uses: ./.github/actions/changelog
         with:
           mode: check
