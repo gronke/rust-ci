@@ -143,7 +143,6 @@ esac
 echo "✓ the ${TAG} release is published"
 
 if [ "$MOVE_MAJOR" = "true" ]; then
-  git push origin ":refs/tags/${MAJOR}" || true # delete the old tag (ignore if absent)
   git tag -f -a -m "${MAJOR} (moving major) -> ${TAG}" "$MAJOR" "$GITHUB_SHA"
   git push -f origin "refs/tags/${MAJOR}"
   echo "✓ ${MAJOR} advanced to ${TAG}"
