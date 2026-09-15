@@ -1,21 +1,12 @@
 #!/usr/bin/env bash
 # Inputs arrive as env vars from action.yml:
 #   MODE  auto | on | off
-#   URL   explicit mirror URL, overrides the file and the job env
+#   URL   explicit mirror URL, overrides RUST_CI_CRATES_MIRROR from the job env
 set -euo pipefail
 
 emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
 
-work=""
-[ -n "${RUNNER_WORKSPACE:-}" ] && work="$(dirname "$RUNNER_WORKSPACE")"
-env_file=""
-[ -n "$work" ] && [ -f "$work/.rust-ci-env" ] && env_file="$work/.rust-ci-env"
-
-url="$URL"
-[ -n "$url" ] || url="${RUST_CI_CRATES_MIRROR:-}"
-if [ -z "$url" ] && [ -n "$env_file" ]; then
-  url=$(sed -n 's/^RUST_CI_CRATES_MIRROR=//p' "$env_file" | head -1)
-fi
+url="${URL:-${RUST_CI_CRATES_MIRROR:-}}"
 
 case "$MODE" in
   off)
@@ -24,7 +15,7 @@ case "$MODE" in
     ;;
   on)
     [ -n "$url" ] || {
-      echo "::error::crates-mirror: mode 'on' but no mirror URL (url input, RUST_CI_CRATES_MIRROR, or .rust-ci-env)"
+      echo "::error::crates-mirror: mode 'on' but no mirror URL (url input or RUST_CI_CRATES_MIRROR)"
       exit 1
     }
     ;;
@@ -42,7 +33,7 @@ esac
 
 # Charset check before the value reaches a config file; cargo requires
 # sparse index URLs to end in a slash, so a missing one is appended.
-url_re='^sparse\+https?://[A-Za-z0-9._:/-]{1,512}$'
+url_re='^sparse\+https?://[]A-Za-z0-9._:/[-]{1,512}$'
 [[ "$url" =~ $url_re ]] || {
   echo "::error::crates-mirror: mirror URL fails the charset check: $url"
   exit 1

@@ -1575,23 +1575,23 @@ jobs:
   # source ("defined multiple times"). Downloads still come from
   # static.crates.io (the mirror's config.json says so), which is exactly a
   # pull-through's shape. CARGO_HOME is job-scoped so the runner's real
-  # cargo home stays untouched.
+  # cargo home stays untouched. The URL arrives as job env, the channel a
+  # host's job-started hook uses; the idempotence run passes it as the input.
   selftest-crates-mirror:
     name: crates-mirror routes crates-io through the offered URL
     runs-on: ubuntu-latest
     env:
       CARGO_HOME: /tmp/selftest-cargo-mirror
+      RUST_CI_CRATES_MIRROR: sparse+http://127.0.0.1:8399/
     steps:
       - uses: actions/checkout@v7
-      - name: serve a minimal sparse mirror and place the env file
+      - name: serve a minimal sparse mirror
         run: |
           mkdir -p /tmp/sparse-mirror/li/bc
           curl -sSfL https://index.crates.io/config.json -o /tmp/sparse-mirror/config.json
           curl -sSfL https://index.crates.io/li/bc/libc -o /tmp/sparse-mirror/li/bc/libc
           (cd /tmp/sparse-mirror && python3 -m http.server 8399 &>/tmp/sparse-mirror.log &)
           for i in $(seq 1 20); do curl -sf http://127.0.0.1:8399/config.json >/dev/null && break; sleep 0.5; done
-          echo "RUST_CI_CRATES_MIRROR=sparse+http://127.0.0.1:8399/" \
-            > "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
       - uses: ./.github/actions/crates-mirror
         id: mirror
       - name: the replacement was written
@@ -1605,21 +1605,20 @@ jobs:
         run: |
           cargo fetch --locked
           echo "✓ fetch through the replacement"
-      - name: a second run is idempotent
+      - name: a second run through the url input is idempotent
         uses: ./.github/actions/crates-mirror
+        with:
+          url: sparse+http://127.0.0.1:8399/
       - name: no duplicate block was appended
         run: |
           count=$(grep -c '^\[source\.crates-io\]' "$CARGO_HOME/config.toml")
           [ "$count" -eq 1 ] || { echo "::error::$count crates-io blocks in config.toml"; exit 1; }
           echo "✓ idempotent"
-      - name: remove the env file
-        if: always()
-        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
 
-  # Without an offer, "auto" must write nothing: a hosted runner keeps
+  # Without a URL, "auto" must write nothing: a hosted runner keeps
   # fetching from crates.io directly.
   selftest-crates-mirror-off:
-    name: crates-mirror auto stays off without a host offer
+    name: crates-mirror auto stays off without a URL
     runs-on: ubuntu-latest
     env:
       CARGO_HOME: /tmp/selftest-cargo-mirror-off
