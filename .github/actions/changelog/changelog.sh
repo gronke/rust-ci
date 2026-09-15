@@ -84,8 +84,16 @@ case "${INPUT_MODE:-}" in
     if [ -z "$BASE" ]; then
       # The greatest release tag by SemVer precedence, pre-release tags included —
       # a v1.0.0 final outranks its v1.0.0-rcN candidates, unlike `sort -V`.
+      # Candidate markers (vX.Y.Z-rcN) reserve nothing: a stable version is
+      # measured against released tags only, a release-candidate version also
+      # against earlier candidates of any release.
+      STABLE_VERSION=true
+      [ -z "$(semver_prerelease "$VERSION")" ] || STABLE_VERSION=false
       for TAG in $(git tag -l 'v*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' || true); do
         TAG="${TAG#v}"
+        if [ "$STABLE_VERSION" = true ] && [[ "$TAG" =~ -rc[0-9]+$ ]]; then
+          continue
+        fi
         if [ -z "$BASE" ] || semver_gt "$TAG" "$BASE"; then
           BASE="$TAG"
         fi
