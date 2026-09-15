@@ -6,8 +6,8 @@ description: >-
   after the builds it accounts for; composite actions have no post hooks,
   the same split as rust-cache/rust-cache-save.
 
-  A no-op when sccache is not active. Statistics never fail a job: a broken
-  stats query costs the numbers, not the build.
+  A no-op unless RUSTC_WRAPPER is an sccache binary. Statistics never fail a
+  job: a broken stats query costs the numbers, not the build.
 
 runs:
   using: composite
