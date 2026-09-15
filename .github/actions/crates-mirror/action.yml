@@ -1,38 +1,20 @@
 name: crates mirror
 description: >-
-  Route crates-io through a runner-local pull-through mirror: cargo's
-  source replacement is config-file-only (cargo#5416), so this writes it
-  into `$CARGO_HOME/config.toml`.
-
-  The mirror URL comes from the host's `.rust-ci-env` file beside the
-  runner's work directory (`RUST_CI_CRATES_MIRROR=sparse+http://…/`), a job
-  env of the same name, or the `url` input, in reverse order of precedence.
-  "auto" activates only when a URL is offered, so hosted runners keep
-  fetching from crates.io directly. See docs/runner-services.md for the file
-  contract.
-
-  Cargo.lock keeps its canonical crates.io checksums under source
-  replacement and cargo verifies every download against them; a mirror can
-  refuse to serve, never alter what a build consumes.
-
-  Place it before the first step that resolves dependencies. An existing
-  crates-io replacement in `$CARGO_HOME/config.toml` is refused rather than
-  fought; a workspace-level `.cargo/config.toml` still takes precedence by
-  cargo's own rules.
+  Route cargo's crates-io source through a mirror by writing the source replacement into $CARGO_HOME/config.toml; source replacement is config-file-only (cargo#5416).
+  The URL comes from the url input or from RUST_CI_CRATES_MIRROR in the job environment; "auto" is a no-op without one, so hosted runners keep fetching from crates.io directly.
+  Cargo.lock keeps the canonical crates.io checksums and cargo verifies every download against them, so the mirror can refuse to serve, never alter what a build consumes.
+  Place it before the first step that resolves dependencies; an existing crates-io replacement is refused rather than fought, and a workspace .cargo/config.toml still wins by cargo's own rules.
+  Runner-native and container jobs only; the sealed Docker actions pin CARGO_HOME and build offline.
 
 inputs:
   mode:
     description: >-
-      "auto" activates when a mirror URL is offered (file, job env, or the
-      url input), "on" requires one and fails without, "off" changes
-      nothing.
+      "auto" activates when a mirror URL is given, "on" requires one and fails without, "off" changes nothing.
     required: false
     default: auto
   url:
     description: >-
-      Explicit mirror URL (sparse+http(s)://…/), overriding the file and the
-      job env. Mostly for tests; real deployments advertise the URL through
-      the host file so the workflow stays host-agnostic.
+      Explicit mirror URL (sparse+http(s)://.../); overrides RUST_CI_CRATES_MIRROR.
     required: false
     default: ""
 
