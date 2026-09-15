@@ -1479,35 +1479,31 @@ jobs:
           [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
           echo "✓ auto stayed off; key handed over as usual"
 
-  # sccache: the job plays host with a local-disk backend (SCCACHE_DIR),
-  # which exercises the whole contract (file parsing, allowlist import,
-  # pinned install, wrapper export) plus a real cache round-trip: the second
-  # build's rlib compiles must hit what the first build stored.
+  # sccache: the job offers a local-disk backend (SCCACHE_DIR) through
+  # $GITHUB_ENV, the channel a host's job-started hook uses, which exercises
+  # auto activation, the pinned install and the wrapper export plus a real
+  # cache round-trip: the second build's rlib compiles must hit what the
+  # first build stored.
   selftest-sccache:
-    name: sccache round-trip through a host-offered backend
+    name: sccache round-trip through a job-env backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: place the env file a host would place
-        run: |
-          {
-            echo "# selftest backend: local disk under RUNNER_TEMP"
-            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store"
-          } > "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
+      - name: offer a backend the way a job-started hook would
+        run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
       - uses: ./.github/actions/sccache
         id: sccache
       - name: auto fired and the wrapper is an absolute, executable path
         run: |
           [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
-          [ "${RUST_CI_SCCACHE:-}" = "1" ] || { echo "::error::RUST_CI_SCCACHE not exported"; exit 1; }
           [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
           case "$RUSTC_WRAPPER" in /*) ;; *) echo "::error::RUSTC_WRAPPER is not absolute"; exit 1 ;; esac
-          [ "${SCCACHE_DIR:-}" = "$RUNNER_TEMP/sccache-store" ] || { echo "::error::SCCACHE_DIR did not import"; exit 1; }
-          echo "✓ active, $RUSTC_WRAPPER wraps rustc, backend imported"
+          echo "✓ active, $RUSTC_WRAPPER wraps rustc"
       - name: first build stores, second build hits
         working-directory: fixtures/sample-crate
         run: |
           cargo build --locked --quiet
+          [ -d "$SCCACHE_DIR" ] || { echo "::error::sccache did not use the offered SCCACHE_DIR"; exit 1; }
           rm -rf target
           cargo build --locked --quiet
           hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
@@ -1519,11 +1515,6 @@ jobs:
           notes="${RUST_CI_TIMING_DIR:-$RUNNER_TEMP/rust-ci-timing}/notes.tsv"
           grep -q '^cache\.sccache' "$notes" || { echo "::error::no cache.sccache fact in $notes"; exit 1; }
           echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded"
-      # The file survives the job on a self-hosted runner, where it would
-      # activate the mode the off-job below asserts is off.
-      - name: remove the env file
-        if: always()
-        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-env"
 
   # gha: GitHub's cache service as the backend, the explicit hosted-runner
   # choice. The round-trip is real: the rebuild's hits come back from the
@@ -1543,22 +1534,26 @@ jobs:
           [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || { echo "::error::SCCACHE_GHA_ENABLED not exported"; exit 1; }
           [ -n "${ACTIONS_RESULTS_URL:-}" ] || { echo "::error::cache-service runtime not exported"; exit 1; }
           echo "✓ gha backend wired"
-      - name: first build stores, second build hits
+      # A warm scope (a branch cut after a main run) serves hits on the first
+      # build instead of writing; either proves the wire.
+      - name: first build stores or hits, second build hits
         working-directory: fixtures/sample-crate
         run: |
           cargo build --locked --quiet
-          writes=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '.stats.cache_writes // 0')
-          [ "$writes" -gt 0 ] || { echo "::error::nothing written to the cache service"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          stats=$("$RUSTC_WRAPPER" --show-stats --stats-format=json)
+          writes=$(jq '.stats.cache_writes // 0' <<<"$stats")
+          first=$(jq '[.stats.cache_hits.counts[]?] | add // 0' <<<"$stats")
+          [ "$writes" -gt 0 ] || [ "$first" -gt 0 ] || { echo "::error::the cache service neither stored nor served anything"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
           rm -rf target
           cargo build --locked --quiet
           hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
           [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
           echo "✓ $writes write(s), $hits hit(s) through the cache service"
 
-  # Without the file, "auto" must stay off, or a hosted runner silently gains
-  # a wrapper (and a warning-free local disk cache nobody reads).
+  # Without SCCACHE_* in the job env, "auto" must stay off, or a hosted runner
+  # silently gains a wrapper (and a warning-free local disk cache nobody reads).
   selftest-sccache-off:
-    name: sccache auto stays off without a host offer
+    name: sccache auto stays off without a backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1568,7 +1563,6 @@ jobs:
         run: |
           [ "${{ steps.sccache.outputs.active }}" = "false" ] || { echo "::error::activated without an offer"; exit 1; }
           [ -z "${RUSTC_WRAPPER:-}" ] || { echo "::error::RUSTC_WRAPPER was set: $RUSTC_WRAPPER"; exit 1; }
-          [ -z "${RUST_CI_SCCACHE:-}" ] || { echo "::error::RUST_CI_SCCACHE was set"; exit 1; }
           echo "✓ auto stayed off"
       - uses: ./.github/actions/sccache-stats
       - name: stats no-op without sccache

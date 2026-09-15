@@ -7,8 +7,10 @@ set -uo pipefail
 # shellcheck source=../_lib/timing.sh disable=SC1091
 source "$GITHUB_ACTION_PATH/../_lib/timing.sh"
 
-if [ "${RUST_CI_SCCACHE:-}" != "1" ] || [ ! -x "${RUSTC_WRAPPER:-/nonexistent}" ]; then
-  echo "sccache-stats: sccache is not active; nothing to record."
+# Keyed on the wrapper alone, so a consumer who installed sccache another
+# way gets the same numbers.
+if [ ! -x "${RUSTC_WRAPPER:-/nonexistent}" ] || ! "$RUSTC_WRAPPER" --version 2>/dev/null | grep -q '^sccache '; then
+  echo "sccache-stats: sccache is not the RUSTC_WRAPPER; nothing to record."
   exit 0
 fi
 

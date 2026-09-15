@@ -1,40 +1,20 @@
 name: sccache
 description: >-
-  Install a pinned sccache as RUSTC_WRAPPER, backend configured by the
-  runner's host. The compile cache lives where the host put it, so ephemeral
-  runner instances share compile results without per-job transfers.
-
-  The host hands the configuration over in `.rust-ci-env`, a dotenv beside
-  the runner's work directory; the same channel as rust-cache's
-  local-target marker, because the work tree is bind-mounted into job
-  containers while the runner's env is not. Every `SCCACHE_*` line is
-  imported into the job env after an allowlist and charset check. The action
-  is backend-agnostic; the host names the backend. Contract:
-  docs/runner-services.md.
-
-  "auto" activates only when that file offers SCCACHE_* configuration, so
-  one workflow runs unchanged on hosted and prepared self-hosted runners.
-  A job env RUST_CI_SCCACHE=1 counts as the offer. Linking, build-script
-  execution and incremental compiles stay uncached (sccache's limits);
-  CARGO_INCREMENTAL therefore defaults to 0, an explicit value is obeyed.
-  Linux only; activation elsewhere fails loudly.
+  Install a pinned sccache as RUSTC_WRAPPER.
+  The backend is whatever SCCACHE_* the job environment carries; sccache reads it itself, so every backend it supports works without changes here.
+  "auto" is a no-op without one, so one workflow runs unchanged on hosted and self-hosted runners; docs/self-hosted.md shows how a host provides the variables.
+  CARGO_INCREMENTAL defaults to 0 because incremental output is uncacheable; an explicit value is obeyed.
+  Linux only; the sealed Docker actions are untouched.
 
 inputs:
   mode:
     description: >-
-      "auto" activates on a host offer (file or RUST_CI_SCCACHE=1). "on"
-      forces activation; without any SCCACHE_* configuration sccache falls
-      back to its local-disk default, which an ephemeral runner throws away,
-      so that is warned about. "off" changes nothing.
-
-      "gha" uses GitHub's own cache service as the backend; the explicit
-      choice for hosted runners, where no host file can exist. Explicit on
-      purpose: it exports ACTIONS_RUNTIME_TOKEN (masked) and
-      ACTIONS_RESULTS_URL into the job environment, which the runner hands
-      only to JavaScript action steps, and it spends the repository's cache
-      pool. GitHub scopes cache writes per ref, so pull-request objects
-      never reach the default branch's scope. The host file is ignored in
-      this mode. Needs sccache >= 0.10, far below the pin here.
+      "auto" activates when a non-empty SCCACHE_* variable is set in the job environment.
+      "on" activates regardless and warns without a backend, because sccache then falls back to a local-disk cache that an ephemeral runner throws away.
+      "off" changes nothing.
+      "gha" uses GitHub's cache service as the backend, the choice for hosted runners.
+      It is explicit on purpose: it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment, which the runner otherwise hands only to JavaScript action steps, and it spends the repository's cache pool, which GitHub scopes per ref.
+      Every mode fetches actions/github-script at "Set up job", because the runner resolves a nested uses before its if.
     required: false
     default: auto
   version:
@@ -86,7 +66,7 @@ runs:
             }
           }
 
-    - name: Install sccache and import the host backend configuration
+    - name: Install sccache
       id: setup
       shell: bash
       env:
