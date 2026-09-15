@@ -19,6 +19,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
   Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.
 - `docs/self-hosted.md`: how a host hands these variables to every job through the runner's job-started hook, which reaches `container:` jobs too.
 
+### Changed
+
+- `cargo-docker`: `--offline` goes in front of the cargo subcommand, so `args` may end in `-- <arguments for the test binary>`.
+- `_lib/seal.sh`: `target-dir` and `cargo-cache` accept absolute paths, which lets a sealed action reuse rust-cache's `local-target` directory.
+- `publish-dry-run`: the prep refuses a `.crate` whose file list contains a cargo build tree or a cargo home, instead of validating an archive that packages them.
+- `changelog`: candidate marker tags (`vX.Y.Z-rcN`) no longer set the baseline for a stable version; a release-candidate version still measures against earlier candidates.
+- `cargo-publish` and every snippet: `rust-lang/crates-io-auth-action` sets a `token` output, which is passed as `registry-token`; it never exported `CARGO_REGISTRY_TOKEN`.
+
+### Fixed
+
+- `build-image`: the Actions runtime token is masked before it is exported into the job environment.
+- `publish-draft-release`, `promote-release`: the moving major is force-pushed in one step; the delete that preceded it left `@v1` unresolvable for a moment.
+- `release-guidance`: a release-candidate version keeps its pre-release flag in the rendered publish command.
+- `timing-start`: the sampler exits when its pid file disappears or after six hours, so a cancelled job leaves no loop behind.
+
 ## [1.8.0] - 2026-09-06
 
 ### Added
