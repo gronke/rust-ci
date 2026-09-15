@@ -1,20 +1,16 @@
 name: sccache
 description: >-
   Install a pinned sccache as RUSTC_WRAPPER.
-  The backend is whatever SCCACHE_* the job environment carries; sccache reads it itself, so every backend it supports works without changes here.
-  "auto" is a no-op without one, so one workflow runs unchanged on hosted and self-hosted runners; docs/self-hosted.md shows how a host provides the variables.
+  The backend is whatever SCCACHE_* the job environment carries; sccache reads it itself.
+  "auto" is a no-op without one, so one workflow runs unchanged on hosted and self-hosted runners (docs/self-hosted.md).
   CARGO_INCREMENTAL defaults to 0 because incremental output is uncacheable; an explicit value is obeyed.
   Linux only; the sealed Docker actions are untouched.
 
 inputs:
   mode:
     description: >-
-      "auto" activates when a non-empty SCCACHE_* variable is set in the job environment.
-      "on" activates regardless and warns without a backend, because sccache then falls back to a local-disk cache that an ephemeral runner throws away.
-      "off" changes nothing.
-      "gha" uses GitHub's cache service as the backend, the choice for hosted runners.
-      It is explicit on purpose: it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment, which the runner otherwise hands only to JavaScript action steps, and it spends the repository's cache pool, which GitHub scopes per ref.
-      Every mode fetches actions/github-script at "Set up job", because the runner resolves a nested uses before its if.
+      "auto" activates when a non-empty SCCACHE_* variable is set in the job environment, "on" activates regardless (and warns without a backend), "off" changes nothing.
+      "gha" uses GitHub's cache service as the backend, the choice for hosted runners; it is explicit on purpose because it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment and spends the repository's cache pool (see the README).
     required: false
     default: auto
   version:

@@ -1,10 +1,9 @@
 name: crates mirror
 description: >-
-  Route cargo's crates-io source through a mirror by writing the source replacement into $CARGO_HOME/config.toml; source replacement is config-file-only (cargo#5416).
-  The URL comes from the url input or from RUST_CI_CRATES_MIRROR in the job environment; "auto" is a no-op without one, so hosted runners keep fetching from crates.io directly.
-  Cargo.lock keeps the canonical crates.io checksums and cargo verifies every download against them, so the mirror can refuse to serve, never alter what a build consumes.
-  Place it before the first step that resolves dependencies; an existing crates-io replacement is refused rather than fought, and a workspace .cargo/config.toml still wins by cargo's own rules.
-  Runner-native and container jobs only; the sealed Docker actions pin CARGO_HOME and build offline.
+  Route cargo's crates-io source through a mirror by writing the source replacement into $CARGO_HOME/config.toml.
+  The URL comes from the url input or from RUST_CI_CRATES_MIRROR in the job environment; "auto" is a no-op without one.
+  Cargo.lock keeps the canonical crates.io checksums, so the mirror cannot alter what a build consumes.
+  Place it before the first step that resolves dependencies.
 
 inputs:
   mode:
