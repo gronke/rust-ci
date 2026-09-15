@@ -104,7 +104,7 @@ jobs:
           args: "npm-utils --version"
 
       # Negative control: a malicious tool name is rejected on the runner by the
-      # cargo-install allowlist before any shell runs it — no command injection.
+      # cargo-install allowlist before any shell runs it: no command injection.
       - name: cargo-install rejects a malicious tool name (negative control)
         id: evil_tool
         continue-on-error: true
@@ -143,7 +143,7 @@ jobs:
           fi
           echo "✓ prune kept libc, dropped the member"
 
-      # save: false is the pull-request mode — the step must no-op.
+      # save: false is the pull-request mode: the step must no-op.
       - name: rust-cache-save honours save=false (no-op control)
         uses: ./.github/actions/rust-cache-save
         with:
@@ -274,7 +274,7 @@ jobs:
           working-directory: ${{ runner.temp }}/rc
           baseline-version: "0.9.9"
 
-      - name: stage tags — the baseline scan must rank the final over its rc
+      - name: "stage tags: the baseline scan must rank the final over its rc"
         run: |
           git -C "$RUNNER_TEMP/rc" init -q
           git -C "$RUNNER_TEMP/rc" add -A
@@ -394,7 +394,7 @@ jobs:
           test -f "$out"
           if [ "$(head -1 "$out")" = "v1.2.3" ]; then echo "::error::markdown body led with the title line"; exit 1; fi
           # shellcheck disable=SC2016  # the single quotes are the point
-          grep -q '`@import`' "$out" || { echo "::error::code span dropped — @tokens would autolink as @mentions"; exit 1; }
+          grep -q '`@import`' "$out" || { echo "::error::code span dropped: @tokens would autolink as @mentions"; exit 1; }
           # shellcheck disable=SC2016  # the single quotes are the point
           grep -q '`code`' "$out" || { echo "::error::inline code stripped"; exit 1; }
           grep -q '\*\*bold\*\*' "$out" || { echo "::error::bold markers stripped"; exit 1; }
@@ -598,7 +598,7 @@ jobs:
           test "${{ steps.no_version.outcome }}" = "failure"
           echo "✓ a versionless non-crate cut is refused"
 
-  # The repository's own changelog is release material — dogfood the check.
+  # The repository's own changelog is release material: dogfood the check.
   changelog-check:
     name: changelog check (this repository)
     runs-on: ubuntu-latest
@@ -674,7 +674,7 @@ jobs:
   # and run fetch (networked) -> lint/test (sealed, --network none) -> readiness
   # (networked) against the fixture.
   # promote-release: mode resolution against canned rulesets (a PATH-shimmed
-  # fake gh — no real releases touched) and the off-mode promotion end to end
+  # fake gh, no real releases touched) and the off-mode promotion end to end
   # against a scratch origin.
   selftest-promote-release:
     name: exercise the promote-release modes
@@ -735,7 +735,7 @@ jobs:
           : > "$RUNNER_TEMP/out.txt"; run_promote "" false "7" "" "" "1"
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
           # a condition pattern the probe cannot faithfully evaluate is unknown,
-          # not "does not match" — it must never read as "no signature required"
+          # not "does not match": it must never read as "no signature required"
           : > "$RUNNER_TEMP/out.txt"
           run_promote "" false "7" '{"rules":[{"type":"required_signatures"}],"conditions":{"ref_name":{"include":["refs/tags/v[!x]*"],"exclude":[]}}}' "" ""
           grep -qx 'mode=manual' "$RUNNER_TEMP/out.txt"
@@ -747,9 +747,9 @@ jobs:
           test -z "$(git ls-remote origin refs/tags/v9.9.0)"
           echo "✓ manual roads defer; the off-collision errors early; nothing was pushed"
 
-      # The canned rule requires signatures only on v*-sig companions — the
+      # The canned rule requires signatures only on v*-sig companions, the
       # pattern-aware detection resolves plain versions to off and promotes.
-      - name: off promotes — tag with the marker message, flip, moving major
+      - name: "off promotes: tag with the marker message, flip, moving major"
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/promote"
@@ -796,7 +796,7 @@ jobs:
           test "$(git ls-remote origin refs/tags/v9 | cut -f1)" = "$major_before"
           echo "✓ the backport published; v9 kept pointing where it was"
 
-      # A completed promotion re-runs as a skip — same version, same commit, no
+      # A completed promotion re-runs as a skip, same version, same commit, no
       # second tag push, the flip and the major still exercised. The same
       # version on a different commit is a named conflict.
       - name: re-running a completed promotion is a skip
@@ -829,7 +829,7 @@ jobs:
       # The publish-draft guidance renders merge-then-publish with the -sig
       # attestation, and refuses at candidate time when a signature rule still
       # covers the version itself.
-      - name: publish-draft guidance — render, and the covering-rule refusal
+      - name: "publish-draft guidance: render, and the covering-rule refusal"
         run: |
           set -euo pipefail
           S="$RUNNER_TEMP/guidance-publish.md"; : > "$S"
@@ -860,7 +860,7 @@ jobs:
           echo "✓ the publish-draft guidance renders; a covering rule refuses at candidate time"
 
   # require-signed-release: the registry gate's three sources against a canned
-  # gh — the release tag itself, an attestation companion on the same commit,
+  # gh, the release tag itself, an attestation companion on the same commit,
   # and the opt-in commit signature with the web-flow exclusion. Unsigned is a
   # green answer, not a failure.
   selftest-require-signed-release:
@@ -927,7 +927,7 @@ jobs:
           echo "✓ release tag, companion, glob, different-commit, opt-in commit, and web-flow roads all answer correctly"
 
       # The signature-triggered shape: the pushed companion names the release
-      # by commit, so the job needs no string surgery — and never acts on a draft.
+      # by commit, so the job needs no string surgery, and never acts on a draft.
       - name: the release derives from a pushed attestation tag
         run: |
           set -euo pipefail
@@ -993,7 +993,7 @@ jobs:
           fi
 
       # Negative control: the sealing flag seal_run applies (--network=none) really
-      # blocks egress — a curl from inside a sealed container must fail.
+      # blocks egress: a curl from inside a sealed container must fail.
       - name: sealed network is blocked (negative control)
         run: |
           if docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges \
@@ -1114,7 +1114,7 @@ jobs:
       # cargo-install + cargo-use: install a real CLI crate into a SHARED cache in
       # one sealed container, then run it from a SEPARATE sealed, offline container.
       # Proves an installed tool persists in the host-mounted CARGO_HOME and resolves
-      # via the prepended bin dir — including the `cargo <subcommand>` form. npm-utils
+      # via the prepended bin dir, including the `cargo <subcommand>` form. npm-utils
       # is pure-Rust (no openssl) and gates its binaries behind the `cli` feature, so
       # this also exercises the free-form `args` pass-through.
       - name: cargo-install (sealed) a CLI crate into the shared cache
@@ -1137,7 +1137,7 @@ jobs:
           offline: "true"
           args: "cargo npm-utils --help"
 
-      # Negative control: cargo-use offline really seals the network — a tool that
+      # Negative control: cargo-use offline really seals the network: a tool that
       # reaches out must fail (proves the action wires OFFLINE -> --network=none).
       - name: cargo-use offline blocks egress (negative control)
         id: use_offline_egress
@@ -1175,7 +1175,7 @@ jobs:
           esac
 
       # Negative control: a non-numeric Cargo.toml rust-version is rejected by the shared
-      # resolver before it can become a docker tag — proving build-image wires the
+      # resolver before it can become a docker tag, proving build-image wires the
       # validation into the sentinel path (the smuggled command must not run).
       - name: craft a bad-MSRV manifest (for the negative control)
         run: |
@@ -1200,7 +1200,7 @@ jobs:
 
       # msrv: build an image at the fixture's DECLARED rust-version and cargo check there.
       # Exercises the Cargo.toml extraction, the image-at-MSRV build, and the sealed check.
-      # locked: true takes the committed-lockfile path — the fixture pins one.
+      # locked: true takes the committed-lockfile path: the fixture pins one.
       - name: msrv (image at the declared MSRV, sealed check)
         uses: ./.github/actions/msrv
         with:
@@ -1236,7 +1236,7 @@ jobs:
           test ! -e "$RUNNER_TEMP/fixture-nolock/Cargo.lock"
 
       # Negative control: locked: true demands a committed lockfile, so a crate without one fails
-      # with a clear up-front error — not the cryptic read-only-filesystem failure of writing it in-container.
+      # with a clear up-front error, not the cryptic read-only-filesystem failure of writing it in-container.
       - name: msrv (locked true) rejects a crate with no committed lockfile
         id: msrv_nolock_locked
         continue-on-error: true
@@ -1260,7 +1260,7 @@ jobs:
           working-directory: ${{ runner.temp }}/fixture-nolock
           package: cicd-rust-selftest-fixture
 
-      # The resolution happens in a disposable copy, so the lockless checkout must STAY lockless —
+      # The resolution happens in a disposable copy, so the lockless checkout must STAY lockless,
       # the action may not leave an untracked Cargo.lock behind.
       - name: assert the lockless checkout stayed lockless
         run: |
@@ -1282,7 +1282,7 @@ jobs:
           echo "✓ msrv locked:false preserved the committed Cargo.lock byte-for-byte"
 
       # Regression: a consumer's build.rs may read git metadata (git describe, the commit
-      # hash), so the disposable copy must preserve it — here in the plain .git DIRECTORY
+      # hash), so the disposable copy must preserve it, here in the plain .git DIRECTORY
       # form. The fixture's build.rs asserts `git rev-parse HEAD` succeeds whenever
       # FIXTURE_REQUIRE_GIT is set (forwarded into the container via the literal env input).
       - name: stage a git-repo fixture with no Cargo.lock (.git directory)
@@ -1693,7 +1693,7 @@ jobs:
           [ "$PUBLISHED" = "false" ] || { echo "::error::dry run reported published=$PUBLISHED"; exit 1; }
           [ -n "$VERSION" ] || { echo "::error::no version output"; exit 1; }
           echo "dry run reported published=false for $VERSION"
-      # A release outside tag-pattern is a skip, not an upload — the policy that
+      # A release outside tag-pattern is a skip, not an upload: the policy that
       # keeps prereleases and bare majors off the registry.
       - name: Publish a version the pattern excludes
         id: excluded
@@ -1864,7 +1864,7 @@ jobs:
           host: "github.com/../evil"
 
       # The token is interpolated into a $GITHUB_ENV line, so a newline in it
-      # would export an environment variable of its own to every later step —
+      # would export an environment variable of its own to every later step,
       # and `::add-mask::` would only have covered the first line.
       - name: a token carrying a newline is refused
         id: bad-token
@@ -1889,9 +1889,9 @@ jobs:
 
   # The timing actions end to end: marks bound stages, the sampler attributes
   # CPU to the stage that spent it, and the report renders and closes the last
-  # stage itself. The CPU assertion is the one that matters — a load average
+  # stage itself. The CPU assertion is the one that matters: a load average
   # would smear an eight-second burn across the stage after it, which is the
-  # failure the /proc/stat delta exists to avoid — so it burns every core in one
+  # failure the /proc/stat delta exists to avoid, so it burns every core in one
   # stage and sleeps through the next, then asserts the ordering rather than any
   # absolute number.
   selftest-timing:
