@@ -1401,10 +1401,10 @@ jobs:
   selftest-cache-local-target:
     name: rust-cache local-target survives git clean
     runs-on: ubuntu-latest
+    env:
+      RUST_CI_LOCAL_TARGET: "1"
     steps:
       - uses: actions/checkout@v7
-      - name: place the marker a host would place
-        run: touch "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-local-target"
       - uses: ./.github/actions/rust-cache
         with:
           prefix: localtgt-${{ github.run_id }}
@@ -1413,8 +1413,7 @@ jobs:
           lockfiles: fixtures/sample-crate/Cargo.lock
       - name: auto fired, target sits outside the workspace, no key handed over
         run: |
-          [ "${RUST_CI_TARGET_LOCAL:-}" = "1" ] || { echo "::error::local-target did not activate"; exit 1; }
-          [ -n "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR unset"; exit 1; }
+          [ -n "${CARGO_TARGET_DIR:-}" ] || { echo "::error::local-target did not activate"; exit 1; }
           [ -d "$CARGO_TARGET_DIR" ] || { echo "::error::$CARGO_TARGET_DIR missing"; exit 1; }
           case "$CARGO_TARGET_DIR" in
             "$GITHUB_WORKSPACE"/*) echo "::error::target dir is inside the workspace"; exit 1 ;;
@@ -1436,11 +1435,6 @@ jobs:
           test "$(cat "$CARGO_TARGET_DIR/sentinel")" = "${{ github.run_id }}" || {
             echo "::error::rust-cache-save pruned a tree it does not own"; exit 1; }
           echo "✓ nothing pruned"
-      # The marker survives the job on a self-hosted runner, where it would
-      # activate the mode the off-job below asserts is off.
-      - name: remove the marker
-        if: always()
-        run: rm -f "$(dirname "$RUNNER_WORKSPACE")/.rust-ci-local-target"
 
   selftest-cache-local-target-assert:
     name: rust-cache local-target uploaded nothing
@@ -1459,7 +1453,7 @@ jobs:
           test "$COUNT" -eq 0 || { echo "::error::uploaded $COUNT target entries"; exit 1; }
           echo "✓ nothing transferred"
 
-  # Without a marker, "auto" must stay off, or a hosted runner silently stops caching.
+  # Without RUST_CI_LOCAL_TARGET, "auto" must stay off, or a hosted runner silently stops caching.
   selftest-cache-local-target-off:
     name: rust-cache local-target auto stays off
     runs-on: ubuntu-latest
@@ -1474,10 +1468,22 @@ jobs:
           lockfiles: fixtures/sample-crate/Cargo.lock
       - name: the normal path ran
         run: |
-          [ -z "${RUST_CI_TARGET_LOCAL:-}" ] || { echo "::error::activated without a marker"; exit 1; }
           [ -z "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR was set: $CARGO_TARGET_DIR"; exit 1; }
           [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
           echo "✓ auto stayed off; key handed over as usual"
+      - name: local-target true without cache-target refuses
+        id: refuse
+        continue-on-error: true
+        uses: ./.github/actions/rust-cache
+        with:
+          prefix: localrefuse-${{ github.run_id }}
+          local-target: "true"
+          save: "false"
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: the refusal was loud
+        run: |
+          [ "${{ steps.refuse.outcome }}" = "failure" ] || { echo "::error::local-target without cache-target was accepted"; exit 1; }
+          echo "✓ refused"
 
   # sccache: the job offers a local-disk backend (SCCACHE_DIR) through
   # $GITHUB_ENV, the channel a host's job-started hook uses, which exercises
