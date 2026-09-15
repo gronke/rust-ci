@@ -93,7 +93,6 @@ esac
 if [ -n "$MAJOR_TARGET" ]; then
   git config user.name "$INPUT_GIT_USER_NAME"
   git config user.email "$INPUT_GIT_USER_EMAIL"
-  git push origin ":refs/tags/${MAJOR}" || true # delete the old tag (ignore if absent)
   git tag -f -a -m "${MAJOR} (moving major) -> ${MAJOR_HIGHEST}" "${MAJOR}" "${MAJOR_TARGET}"
   git push -f origin "refs/tags/${MAJOR}"
   echo "moving major: ${MAJOR} -> ${MAJOR_HIGHEST} (${MAJOR_TARGET})"
