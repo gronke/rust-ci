@@ -18,6 +18,13 @@ COMMIT="${INPUT_COMMIT:?commit is required}"
 TAG="v${VERSION}"
 
 GO_LIVE="${INPUT_GO_LIVE:-signed-tag}"
+
+# Publishing a stable version sheds the pre-release flag the draft carries; a
+# release-candidate manifest version (a hyphen) keeps it.
+case "$VERSION" in
+  *-*) FLIP_FLAGS="--draft=false" ;;
+  *) FLIP_FLAGS="--draft=false --prerelease=false" ;;
+esac
 case "$GO_LIVE" in
   signed-tag | publish-draft) ;;
   *)
@@ -62,7 +69,7 @@ if [ "$GO_LIVE" = "publish-draft" ]; then
 
    \`\`\`sh
    target=\$(git ls-remote origin refs/heads/${DEFAULT_BRANCH} | cut -f1)
-   gh release edit ${TAG} --draft=false --prerelease=false --target "\$target"
+   gh release edit ${TAG} ${FLIP_FLAGS} --target "\$target"
    \`\`\`
 
    The tag is created from the target, so the resolved SHA — the merge-back's commit — is what ${TAG} seals; a later push to ${DEFAULT_BRANCH} cannot move it.
