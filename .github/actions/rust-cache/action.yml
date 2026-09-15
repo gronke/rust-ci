@@ -1,70 +1,35 @@
 name: Rust cache
 description: >-
-  Cache cargo for CI without the usual footguns. DEFAULTS incremental compilation off — pure cost in
-  CI (no edit→recompile loop) and the main thing that balloons target/ — while OBEYING an explicit
-  CARGO_INCREMENTAL the consumer sets (some matrix/variant builds are faster with it on). It does not
-  impose a build profile: the build stays cargo's default unless the consumer sets CARGO_* vars, which
-  flow through unchanged (incl. into the Docker actions via their CARGO_.* forwarding).
-
-  Two independent cache entries, split by churn rate. The REGISTRY entry (index + .crate tarballs +
-  git db, never registry/src — cargo re-extracts it, caching it is pure duplication) is small,
-  toolchain-independent and bounded by the Cargo.lock key; it restores here and saves at job end
-  unless `save: "false"`. The TARGET entry (opt-in via cache-target) is restore-ONLY here: a
-  restore-key fallback plus save-on-new-key would accrete every generation's stale artifacts into
-  the next one, so the save lives in the paired `rust-cache-save` action, which prunes target/ down
-  to dependency artifacts first and runs as the consumer's LAST job step (composite actions have no
-  post hooks, so an auto-save could not run after the build). Jobs that should only consume — PR
-  jobs reading what a default-branch warmup maintains — simply omit the save step.
-
-  On a runner whose work tree persists, `local-target` moves target/ out of the workspace and drops
-  the transfer entirely.
-
-  Avoids third-party cache actions whose behaviour drifts with the runner image.
+  Restore cargo's download cache and, on request, the build target directory through actions/cache.
+  The registry entry restores here and saves at job end unless save is "false".
+  The target entry (cache-target) is restore-only here; the paired rust-cache-save action prunes and uploads it as the job's last step.
+  CARGO_INCREMENTAL defaults to 0 when unset.
 
 inputs:
   prefix:
-    description: Cache-family name, so independent jobs (build, tauri, …) keep separate caches.
+    description: Cache-family name, so independent jobs (build, tauri) keep separate caches.
     required: false
     default: rust
   save:
     description: >-
-      Also save the REGISTRY entry at job end (the actions/cache post step). Set "false" for
-      restore-only consumers — e.g. PR jobs reading a cache that a default-branch warmup job
-      maintains, where per-branch saves would only burn quota and job minutes. The target entry is
-      restore-only here regardless; its save belongs to `rust-cache-save`.
+      Also save the registry entry at job end (the actions/cache post step).
+      Set "false" for restore-only consumers such as pull-request jobs reading a cache that a default-branch warmup job maintains; the target entry is restore-only here regardless.
     required: false
     default: "true"
   cache-target:
     description: >-
-      Also RESTORE the build target/ directory (compiled dependencies between runs). Off by
-      default — registry/git alone is small and always safe; turn it on for a heavy dependency tree
-      where recompiling every run is the bottleneck. Saving the target back is the paired
-      `rust-cache-save` action's job (typically only on the default branch).
+      Also restore the build target/ directory (compiled dependencies between runs); off by default because registry/git alone is small and always safe.
+      Saving the target back is the paired rust-cache-save action's job.
     required: false
     default: "false"
   local-target:
     description: >-
-      Keep target/ on the runner between jobs instead of transferring it ("true" | "false" | "auto").
-      Requires cache-target; "true" without it fails. Sets CARGO_TARGET_DIR to
-      <work root>/.rust-ci-target/<prefix>, outside the workspace, because actions/checkout defaults
-      to clean: true and runs `git clean -ffdx`, which deletes an in-workspace target/ however
-      persistent the disk is. Skips the target restore and hands rust-cache-save no key, so nothing
-      is saved.
-
-      "auto" activates when the job environment carries RUST_CI_LOCAL_TARGET=1, which a host whose
-      work tree persists provides (docs/self-hosted.md), so one workflow runs unchanged on a hosted
-      runner (transfer as before) and on a prepared self-hosted one (no transfer). Ephemeral runners
-      must not set it: the directory dies with the instance.
-
-      Consumers must read CARGO_TARGET_DIR rather than assume ./target. Only the target entry
-      changes; the registry entry still uses actions/cache, because $CARGO_HOME usually lives in the
-      toolchain image rather than the work tree. The directory is shared per prefix across every
-      repository on the runner and is never pruned: the host owns it and can wipe `.rust-ci-target`
-      to reclaim disk. Falls back to the transfer when RUNNER_WORKSPACE is empty.
+      Keep target/ on the runner between jobs instead of transferring it: "true", "false" or "auto", which follows RUST_CI_LOCAL_TARGET=1 in the job environment (docs/self-hosted.md).
+      Requires cache-target and sets CARGO_TARGET_DIR outside the workspace; the README lists the rules.
     required: false
     default: "false"
   target-dir:
-    description: Workspace-relative target directory to restore when cache-target is true (e.g. an out-of-workspace crate's target). Ignored when local-target is active.
+    description: Workspace-relative target directory to restore when cache-target is true (for example an out-of-workspace crate's target). Ignored when local-target is active.
     required: false
     default: target
   lockfiles:
@@ -73,17 +38,13 @@ inputs:
     default: "**/Cargo.lock"
   cache-directories:
     description: >-
-      Extra newline-separated paths to add to the registry entry (bounded, lockfile-keyed) — suited
-      to vendored/download caches that track the lockfiles.
+      Extra newline-separated paths to add to the registry entry (bounded, lockfile-keyed), suited to vendored or download caches that track the lockfiles.
     required: false
     default: ""
   stats:
     description: >-
-      Record what the restore delivered (hit kind, restored sizes) for the `timing-report` Cache
-      section. Off by default because it walks the restored trees with `du`, which is seconds on a
-      multi-gigabyte target. Worth it while tuning a pipeline: a cache that restores but whose
-      artifacts are not reusable reports success at every step and simply costs minutes, and the hit
-      kind plus the size is what separates that from a genuinely cold run.
+      Record what the restore delivered (hit kind, restored sizes) for the timing-report Cache section.
+      Off by default because it walks the restored trees with du, which takes seconds on a multi-gigabyte target.
     required: false
     default: "false"
 
@@ -95,8 +56,8 @@ outputs:
 runs:
   using: composite
   steps:
-    # Incremental compilation is pure cost in CI (no edit→recompile loop) and is what balloons target/
-    # — gigabytes of codegen units + dep-graph data that are never reused across runs. Defaulting it
+    # Incremental compilation is pure cost in CI (no edit-recompile loop) and is what balloons target/:
+    # gigabytes of codegen units + dep-graph data that are never reused across runs. Defaulting it
     # off is the single biggest size reduction and is what makes caching target/ safe; a consumer who
     # knows a variant build benefits can still set CARGO_INCREMENTAL and have it honoured.
     - name: Configure cargo for CI + compute cache keys
@@ -109,7 +70,7 @@ runs:
         PREFIX: ${{ inputs.prefix }}
       run: |
         set -euo pipefail
-        # Default these only when the consumer hasn't set them — an explicit CARGO_INCREMENTAL
+        # Default these only when the consumer hasn't set them: an explicit CARGO_INCREMENTAL
         # (workflow/job env) is obeyed and left to flow through (e.g. into the Docker actions).
         if [ -z "${CARGO_INCREMENTAL:-}" ]; then echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"; fi
         if [ -z "${CARGO_TERM_COLOR:-}" ]; then echo "CARGO_TERM_COLOR=always" >> "$GITHUB_ENV"; fi
@@ -156,10 +117,10 @@ runs:
           echo "local_target_dir=$work/.rust-ci-target/$PREFIX" >> "$GITHUB_OUTPUT"
         fi
 
-        # Cargo's DOWNLOAD cache — registry index + .crate tarballs + git db. Never registry/src:
+        # Cargo's DOWNLOAD cache: registry index + .crate tarballs + git db. Never registry/src:
         # cargo re-extracts it from the tarballs, so caching it is pure duplication (it roughly
         # doubles the registry footprint for no benefit). The cargo home comes from CARGO_HOME when
-        # set — container images that bake the toolchain elsewhere (e.g. /opt/cargo) rely on it,
+        # set; container images that bake the toolchain elsewhere (e.g. /opt/cargo) rely on it,
         # and $HOME/.cargo would cache a directory cargo never touches.
         CARGO_DIR="${CARGO_HOME:-$HOME/.cargo}"
         {
@@ -173,7 +134,7 @@ runs:
 
     # Registry: restores here and auto-saves at job end (its post step runs even when nested in a
     # composite action). An exact-key save is skipped on a hit, so an unchanged Cargo.lock never
-    # grows the cache; a changed lock seeds a fresh entry and the stale one is LRU-evicted — no
+    # grows the cache; a changed lock seeds a fresh entry and the stale one is removed after seven days without access, no
     # ratchet. `save: "false"` swaps in the restore-only variant of the same first-party action.
     - name: Cache cargo registry/git
       if: inputs.save == 'true'

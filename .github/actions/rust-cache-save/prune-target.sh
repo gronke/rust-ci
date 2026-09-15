@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prune target/ down to what a cache is worth keeping: DEPENDENCY artifacts.
 # Workspace-member objects, final binaries, examples, incremental state and
-# docs are rebuilt or relinked on any commit — caching them only grows the
+# docs are rebuilt or relinked on any commit; caching them only grows the
 # archive and the tar/zstd staging that can fill the runner disk at save time.
 #
 # DRY_RUN=1 prints what would go instead of removing it, for local runs.
@@ -9,7 +9,7 @@ set -euo pipefail
 
 # RUST_CI_TARGET_DIR is workspace-relative (the same string the cache paths
 # use), while this script may run in a nested working-directory for cargo
-# metadata — resolve against the workspace, not the cwd.
+# metadata; resolve against the workspace, not the cwd.
 target="${RUST_CI_TARGET_DIR:?rust-cache did not export RUST_CI_TARGET_DIR}"
 case "$target" in
   /*) ;;
@@ -32,10 +32,10 @@ du -sh "$target" | sed 's/^/before: /'
 
 # Non-cargo cache families (e.g. a C++ build tree such as pdfium's out/):
 # there is no workspace metadata to prune against, and the directory IS the
-# value — save it unpruned instead of failing on `cargo metadata`.
+# value; save it unpruned instead of failing on `cargo metadata`.
 # The check runs in the action's working-directory, same as cargo metadata.
 if [ ! -f "Cargo.toml" ]; then
-  echo "no Cargo.toml in $PWD — not a cargo workspace; saving unpruned"
+  echo "no Cargo.toml in $PWD (not a cargo workspace); saving unpruned"
   exit 0
 fi
 
