@@ -25,13 +25,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - `timing-start`/`timing-mark`/`timing-report`: per-stage build timing (durations with job share, peak CPU/memory, a per-stage shape from the Linux sampler) to the run summary and a `report-path` file. Stages come from in-band marks or, mark-free, from the Actions API (`actions: read`); an empty `first-stage` keeps the sampler without a mark.
 - `rust-cache`/`rust-cache-save`: opt-in `stats` adds a Cache section to the timing report (hit kind, restored size, prune share).
-- `publish-dry-run`: multi-crate support via `<package>-vX.Y.Z` tags and `require-deps-published`, with a packaged-lockfile prefetch so the sealed verify-build resolves co-developed deps.
 - `require-signed-release`: opt-in `unsigned-guidance` writes the signed-companion commands to the step summary.
 
 ### Fixed
 
 - `install-toolchain`: put cargo on `GITHUB_PATH` when rustup is preinstalled (later steps otherwise had none); the installer fetch now retries transients.
 - `msrv`/`cargo-fetch`: retry crates.io transients instead of exhausting cargo's three tries on a blip.
+
+## [1.7.0] - 2026-08-23
+
+### Added
+
+- `publish-dry-run`: multi-crate support via `<package>-vX.Y.Z` tags and `require-deps-published`, with a packaged-lockfile prefetch so the sealed verify-build resolves co-developed deps.
 
 ## [1.6.1] - 2026-08-22
 
@@ -190,6 +195,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - First release — reusable Rust CI/CD actions (bring-up baseline).
 
+[Unreleased]: https://github.com/gronke/rust-ci/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/gronke/rust-ci/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/gronke/rust-ci/compare/v1.6.1...v1.7.0
+[1.6.1]: https://github.com/gronke/rust-ci/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/gronke/rust-ci/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/gronke/rust-ci/compare/v1.4.2...v1.5.0
+[1.4.2]: https://github.com/gronke/rust-ci/compare/v1.4.1...v1.4.2
+[1.4.1]: https://github.com/gronke/rust-ci/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/gronke/rust-ci/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/gronke/rust-ci/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/gronke/rust-ci/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/gronke/rust-ci/compare/v1.0.0...v1.1.0
