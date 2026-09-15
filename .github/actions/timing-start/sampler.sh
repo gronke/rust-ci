@@ -4,12 +4,9 @@
 # One line per tick: epoch_ms, CPU busy percent since the previous tick, used
 # and total memory in kB, free disk on the workspace filesystem in kB.
 #
-# CPU comes from /proc/stat deltas rather than /proc/loadavg on purpose. Load is
-# a one-minute exponential average, so it lags into the following stage and
-# under-reports any stage shorter than its own window: a three-minute compile
-# that pins every core reads as half idle, and the stage after it inherits the
-# tail. A delta between consecutive ticks is the actual utilization of the
-# interval it covers, which is the only form that attributes to a stage.
+# CPU is the /proc/stat busy delta between consecutive ticks, not a load
+# average, so it attributes to the stage it was spent in (see "How it
+# measures" in timing-report/README.md).
 #
 # Deliberately dependency-free and failure-tolerant: it runs unsupervised for
 # the whole job, and a sampler that dies half way would misreport the tail of

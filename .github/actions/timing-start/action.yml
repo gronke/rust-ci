@@ -1,34 +1,18 @@
 name: Timing start
 description: >-
-  Begin per-stage build-performance tracking for a job: initialise the mark log and start a
-  background resource sampler. Pair it with `timing-mark` at the top of each stage and
-  `timing-report` as an always() last step.
-
-  Marks are recorded in-band rather than read back from the Actions API afterwards, for three
-  reasons. The API needs an `actions: read` permission on a job that may hold nothing else worth
-  granting; it costs a network round-trip at the end of a job that just spent minutes compiling; and
-  decisively it has no resolution inside a step, so a twenty-minute test step stays one opaque bar.
-  The load samples are the part that answers "compiling or executing", and only an in-job sampler
-  can collect them.
-
-  Sampling reads /proc and is therefore Linux-only. On other runners the durations are still
-  recorded and the report says the sampler was unavailable, rather than rendering empty load columns
-  that read as an idle machine.
+  Begin per-stage timing for a job: initialise the mark log, record the runner's core count and start a background CPU, memory and disk sampler.
+  Pair it with timing-mark at the top of each stage and timing-report as an always() last step.
+  Sampling reads /proc and is Linux-only; elsewhere the durations are still recorded.
 
 inputs:
   sample-interval:
-    description: >-
-      Seconds between resource samples. "0" records durations only. The default costs one /proc read
-      and one df per tick, which is noise against a compile.
+    description: Seconds between resource samples. "0" records durations only.
     required: false
     default: "5"
   first-stage:
     description: >-
-      Name for the interval that begins here. It covers everything up to the first `timing-mark`,
-      which on most jobs is the checkout and cache restore rather than any build step, so name it
-      for what it is. Set it empty to start the resource sampler without any mark: a job that lays
-      down no `timing-mark` steps then has its stages derived from the Actions API by timing-report,
-      and the sampler still supplies the CPU/memory shape.
+      Name for the interval that begins here and ends at the first timing-mark (on most jobs the checkout and cache restore).
+      Empty starts the sampler without a mark; timing-report then derives the stages from the Actions API.
     required: false
     default: "setup"
 

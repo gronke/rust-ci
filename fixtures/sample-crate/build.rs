@@ -1,5 +1,5 @@
 // Selftest hook: when FIXTURE_REQUIRE_GIT is set, assert the crate's git metadata is
-// reachable from the build script — this guards the msrv action's disposable-copy
+// reachable from the build script. This guards the msrv action's disposable-copy
 // git materialization (a real consumer's build.rs may run `git describe` or read the
 // commit hash). Without the variable the script is a no-op, so every other selftest
 // leg (sealed builds, Windows, packaging) is unaffected.

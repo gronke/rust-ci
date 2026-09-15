@@ -9,8 +9,8 @@ set -euo pipefail
 
 [ -n "${ROUTE_TOKEN:-}" ] || { echo "::error::token input is empty"; exit 1; }
 # The token is interpolated into a $GITHUB_ENV line, so it is validated before
-# it is masked or used: a newline would write a line of its own — an arbitrary
-# environment variable for every later step — and `::add-mask::` would only
+# it is masked or used: a newline would write a line of its own (an arbitrary
+# environment variable for every later step) and `::add-mask::` would only
 # have masked the first line, printing the rest. The error never echoes the
 # value. The charset covers what forges actually issue (GitHub `ghs_`/
 # `github_pat_`, GitLab `glpat-`, Bitbucket, base64url JWTs) and excludes the
