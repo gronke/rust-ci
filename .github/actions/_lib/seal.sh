@@ -7,11 +7,11 @@
 # It owns the single hardened `docker run` so the containment policy lives in one
 # place: non-root (`--user`), all Linux capabilities dropped (`--cap-drop=ALL`),
 # no privilege escalation (`--security-opt=no-new-privileges`), the repo mounted
-# read-only, and — when OFFLINE=true — sealed with `--network=none` so a build
+# read-only, and, when OFFLINE=true, sealed with `--network=none` so a build
 # (and the dependency build.rs / proc-macros it runs) cannot reach the network.
 # Run cargo-fetch first to warm the cache for the sealed (offline) path.
 #
-# `seal_run` mounts the source read-only, unconditionally — no environment
+# `seal_run` mounts the source read-only, unconditionally; no environment
 # variable can weaken that. The one sanctioned exception is
 # `seal_run_rw_lockresolve`, for resolving a lockfile in a DISPOSABLE COPY of
 # the source (never a consumer checkout); its mount mode is an explicit,
@@ -42,8 +42,8 @@ _seal_host_dir() {
   esac
 }
 
-# Private runner. The /work mount mode is its explicit first argument — exactly
-# "ro" or "rw", anything else is fatal — so the mode is fixed at each call site
+# Private runner. The /work mount mode is its explicit first argument (exactly
+# "ro" or "rw", anything else is fatal), so the mode is fixed at each call site
 # and no environment variable can flip it. Call through the wrappers below.
 _seal_run() {
   local work_mount="$1"
@@ -127,7 +127,7 @@ seal_run_rw_lockresolve() {
 # Call it from the same $PWD as the `seal_run` that created the mount, and
 # call it directly (not in `$(...)`), so `::error::` annotations surface;
 # the result lands in HOST_PATH. Paths outside the target mount are
-# refused — nothing else the container sees is writable, so nothing else
+# refused: nothing else the container sees is writable, so nothing else
 # can be a build output.
 seal_host_path() {
   local p="$1" target_host

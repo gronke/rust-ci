@@ -1,7 +1,7 @@
 name: Rust CI (sealed)
 
 # Reusable, sealed Rust CI in one hardened Docker pipeline: fmt + clippy + test,
-# an optional cross-target check, and an optional MSRV build — all run --offline
+# an optional cross-target check, and an optional MSRV build, all run --offline
 # under --network=none against a cache that a single networked cargo-fetch warmed.
 # A consumer's whole CI becomes:
 #
@@ -45,7 +45,7 @@ jobs:
     name: sealed lint, test, cross-check, msrv
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # The toolchain image, with any requested cross targets baked in.
       - uses: gronke/rust-ci/.github/actions/build-image@v1
@@ -55,7 +55,7 @@ jobs:
           tag: rust-ci:ci
           cache: "true"
 
-      # The one networked step — warm the cache so everything below runs sealed.
+      # The one networked step: warm the cache so everything below runs sealed.
       - uses: gronke/rust-ci/.github/actions/cargo-fetch@v1
         with:
           image: rust-ci:ci

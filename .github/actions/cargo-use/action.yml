@@ -5,7 +5,7 @@ inputs:
   args:
     description: >-
       The command line to run, e.g. "cargo audit --no-fetch" or "cargo-audit fetch".
-      Word-split INSIDE the container — it never reaches the host shell in docker mode.
+      Word-split inside the container; it never reaches the host shell in docker mode.
     required: true
   docker:
     description: Run inside the sealed container (default). "false" runs on the host.
@@ -17,21 +17,20 @@ inputs:
     default: rust-ci:latest
   cargo-cache:
     description: >-
-      Host dir mounted RW as CARGO_HOME (/cache/cargo); must match the cargo-cache
-      cargo-install wrote to. Its bin/ is prepended to PATH.
+      Host dir mounted RW as CARGO_HOME (/cache/cargo); must match the cargo-cache cargo-install wrote to.
+      Its bin/ is prepended to PATH.
     required: false
     default: .cargo-cache
   offline:
     description: >-
-      Run sealed with --network=none (default "true"). Set "false" for a tool that
-      must reach the network (e.g. cargo-audit fetching the advisory DB).
+      Run sealed with --network=none (default "true").
+      Set "false" for a tool that must reach the network (e.g. cargo-audit fetching the advisory DB).
     required: false
     default: "true"
   target-dir:
     description: >-
-      Optional host dir mounted RW at /work/target (+ CARGO_TARGET_DIR) for a tool
-      that builds. Empty (default) mounts no target — minimal surface; the repo
-      stays read-only.
+      Optional host dir mounted RW at /work/target (plus CARGO_TARGET_DIR) for a tool that builds.
+      Empty (default) mounts no target; the repo stays read-only.
     required: false
     default: ""
   working-directory:
@@ -40,20 +39,19 @@ inputs:
     default: "."
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
-      container, anchored full-name. Default forwards cargo's own vars.
+      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
+      Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
       Defaults to the action-owned vars.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
   env:
     description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
-      regardless of env-include/env-exclude.
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
     required: false
     default: ""
 

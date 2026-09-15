@@ -1,10 +1,8 @@
 name: Cargo (Docker, sealed)
 description: >-
-  Run one cargo command inside the pinned container — non-root, all caps dropped,
-  no-new-privileges, repo mounted read-only. Sealed by default (--network none +
-  cargo --offline; run cargo-fetch first to warm the cache); set offline:false to
-  run networked and fetch as it builds. The low-level primitive behind the sealed
-  build / publish-dry-run steps.
+  Run one cargo command inside the pinned container: non-root, all capabilities dropped, no-new-privileges, repo mounted read-only.
+  Sealed by default (--network none plus cargo --offline; run cargo-fetch first to warm the cache); set offline:false to run networked and fetch as it builds.
+  Use it for any cargo command the fixed-purpose sealed actions do not cover.
 
 inputs:
   image:
@@ -17,8 +15,8 @@ inputs:
     default: "."
   args:
     description: >-
-      The cargo command + flags, e.g. "build --release --locked --features full".
-      Do NOT include --offline — the `offline` input controls it.
+      The cargo command and flags, e.g. "build --release --locked --features full"; arguments after "--" reach the binary.
+      Do not include --offline, the `offline` input controls it.
     required: true
   target-dir:
     description: Host dir for cargo target (read-write, cacheable).
@@ -30,52 +28,44 @@ inputs:
     default: .cargo-cache
   offline:
     description: >-
-      Run sealed: --network none + cargo --offline (needs a prior cargo-fetch to
-      populate the cache). Set "false" to run networked and fetch as it builds.
-      Default "true".
+      Run sealed: --network none plus cargo --offline, which needs a prior cargo-fetch to populate the cache.
+      Set "false" to run networked and fetch as it builds.
     required: false
     default: "true"
   out-dir-package:
     description: >-
-      When set, additionally resolve this package's build-script OUT_DIR
-      (a sealed `cargo build --message-format=json` replay) and expose it,
-      translated to the host side of `target-dir`, as the `out-dir` output.
-      Needs a non-empty `target-dir` and an image with cargo ≥1.77.
+      When set, additionally resolve this package's build-script OUT_DIR through a sealed `cargo build --message-format=json` replay and expose it, translated to the host side of `target-dir`, as the `out-dir` output.
+      Needs a non-empty `target-dir` and an image with cargo 1.77 or newer.
     required: false
     default: ""
   out-dir-args:
     description: >-
-      Extra args for the resolve build. Mirror the main args' profile and
-      features so the replay is free; an empty value after a `--release`
-      main build correctly resolves the DEV profile's directory instead.
-      Do NOT include --offline — the `offline` input controls it.
+      Extra args for the resolve build; mirror the main args' profile and features so the replay is free (an empty value after a `--release` main build resolves the dev profile's directory instead).
+      Do not include --offline, the `offline` input controls it.
     required: false
     default: ""
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
-      container, anchored full-name. Default forwards cargo's own vars.
+      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
+      Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
-      Defaults to the action-owned vars; widening env-include to ".*" forwards
-      secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
+      Defaults to the action-owned vars; widening env-include to ".*" forwards secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
   env:
     description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
-      regardless of env-include/env-exclude.
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
     required: false
     default: ""
 
 outputs:
   out-dir:
     description: >-
-      Host path of the out-dir-package build script's OUT_DIR; empty when
-      out-dir-package is unset.
+      Host path of the out-dir-package build script's OUT_DIR; empty when out-dir-package is unset.
     value: ${{ steps.resolve.outputs.out-dir }}
 
 runs:

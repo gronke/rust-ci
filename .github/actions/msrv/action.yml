@@ -1,10 +1,7 @@
 name: MSRV check (Docker, sealed)
 description: >-
-  Compile a crate on its DECLARED minimum supported Rust version inside a
-  container built at exactly that toolchain. The image IS the MSRV, so a plain
-  `cargo check` verifies the crate builds there — catching a dependency that
-  raises its own MSRV on the PR that pulls it in, not only at release time. The
-  version is read from Cargo.toml's `rust-version` (override with `rust-version`).
+  Compile a crate on its declared minimum supported Rust version inside a container built at exactly that toolchain, so a plain `cargo check` is the MSRV check.
+  The version is read from Cargo.toml's `rust-version` (override with `rust-version`); a dependency that raises its own MSRV fails on the PR that pulls it in.
 
 inputs:
   package:
@@ -17,8 +14,8 @@ inputs:
     default: ""
   rust-version:
     description: >-
-      MSRV to test. Empty (default) reads `rust-version` from the crate's Cargo.toml,
-      so the toolchain and the declared MSRV cannot drift apart.
+      MSRV to test.
+      Empty (default) reads `rust-version` from the crate's Cargo.toml, so the toolchain and the declared MSRV cannot drift apart.
     required: false
     default: ""
   working-directory:
@@ -27,18 +24,14 @@ inputs:
     default: "."
   locked:
     description: >-
-      Default "false": resolve a fresh Cargo.lock at the MSRV before the check, so a newer
-      dependency release within range — which a committed Cargo.lock would hide — is exercised
-      on the floor. "true": require a committed Cargo.lock and check exactly those versions.
-      The source is always mounted read-only and the fresh lock is resolved in a disposable
-      copy, so the consumer checkout is never modified either way.
+      Default "false": resolve a fresh Cargo.lock at the MSRV in a disposable copy of the source before the check, so a newer in-range dependency release (which a committed Cargo.lock would hide) is exercised on the floor.
+      "true": require a committed Cargo.lock and check exactly those versions; the checkout is never modified either way.
     required: false
     default: "false"
   offline:
     description: >-
-      Run sealed with --network none + cargo --offline (needs a prior cargo-fetch).
-      Default "false": networked but otherwise sealed, so deps resolve fresh with no
-      warmup step.
+      Run sealed with --network none plus cargo --offline (needs a prior cargo-fetch).
+      Default "false": networked but otherwise sealed, so deps resolve fresh with no warmup step.
     required: false
     default: "false"
   image-tag:
@@ -55,13 +48,13 @@ inputs:
     default: .cargo-cache
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward into the container, anchored
-      full-name. Default forwards cargo's own vars.
+      Regex (POSIX ERE) of env-var names to forward into the container, anchored full-name.
+      Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
       Defaults to the action-owned vars.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
@@ -89,7 +82,7 @@ runs:
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/rust-version.sh"
         if [ -n "$INPUT_RUST_VERSION" ]; then
-          # Explicit override — it too becomes a docker tag, so validate it.
+          # Explicit override: it too becomes a docker tag, so validate it.
           validate_rust_version "$INPUT_RUST_VERSION" || exit 1
           msrv="$INPUT_RUST_VERSION"
         else
@@ -131,18 +124,18 @@ runs:
         source "$GITHUB_ACTION_PATH/../_lib/retry-transient.sh"
 
         # The source is mounted read-only, so cargo cannot write Cargo.lock during the check.
-        # With locked: false, resolve a fresh lock at the MSRV up front — in a DISPOSABLE COPY
+        # With locked: false, resolve a fresh lock at the MSRV up front, in a DISPOSABLE COPY
         # of the source under the runner's temp dir, so the consumer checkout is never
         # written: a lockless crate stays lockless, a committed Cargo.lock stays byte-
         # identical, and the fresh in-range resolution still happens (in the copy).
-        # generate-lockfile only resolves the graph — no build.rs/proc-macros run — so its
+        # generate-lockfile only resolves the graph (no build.rs/proc-macros run), so its
         # writable run needs no seal; the sealed check then runs --locked from the copy.
         # (locked: true checks the committed lock in place, already required above.)
         if [ "$LOCKED" != "true" ]; then
           scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/msrv-resolve.XXXXXX")"
           trap 'rm -rf "$scratch"' EXIT
           # Copy the source, skipping the heavy build/cache dirs and .git at the top level
-          # (an explicit loop — tar/rsync exclude-pattern semantics are too easy to get
+          # (an explicit loop; tar/rsync exclude-pattern semantics are too easy to get
           # wrong). Git metadata is materialized separately right below.
           shopt -s dotglob nullglob
           for entry in ./*; do
@@ -151,8 +144,8 @@ runs:
           done
           shopt -u dotglob nullglob
           # Preserve the checkout's git metadata in the copy: a build.rs or proc-macro may
-          # read it (git describe, the commit hash), and locked:true — which checks in
-          # place — can see it, so the copy must not behave differently. Materialize a
+          # read it (git describe, the commit hash), and locked:true (which checks in
+          # place) can see it, so the copy must not behave differently. Materialize a
           # SELF-CONTAINED .git directory, covering .git as a directory and as a file
           # (linked worktrees, submodules); skipped when the source is not a git repo.
           # The check mounts the copy read-only, so the metadata is read-only there.
@@ -189,7 +182,7 @@ runs:
             fi
             # The copy's working tree is the copy itself; a stale core.worktree in the
             # copied config (submodules set one) would point at a path that is absent in
-            # the container — and it even breaks repo discovery, so edit the config FILE
+            # the container, and it even breaks repo discovery, so edit the config FILE
             # directly instead of going through `git -C` (which would need that discovery).
             git config --file "$scratch/.git/config" --unset core.worktree 2>/dev/null || true
             git -C "$scratch" rev-parse HEAD >/dev/null 2>&1 \

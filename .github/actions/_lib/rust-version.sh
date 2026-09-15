@@ -7,7 +7,7 @@
 #   resolve_msrv_from_cargo <dir>     # read+validate <dir>/Cargo.toml → sets RESOLVED_MSRV
 #
 # A resolved (or overridden) version becomes a `rust:<v>` base tag and a buildx cache
-# scope, so it is constrained to numeric major[.minor[.patch]] only — a crafted value
+# scope, so it is constrained to numeric major[.minor[.patch]] only; a crafted value
 # (e.g. `latest; touch pwned`) can't smuggle a docker tag or shell flag downstream.
 #
 # Both functions write any `::error::` to stdout (so it surfaces as a step annotation)

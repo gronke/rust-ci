@@ -1,8 +1,7 @@
 name: Cargo fetch (Docker)
 description: >-
-  The one networked step: populate the cargo registry/git cache inside the
-  pinned container, so subsequent actions can run sealed (--network none
-  --offline). Requires a committed Cargo.lock (runs --locked).
+  Populate the cargo registry and git cache inside the pinned container, as the one networked step, so the following actions can run sealed (--network none, --offline).
+  Requires a committed Cargo.lock (runs --locked).
 
 inputs:
   image:
@@ -19,29 +18,25 @@ inputs:
     default: .cargo-cache
   env-include:
     description: >-
-      Regex (POSIX ERE) of env-var NAMES to forward from the runner into the
-      container, anchored full-name. Default forwards cargo's own vars.
+      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
+      Default forwards cargo's own vars.
     required: false
     default: "CARGO_.*"
   env-exclude:
     description: >-
-      Regex (POSIX ERE) of names to DROP from the included set (exclusion wins).
-      Defaults to the action-owned vars; widening env-include to ".*" forwards
-      secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
+      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
+      Defaults to the action-owned vars; widening env-include to ".*" forwards secrets like GITHUB_TOKEN, so prefer a tight include or add to this list.
     required: false
     default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
   env:
     description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim,
-      regardless of env-include/env-exclude.
+      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
     required: false
     default: ""
   git-token:
     description: >-
-      Token for cloning PRIVATE git dependencies inside the container. When set,
-      git is configured (url.insteadOf) to authenticate github.com fetches as
-      x-access-token, and cargo is forced to fetch via the git CLI. Pass a secret
-      carrying contents:read on the dependency repos; leave empty for public deps.
+      Token for cloning private git dependencies inside the container: when set, git is configured (url.insteadOf) to authenticate github.com fetches as x-access-token and cargo is forced to fetch via the git CLI.
+      Pass a secret carrying contents:read on the dependency repos; leave empty for public deps.
     required: false
     default: ""
 
@@ -74,8 +69,8 @@ runs:
         # cargo fetch is incremental, so a retry after a crates.io blip resumes off the cache.
         retry_transient seal_run bash -c '
           # With a git-token, authenticate github.com fetches as x-access-token and
-          # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies
-          # — lets cargo clone PRIVATE git dependencies. No-op for public deps.
+          # force cargo to fetch via the git CLI so the url.insteadOf rewrite applies,
+          # which lets cargo clone PRIVATE git dependencies. No-op for public deps.
           if [ -n "${CICD_GIT_TOKEN:-}" ]; then
             git config --global url."https://x-access-token:${CICD_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
             export CARGO_NET_GIT_FETCH_WITH_CLI=true
