@@ -1011,6 +1011,15 @@ jobs:
           working-directory: fixtures/sample-crate
           args: "build --locked"
 
+      # Arguments after `--` belong to the test binary; --offline must not land
+      # among them.
+      - name: cargo-docker (sealed test with binary arguments)
+        uses: ./.github/actions/cargo-docker
+        with:
+          image: rust-ci:selftest
+          working-directory: fixtures/sample-crate
+          args: "test --locked -- --nocapture"
+
       # cargo-docker resolves a build script's OUT_DIR as a HOST path (the sealed
       # replay + the /work/target → target-dir translation).
       - name: cargo-docker (sealed build + out-dir)
