@@ -86,8 +86,9 @@ else
 fi
 
 # --- the credential -----------------------------------------------------------
-# Trusted Publishing (rust-lang/crates-io-auth-action) exports a short-lived
-# CARGO_REGISTRY_TOKEN; the input is the classic-token fallback.
+# The input carries the token: Trusted Publishing's short-lived one from
+# rust-lang/crates-io-auth-action's `token` output, or a classic secret. A
+# job-level CARGO_REGISTRY_TOKEN is the fallback.
 TOKEN="${INPUT_REGISTRY_TOKEN:-}"
 if [ -z "$TOKEN" ]; then
   TOKEN="${CARGO_REGISTRY_TOKEN:-}"
@@ -96,7 +97,7 @@ else
   echo "::add-mask::$TOKEN"
 fi
 if [ -z "$TOKEN" ]; then
-  echo "::error::publish: true needs a crates.io credential — run rust-lang/crates-io-auth-action before this step (Trusted Publishing, no stored secret), or set registry-token"
+  echo "::error::publish: true needs a crates.io credential: run rust-lang/crates-io-auth-action before this step and pass its token output as registry-token (Trusted Publishing, no stored secret), or set registry-token from a secret"
   exit 1
 fi
 

@@ -188,24 +188,27 @@ Outputs: `signed`, `source` (`release-tag` · `attestation-tag` · `commit`), `a
     # attestation-tag: ${{ github.ref_name }}
     # require-published: "true"
 - if: steps.sig.outputs.signed == 'true'
+  id: auth
   uses: rust-lang/crates-io-auth-action@v1
 - uses: gronke/rust-ci/.github/actions/cargo-publish@main
   with:
     publish: ${{ steps.sig.outputs.signed }}
+    registry-token: ${{ steps.auth.outputs.token }}
 ```
 
 ### `cargo-publish`
 
-Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Only releases matching `tag-pattern` are published — the default `^v[0-9]+\.[0-9]+\.[0-9]+$` admits stable releases only, so a prerelease or a bare major is a notice and a skip rather than an upload. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
+Publish the crate to crates.io — or rehearse it. `publish` is `"false"` by default, which runs `cargo publish --dry-run` and reads no credential at all; `publish: true` checks the version against crates.io and uploads, which only a yank can undo. Only releases matching `tag-pattern` are published — the default `^v[0-9]+\.[0-9]+\.[0-9]+$` admits stable releases only, so a prerelease or a bare major is a notice and a skip rather than an upload. Prefer Trusted Publishing over a stored secret: `rust-lang/crates-io-auth-action` mints a short-lived token as its `token` output, which this action takes as `registry-token`. This publishes the *crate*; the GitHub Release is `publish-draft-release`.
 
 ```yaml
 permissions: { id-token: write, contents: write }
 steps:
-  - uses: rust-lang/crates-io-auth-action@v1        # short-lived token, no stored secret
+  - id: auth
+    uses: rust-lang/crates-io-auth-action@v1        # short-lived token, no stored secret
   - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
     with:
       publish: "true"                               # omit for a dry run
-      # registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}   # classic-token fallback
+      registry-token: ${{ steps.auth.outputs.token }}   # or a classic ${{ secrets.CARGO_REGISTRY_TOKEN }}
 ```
 
 ### `promote-release`
@@ -503,10 +506,12 @@ jobs:
         with:
           tag: ${{ github.ref_name }}
       - if: steps.sig.outputs.signed == 'true'
+        id: auth
         uses: rust-lang/crates-io-auth-action@v1
       - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
         with:
           publish: ${{ steps.sig.outputs.signed }}
+          registry-token: ${{ steps.auth.outputs.token }}
 ```
 
 ## Passing env into the container (Docker actions)
