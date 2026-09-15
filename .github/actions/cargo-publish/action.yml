@@ -11,11 +11,11 @@ description: >-
   Only releases matching `tag-pattern` are published — by default just stable
   `vX.Y.Z`, so a prerelease can never reach the registry.
 
-  Credentials: prefer crates.io Trusted Publishing — put
+  Credentials: prefer crates.io Trusted Publishing: run
   `rust-lang/crates-io-auth-action` ahead of this step (with `id-token: write`)
-  and it exports a short-lived `CARGO_REGISTRY_TOKEN` this action picks up, so
-  no long-lived secret is stored. `registry-token` is the fallback for a
-  classic API token from a repository or organization secret.
+  and pass its `token` output as `registry-token`, so no long-lived secret is
+  stored. `registry-token` also takes a classic API token from a secret, and a
+  job-level `CARGO_REGISTRY_TOKEN` is honoured when the input is empty.
 
   This publishes the *crate*. Publishing the GitHub Release is
   `publish-draft-release`.
@@ -39,9 +39,10 @@ inputs:
     default: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
   registry-token:
     description: >-
-      crates.io API token, named after cargo's own CARGO_REGISTRY_TOKEN. Leave
-      empty when Trusted Publishing (or a job-level env of that name) already
-      provides one. Required for an upload when neither does.
+      crates.io API token, named after cargo's own CARGO_REGISTRY_TOKEN: the
+      `token` output of rust-lang/crates-io-auth-action, or a classic token from
+      a secret. Leave empty when a job-level env of that name already provides
+      one. Required for an upload when neither does.
     required: false
     default: ""
   package:

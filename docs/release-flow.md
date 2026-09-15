@@ -191,10 +191,12 @@ Unsigned is an answer, not a failure — feed it into cargo-publish's own `publi
           version: ${{ needs.gate.outputs.version }}
           attestation-tags: "v*-sig"
       - if: steps.sig.outputs.signed == 'true'
+        id: auth
         uses: rust-lang/crates-io-auth-action@v1
       - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
         with:
           publish: ${{ steps.sig.outputs.signed }}
+          registry-token: ${{ steps.auth.outputs.token }}
           allow-already-published: "true"
 ```
 
@@ -235,10 +237,12 @@ jobs:
           tag-sha: ${{ github.sha }}
           moving-major: "true"
       - if: steps.sig.outputs.signed == 'true'
+        id: auth
         uses: rust-lang/crates-io-auth-action@v1
       - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
         with:
           publish: ${{ steps.sig.outputs.signed }}
+          registry-token: ${{ steps.auth.outputs.token }}
           allow-already-published: "true"
 ```
 
@@ -418,10 +422,12 @@ jobs:
       # upload can only be yanked. Trusted Publishing mints a short-lived token
       # from the job's OIDC identity, so no registry secret is stored; bind the
       # publisher to this workflow file (and this environment) on crates.io.
-      - uses: rust-lang/crates-io-auth-action@v1
+      - id: auth
+        uses: rust-lang/crates-io-auth-action@v1
       - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
         with:
           publish: "true"
+          registry-token: ${{ steps.auth.outputs.token }}
 ```
 
 ## Repository configuration the flow relies on
