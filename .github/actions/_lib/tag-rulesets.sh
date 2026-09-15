@@ -51,7 +51,7 @@ _load_tag_rulesets() {
 # to unknown rather than "does not match".
 _pattern_confident() {
   case "$1" in
-    *'\'* | *'[!'* | *'[^'*) return 1 ;;
+    *\\* | *'[!'* | *'[^'*) return 1 ;;
   esac
   local after_open="${1#*[}"
   if [ "$after_open" != "$1" ] && [ "$after_open" = "${after_open#*]}" ]; then
@@ -108,5 +108,6 @@ signature_rule_covers_ref() {
     return 0
   done <<<"$_TAG_RULESET_DOCS"
 
+  # shellcheck disable=SC2034  # read by the sourcing action
   SIGNATURE_RULE_VERDICT="$verdict"
 }
