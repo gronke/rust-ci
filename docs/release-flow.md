@@ -6,7 +6,7 @@ Every gate is a step a repository can replace or drop.
 
 The flow is branch-based: every push of a `release/vX.Y.Z` branch rebuilds a draft pre-release, and one human-signed annotated `vX.Y.Z` tag publishes that draft.
 Drafts are invisible and mutable, and candidate marker tags reserve nothing, so the loop can run, fail, and be deleted without consequence.
-Publication is the one irreversible step: a published release is immutable and its tag name stays consumed even if the release is deleted, and a crates.io upload can only be yanked.
+Publication is the one irreversible step: GitHub's immutable releases lock the published release, its assets and its tag to the commit, the tag name stays consumed even if the release is deleted, and a crates.io upload can only be yanked.
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/cut.yml`](../.github/workflows/cut.yml) are the reference pipeline; this repository releases itself with them.
 
@@ -31,7 +31,7 @@ Publication is the one irreversible step: a published release is immutable and i
    `<commit>` is the default-branch tip after the merge-back; it carries the newest marker's tree, which is what the seal compares.
    The signed tag copies the marker's message, the changelog section rendered for the version.
    Push the tag by name; never `git push --tags`, which pushes every local tag along.
-   Never publish the draft by hand: GitHub would create an unsigned tag that fails the gate after the release is already live.
+   Never publish the draft in the web UI: GitHub creates a lightweight tag at the draft's target and the immutable release locks it there, so the gate refuses the tag run, the release is live with an unsigned tag, no signed tag can replace it (the push is declined as a protected ref), and the version is spent; the next version is the first through the flow.
 5. The tag pipeline: the push runs the gate (version coherence, `require-signed-tag`, the seal against the newest marker's tree) and then the final path (the draft flip, the moving major, and for a crate the registry upload behind the gate).
 6. Delete the release branch.
 
@@ -105,6 +105,7 @@ The built-in Actions app is not accepted as a bypass actor on an organization-ow
 - Settings > Actions > General: "Allow GitHub Actions to create and approve pull requests", or `cut-release` fails at the merge-back.
 - The `tags-maintainer-only` ruleset above, or one of the same shape: Actions may create `v*-rc*` markers (and the bare `v<MAJOR>` tags when `moving-major` is on), final `v*` tags are for admins.
 - The `release-branches` ruleset above, or one of the same shape, and a `token` on `cut-release` whose identity is in its bypass list; the workflow token has none on an organization-owned repository.
+- Immutable releases (Settings > General > Releases): the flip freezes the release, its assets and its tag, which is what makes a published release final and a spent version unrecoverable.
 - A release-signing key (OpenPGP or SSH) registered with the GitHub account that pushes the tag; GitHub verifies the tag object against the keys registered to the account whose verified email matches the tagger identity.
 - A `release` environment on the publish job, with required reviewers where a human pause before publication is wanted.
 - The merge-back pull request triggers no CI when the cut ran with the workflow token; a machine-user or App token through `cut-release`'s `token` and `git-user-*` inputs does.
@@ -114,7 +115,8 @@ The built-in Actions app is not accepted as a bypass actor on an organization-ow
 
 | Refusal | What happened, what to do |
 | --- | --- |
-| lightweight tag, or not a verified signed tag | Recreate the tag annotated (`git tag -s`) with a key your GitHub account knows and force-push it by name; the draft is still a draft, nothing is consumed. |
+| lightweight tag, or not a verified signed tag | While the release is still a draft: recreate the tag annotated (`git tag -s`) with a key your GitHub account knows and force-push it by name; nothing is consumed. |
+| lightweight tag because the draft was published in the web UI | The immutable release has locked the tag: a signed replacement is declined (`GH013: Cannot update this protected ref`) and deleting the release does not free the name. Leave the release as published, push the moving major by hand where the repository uses it, and take the next version through the flow. |
 | does not carry the content the last build sealed | The branch moved after the candidate, or the merge-back rebase brought other changes; re-tag the newest marker commit (or a tree-identical tip), or push the branch and let a new candidate build. |
 | tag/expected version != declared version | The ref name, the crate version and the changelog section must agree; fix the branch content. |
 | already published on crates.io | A published version cannot be replaced; bump the version and cut again. |
