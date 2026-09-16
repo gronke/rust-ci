@@ -1,8 +1,7 @@
 name: Release guidance
 description: >-
-  Write the release manager's next steps for a freshly built draft pre-release into the step summary: accept, reject, and what goes live next.
-  `go-live: signed-tag` renders the sign-and-push runbook; `publish-draft` renders merge-then-publish plus the optional vX.Y.Z-sig companion, and errors while an active tag ruleset requires signatures on the version itself.
-  Run it as the last step of a candidate build.
+  Write the release manager's next steps for a freshly built draft pre-release into the step summary: sign the marker's commit as the final tag and push it by name, or reject with nothing to unwind, and what the tag push triggers.
+  Run it as the last step of a candidate build, after `draft-release`.
 
 inputs:
   version:
@@ -14,25 +13,15 @@ inputs:
   commit:
     description: The commit the marker sealed, which the accept commands tag.
     required: true
-  go-live:
-    description: >-
-      How the draft goes live: "signed-tag" (default) or "publish-draft".
-    required: false
-    default: "signed-tag"
   tag-script:
     description: >-
       Repository-relative tagging helper to feature in the accept commands (called as `<tag-script> <commit> -s`); plain git commands when empty.
-      signed-tag mode only.
     required: false
     default: ""
   draft-url:
     description: URL of the draft release, linked from the summary when set.
     required: false
     default: ""
-  token:
-    description: Token for the publish-draft mode's tag-ruleset probe.
-    required: false
-    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -43,8 +32,6 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_MARKER_TAG: ${{ inputs.marker-tag }}
         INPUT_COMMIT: ${{ inputs.commit }}
-        INPUT_GO_LIVE: ${{ inputs.go-live }}
         INPUT_TAG_SCRIPT: ${{ inputs.tag-script }}
         INPUT_DRAFT_URL: ${{ inputs.draft-url }}
-        GH_TOKEN: ${{ inputs.token }}
       run: bash "$GITHUB_ACTION_PATH/release-guidance.sh"

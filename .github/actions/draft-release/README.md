@@ -1,7 +1,7 @@
 # draft-release
 
 Build the reviewable candidate: render the changelog's released section into `release-notes.md`, create or refresh the `v<version>` draft pre-release with it as the body, and push the next `v<version>-rcN` marker tag on the run's commit with the same notes as its message.
-Run it on every push of the release branch, followed by [`release-guidance`](../release-guidance/README.md) and optionally [`promote-release`](../promote-release/README.md).
+Run it on every push of the release branch, followed by [`release-guidance`](../release-guidance/README.md).
 
 ## Usage
 
@@ -38,5 +38,5 @@ Run it on every push of the release branch, followed by [`release-guidance`](../
 - Two renderings are written: `release-notes.md` (Markdown, the release body) and `release-tag.md` (plain text, the marker's message and, through the guidance command, the signed final tag's).
 - The marker number is one past the highest existing `v<version>-rcN` on the remote, read from one refs listing.
 - The marker is created locally first, so run it on a checkout without fetched tags (actions/checkout's default); a stale local rcN would shadow the push.
-- A rejected marker push (GH013) means the tag ruleset must let Actions create unsigned `v*-rc*` tags; exclude them from creation-restricting and signature-requiring rules.
+- A rejected marker push (GH013) means the tag ruleset must let Actions create unsigned `v*-rc*` tags; exclude them from creation-restricting tag rules.
 - The draft is created with `--draft --prerelease`; an existing release of that name only gets its notes refreshed.

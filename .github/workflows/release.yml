@@ -1,22 +1,15 @@
 name: Release
 
 # The reference pipeline from docs/release-flow.md, dogfooded with local
-# action paths, in publish-go-live mode: no per-release signing. A candidate
-# run builds the draft and its rcN marker; the release manager merges the
-# merge-back PR and then publishes the draft, the one human gate. The draft's
-# target is pinned to the merged commit (the guidance summary prints the
-# command), so publishing creates vX.Y.Z on exactly the content the marker
-# sealed, and the tag push runs the final path: version coherence, the tree
-# seal, the (idempotent) flip, and the moving major. An optional signed
-# companion (vX.Y.Z-sig, the only tags the ruleset requires signatures on)
-# attests the release commit out of band.
+# action paths. A candidate run (a push to a release branch) builds the draft
+# pre-release and its rcN marker and writes the sign-and-push runbook into the
+# step summary. A human signs the marker's commit as vX.Y.Z and pushes the tag
+# by name; that push runs the final path: version coherence, the signature
+# gate, the tree seal, the draft flip, and the moving major.
 on:
   push:
     branches: ["release/v**"]
-    # Exclude the signed provenance companion (vX.Y.Z-sig): it attests the
-    # release commit out of band and carries no changelog section or marker, so
-    # it must not drive the release pipeline.
-    tags: ["v*", "!v*-sig"]
+    tags: ["v*"]
   workflow_dispatch: # cut-release dispatches the first run explicitly
 
 permissions:
@@ -54,6 +47,13 @@ jobs:
         with:
           expected-version: ${{ steps.expect.outputs.version }}
 
+      # The signature gate: the tag must be an annotated object whose
+      # signature GitHub verifies. A tag ruleset restricts who creates release
+      # tags; the signature is checked here.
+      - name: The tag must be a verified signed tag
+        if: github.ref_type == 'tag'
+        uses: ./.github/actions/require-signed-tag
+
       # The seal is four API calls and no build, so it belongs here: a tag that
       # does not carry the reviewed content fails in seconds, not after the
       # artifact jobs.
@@ -82,23 +82,19 @@ jobs:
         with:
           version: ${{ env.VERSION }}
 
-      # publish-draft: the admin publishing the draft is the go-live. The step
-      # refuses at candidate time if a signature rule still covers the version
-      # itself, so the publish-created tag is never one the repository rejects.
+      # The sign-and-push runbook, with the marker and commit filled in.
       - uses: ./.github/actions/release-guidance
         with:
           version: ${{ env.VERSION }}
           marker-tag: ${{ steps.draft.outputs.marker }}
           commit: ${{ github.sha }}
           draft-url: ${{ steps.draft.outputs.url }}
-          go-live: publish-draft
 
   publish:
     name: publish the release (final path)
     needs: gate
-    # The vX.Y.Z tag normally arrives from the admin publishing the draft
-    # (markers are workflow-token pushes and trigger nothing); a hand-pushed
-    # tag runs the same seal.
+    # The vX.Y.Z tag arrives from a human's signed push; markers are
+    # workflow-token pushes and trigger nothing.
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
