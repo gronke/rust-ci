@@ -38,4 +38,5 @@ Run it on the tag run of the release pipeline, and with `seal-only: "true"` in t
 - No `v<version>-rcN` marker on the remote is an error; the pipeline publishes only reviewed candidates.
 - A stable version (no semver hyphen) sheds the pre-release flag on the flip; build metadata (`+build`) counts as stable here.
 - The moving major points at the highest stable `v<MAJOR>.x.y` tag and only at a commit reachable from the default branch; both are checked before the flip, so a refused move fails while the release is still a draft.
+- Under immutable releases the flip is final: the release, its assets and its tag lock at that moment; the moving major follows and may be re-run, since it force-updates a bare `v<MAJOR>` tag.
 - Publishing the crate to crates.io is [`cargo-publish`](../cargo-publish/README.md).

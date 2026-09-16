@@ -57,8 +57,8 @@ Or push a fix to the release branch instead: the next build refreshes the same d
 ### What the tag push triggers
 
 The tag run gates on the signature (\`require-signed-tag\`), seals the tag against the newest marker by tree, flips the draft live, advances the moving major, and, for a crate, uploads it to the registry behind the gate.
-Publication is the one irreversible step: a published release is immutable, and its tag name is consumed forever (deleting the release does not free it).
-Never publish the draft by hand: GitHub would create an unsigned tag that fails the gate after the release is already live.
+Publication is the one irreversible step: the immutable release locks the tag to its commit, and the tag name is consumed forever (deleting the release does not free it).
+Never publish the draft in the web UI: GitHub creates a lightweight tag and the immutable release locks it, the gate refuses it, no signed tag can replace it, and the version is spent; the next version is the first through the flow.
 EOF
 )"
 
