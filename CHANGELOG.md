@@ -21,6 +21,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Changed
 
+- `msrv`: runs `cargo check` inside the plain `rust:<msrv>` image, pulled with the transient-error retry, instead of building the toolchain image first; the action needs only a checkout.
+  The committed `Cargo.lock` is what gets checked, like every other sealed action; `locked: "false"` opts into the fresh resolution in a disposable copy.
+  **Breaking:** the `image-tag` input is removed, and `locked` defaults to `"true"` instead of `"false"`; a workflow that passes `image-tag` gets an unexpected-input warning and no image is built.
+- The sealed actions' `env-exclude` defaults to `""`: `CARGO_HOME`, `RUSTUP_HOME` and, with a `target-dir`, `CARGO_TARGET_DIR` are pinned with `-e`, which overrides `--env-file`, so the old default `CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR` excluded names the pin already overrides.
+  A bare `NAME` line in `env` forwards that variable from the runner environment (docker's `--env-file` semantics); the input descriptions and `docs/sealed-builds.md` state it.
+- `lint-and-test-docker` runs the `lint-and-test` action's script inside the container with `LOCKED=true`, `CLIPPY_ARGS=--all-targets` and its `offline` and `features` inputs; the commands it runs are unchanged.
+  The script gained the `OFFLINE` and `LOCKED` toggles, both off unless set, so the native action's commands are unchanged too.
+- `ci.yml`: the msrv leg is skipped when `rust-version` is `msrv`, since the main gate already runs at the MSRV.
 - `cargo-docker`: `--offline` goes in front of the cargo subcommand, so `args` may end in `-- <arguments for the test binary>`.
 - `_lib/seal.sh`: `target-dir` and `cargo-cache` accept absolute paths, which lets a sealed action reuse rust-cache's `local-target` directory.
 - `publish-dry-run`: the prep refuses a `.crate` whose file list contains a cargo build tree or a cargo home, instead of validating an archive that packages them.
