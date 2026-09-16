@@ -91,11 +91,20 @@ gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/tags-maintainer-on
 
 `tags-maintainer-only` restricts creation, update and deletion of every tag to repository admins (the bypass actor), except the `v*-rc*` markers `draft-release` pushes and the bare `v<MAJOR>` tags `publish-draft-release` moves with the workflow token.
 
+The release branches have a ruleset of the same shape:
+
+```sh
+gh api repos/{owner}/{repo}/rulesets --input .github/rulesets/release-branches.json
+```
+
+`release-branches` restricts creation, update and deletion of `release/v*` branches to repository admins (the bypass actor); a repository with another `branch-prefix` on `cut-release` edits the pattern.
+The built-in Actions app is not accepted as a bypass actor on an organization-owned repository (the API answers "Actor GitHub Actions integration must be part of the ruleset source or owner organization"), so with this ruleset active the cut pushes through `cut-release`'s `token` input with an identity from the bypass list: a fine-grained token of a repository admin, or a GitHub App installed on the organization and added as an `Integration` actor.
+
 ## Repository settings the flow relies on
 
 - Settings > Actions > General: "Allow GitHub Actions to create and approve pull requests", or `cut-release` fails at the merge-back.
 - The `tags-maintainer-only` ruleset above, or one of the same shape: Actions may create `v*-rc*` markers (and the bare `v<MAJOR>` tags when `moving-major` is on), final `v*` tags are for admins.
-- A branch ruleset restricting `release/v*` creation and pushes to release managers and Actions.
+- The `release-branches` ruleset above, or one of the same shape, and a `token` on `cut-release` whose identity is in its bypass list; the workflow token has none on an organization-owned repository.
 - A release-signing key (OpenPGP or SSH) registered with the GitHub account that pushes the tag; GitHub verifies the tag object against the keys registered to the account whose verified email matches the tagger identity.
 - A `release` environment on the publish job, with required reviewers where a human pause before publication is wanted.
 - The merge-back pull request triggers no CI when the cut ran with the workflow token; a machine-user or App token through `cut-release`'s `token` and `git-user-*` inputs does.

@@ -50,4 +50,5 @@ steps:
 - The dispatch is explicit because a push made with the workflow token triggers no workflows.
 - The merge-back needs the repository setting "Allow GitHub Actions to create and approve pull requests".
 - A pull request opened with the workflow token triggers no CI; pass a machine-user or App token with matching `git-user-*` inputs when it must.
+- With the `release-branches` ruleset active, the token's identity must be in that ruleset's bypass list, since the push creates `release/vX.Y.Z` (see [the release flow](../../../docs/release-flow.md#rulesets)).
 - The release commit is `chore: release vX.Y.Z` and carries the changelog and, when stamped, the citation file.

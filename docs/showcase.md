@@ -57,7 +57,7 @@ steps:
 
 ## The hardened variant
 
-- Signed tags: import `.github/rulesets/tags-maintainer-only.json` so only admins create `v*` tags; a ruleset cannot verify a tag's signature, `require-signed-tag` does.
+- Signed tags: import `.github/rulesets/tags-maintainer-only.json` so only admins create `v*` tags, and `.github/rulesets/release-branches.json` so only admins and the cut's token touch `release/v*`; a ruleset cannot verify a tag's signature, `require-signed-tag` does.
 - Sealed verify-build: `publish-dry-run` runs the publish checks without a build, then `cargo package` under `--network=none`, so dependency code executes without network at release time.
 - No stored registry secret: Trusted Publishing mints a 30-minute token from the job's OIDC identity.
 - Least privilege: each job declares only the permissions its steps need; the sealed jobs need `contents: read`.
