@@ -20,6 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `docs/self-hosted.md`: how a host hands these variables to every job through the runner's job-started hook, which reaches `container:` jobs too.
 - `cargo-fetch` and `publish-dry-run`: `git-host`, `git-username` and `git-path` next to `git-token`, so a private git dependency on GitLab, Bitbucket or a self-hosted forge routes like on GitHub.
 - selftest: `publish-draft-release`'s seal is exercised against a fake `gh`: same tree passes, another tree is refused, the newest candidate wins by numeric order, a version without markers is refused.
+- `.github/rulesets/release-branches.json`: the importable branch ruleset the runbook described as prose: creation, update and deletion of `release/v*` for repository admins.
+  GitHub accepts no bypass entry for the built-in Actions app on an organization-owned repository, so `docs/release-flow.md` names the token the cut then needs.
 
 ### Changed
 
