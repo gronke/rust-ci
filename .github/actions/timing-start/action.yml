@@ -1,24 +1,18 @@
 name: Timing start
 description: >-
-  Begin per-stage timing for a job: initialise the mark log, record the runner's core count and start a background CPU, memory and disk sampler.
-  Pair it with timing-mark at the top of each stage and timing-report as an always() last step.
-  Sampling reads /proc and is Linux-only; elsewhere the durations are still recorded.
+  Start the timing state for a job: record the runner's core count and OS and run a background CPU, memory and disk sampler.
+  Pair it with timing-report as an always() last step, which attributes the samples to the job's steps from the Actions API.
+  Sampling reads /proc and is Linux-only; elsewhere the report shows durations only.
 
 inputs:
   sample-interval:
     description: Seconds between resource samples. "0" records durations only.
     required: false
     default: "5"
-  first-stage:
-    description: >-
-      Name for the interval that begins here and ends at the first timing-mark (on most jobs the checkout and cache restore).
-      Empty starts the sampler without a mark; timing-report then derives the stages from the Actions API.
-    required: false
-    default: "setup"
 
 outputs:
   timing-dir:
-    description: Directory holding the marks, samples and notes for this job.
+    description: Directory holding the samples and notes for this job.
     value: ${{ steps.start.outputs.timing-dir }}
 
 runs:
@@ -29,5 +23,4 @@ runs:
       shell: bash
       env:
         SAMPLE_INTERVAL: ${{ inputs.sample-interval }}
-        FIRST_STAGE: ${{ inputs.first-stage }}
       run: bash "$GITHUB_ACTION_PATH/timing-start.sh"

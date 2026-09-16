@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Render the build-performance report to the job summary.
 # Inputs arrive as env vars from action.yml:
-#   TITLE     heading for the summary section
-#   ORDER     "duration" (slowest first) or "chronological"
-#   COLUMNS   sparkline width per stage
+#   TITLE         heading for the summary section
+#   ORDER         "duration" (slowest first) or "chronological"
+#   COLUMNS       sparkline width per stage
 #   GITHUB_TOKEN  token for the Actions API (per-step timings); needs actions:read
-set -euo pipefail
+#
+# Not -e: a report must never fail the job it measures.
+set -uo pipefail
 
 # shellcheck source=../_lib/timing.sh disable=SC1091
 source "$GITHUB_ACTION_PATH/../_lib/timing.sh"
 
 dir="$(timing_dir)"
+ended="$(timing_now_ms)"
 
 # Stop the sampler before reading its file, so the last stage's samples are a
 # complete set rather than a set that grows during the parse.
@@ -23,12 +26,12 @@ if [ -f "$dir/sampler.pid" ]; then
   rm -f "$dir/sampler.pid"
 fi
 
-# Stage boundaries from the Actions API, in marks.tsv form (`epoch_ms <TAB>
-# name`, ascending), for a workflow that places no manual marks. Emits the
-# current job's completed steps plus a closing "__report" sentinel at the last
-# step's end. Prints nothing (and returns non-zero) whenever the token, jq/curl,
-# or the API response is unavailable, so the caller falls back to any marks.
-marks_from_api() {
+# Stage boundaries from the Actions API as `epoch_ms <TAB> name`, ascending:
+# the start of every completed step of this job plus a closing "__report"
+# sentinel at the last step's end. Prints nothing and returns non-zero without
+# a token, jq and curl, or a usable response (403 without actions: read, 404),
+# so the caller falls back to the job totals.
+stages_from_api() {
   local token="${GITHUB_TOKEN:-}"
   [ -n "$token" ] && [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] || return 1
   command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 || return 1
@@ -41,6 +44,9 @@ marks_from_api() {
   # This job: the in-progress one on this runner (the report itself is a step of
   # it). Falls back to a runner match, then to the latest-started job, so the
   # selection still resolves when queried after the job completes (tests, reruns).
+  # Steps still running (this one) have no completed_at and are left out; the
+  # service ingests a finished step's timeline within moments, so the steps
+  # before the report are present by the time it asks.
   local rows
   rows="$(printf '%s' "$resp" | jq -r --arg runner "${RUNNER_NAME:-}" '
     (.jobs // []) as $all
@@ -66,38 +72,42 @@ marks_from_api() {
   done <<< "$rows"
 }
 
-if [ -s "$dir/marks.tsv" ]; then
-  # Manual marks win; dropping them opts a workflow into the API-derived stages
-  # below. The last mark has no end until this sentinel closes it; the table
-  # drops it.
-  timing_mark "__report"
-elif marks_from_api > "$dir/marks.api.tsv" 2>/dev/null && [ -s "$dir/marks.api.tsv" ]; then
-  # No manual marks: derive the stages from the Actions API. Its output already
-  # ends with the __report sentinel, so no manual close is needed.
-  mv "$dir/marks.api.tsv" "$dir/marks.tsv"
-else
-  rm -f "$dir/marks.api.tsv"
-  echo "::warning title=No timing data::timing-report found no timing marks and could not read the Actions API (needs a token with actions:read)."
-  exit 0
-fi
-
-# The render reads samples.tsv and notes.tsv. A report derived from the API
-# without timing-start has neither, so create them empty: the table degrades to
-# durations only rather than failing the awk (set -e + pipefail turns a missing
-# input into a fatal exit), and the cores/sampler/cache lookups just find nothing.
+# The render reads samples.tsv and notes.tsv. A report without timing-start has
+# neither, so create them empty: the table degrades to durations only rather
+# than failing the awk, and the cores/sampler/cache lookups just find nothing.
 [ -f "$dir/samples.tsv" ] || : > "$dir/samples.tsv"
 [ -f "$dir/notes.tsv" ] || : > "$dir/notes.tsv"
+
+bounds="$dir/boundaries.tsv"
+if stages_from_api > "$bounds" 2>/dev/null && [ -s "$bounds" ]; then
+  source=api
+else
+  # No per-step timings: the whole job is one stage, from timing-start to here,
+  # named after the job. A job without timing-start has no start either, and
+  # then there is nothing to measure.
+  started="$(awk -F'\t' '$1 == "started" {print $2}' "$dir/notes.tsv" 2>/dev/null | tail -1)"
+  case "$started" in
+    '' | *[!0-9]*)
+      rm -f "$bounds"
+      echo "::warning title=No timing data::timing-report found no timing-start in this job and could not read the Actions API (the token needs actions: read)."
+      exit 0
+      ;;
+  esac
+  printf '%s\t%s\n%s\t__report\n' "$started" "$(timing_sanitize "${GITHUB_JOB:-job}")" "$ended" > "$bounds"
+  source=totals
+  echo "::warning title=No per-step timings::timing-report could not read this job's steps from the Actions API and shows the job totals; grant the job actions: read for a per-step table (the API path also needs jq, curl and GNU date on the runner)."
+fi
 
 cores="$(awk -F'\t' '$1 == "runner.cores" {print $2}' "$dir/notes.tsv" 2>/dev/null | tail -1)"
 case "$cores" in '' | 0 | *[!0-9]*) cores=0 ;; esac
 
-# One pass: marks define the stage bounds, samples are bucketed into them.
+# One pass: boundaries define the stages, samples are bucketed into them.
 # Emits TSV per stage: name, ms, peak load, mean load, peak mem kB, shape.
 stats="$dir/stages.tsv"
 awk -F'\t' -v cols="$COLUMNS" -v cores="$cores" -v OFS='\t' '
   FNR == 1 { file++ }
 
-  # marks.tsv
+  # boundaries.tsv
   file == 1 {
     n++
     at[n] = $1 + 0
@@ -132,7 +142,7 @@ awk -F'\t' -v cols="$COLUMNS" -v cores="$cores" -v OFS='\t' '
   }
 
   END {
-    # The final mark is the sentinel; it closes stage n-1 and is not a stage.
+    # The final boundary is the sentinel; it closes stage n-1 and is not a stage.
     for (i = 1; i < n; i++) {
       dur = at[i + 1] - at[i]
       mean = (cnt[i] > 0) ? sum[i] / cnt[i] : 0
@@ -153,9 +163,12 @@ awk -F'\t' -v cols="$COLUMNS" -v cores="$cores" -v OFS='\t' '
       print nm[i], dur, peak[i] + 0, mean, pmem[i] + 0, shape
     }
   }
-' "$dir/marks.tsv" "$dir/samples.tsv" > "$stats"
+' "$bounds" "$dir/samples.tsv" > "$stats"
 
 total_ms="$(awk -F'\t' '{t += $2} END {print t + 0}' "$stats")"
+# Digits or zero: an arithmetic expansion on an empty operand is a bash syntax
+# error that drops the rest of the output block, and a failed awk leaves it empty.
+case "$total_ms" in '' | *[!0-9]*) total_ms=0 ;; esac
 sampled="$(awk -F'\t' '$6 ~ /[1-8]/ {c++} END {print c + 0}' "$stats")"
 
 case "$ORDER" in
@@ -178,22 +191,33 @@ fmt_ms() {
   interval="$(awk -F'\t' '$1 == "sampler" {print $2}' "$dir/notes.tsv" 2>/dev/null | tail -1)"
   stages="$(wc -l < "$stats" | tr -d ' ')"
   # shellcheck disable=SC2016  # the backticks are Markdown, not a subshell
-  printf '`%s` across %s stages' "$(fmt_ms "$total_ms")" "$stages"
+  if [ "$source" = api ]; then
+    printf '`%s` across %s stages' "$(fmt_ms "$total_ms")" "$stages"
+  else
+    printf '`%s` for the whole job' "$(fmt_ms "$total_ms")"
+  fi
   [ "$cores" -gt 0 ] && printf ' on %s cores' "$cores"
   [ -n "$interval" ] && printf ', %s' "$interval"
   printf '.\n\n'
 
-  if [ "$sampled" -gt 0 ]; then
-    echo "| stage | duration | share | peak cpu | mean cpu | peak mem | cpu shape |"
-    echo "| --- | ---: | ---: | ---: | ---: | ---: | --- |"
-  else
-    echo "| stage | duration | share |"
-    echo "| --- | ---: | ---: |"
+  # The totals form has one row and the heading line already carries its
+  # duration, so its table exists only for the sampler's columns.
+  if [ "$source" = api ]; then
+    if [ "$sampled" -gt 0 ]; then
+      echo "| stage | duration | share | peak cpu | mean cpu | peak mem | cpu shape |"
+      echo "| --- | ---: | ---: | ---: | ---: | ---: | --- |"
+    else
+      echo "| stage | duration | share |"
+      echo "| --- | ---: | ---: |"
+    fi
+  elif [ "$sampled" -gt 0 ]; then
+    echo "| peak cpu | mean cpu | peak mem | cpu shape |"
+    echo "| ---: | ---: | ---: | --- |"
   fi
 
   # A second pass formats; keeping it out of the aggregation above is what lets
   # the rows be sorted by a plain `sort` between the two.
-  awk -F'\t' -v total="$total_ms" -v cores="$cores" -v sampled="$sampled" '
+  awk -F'\t' -v total="$total_ms" -v cores="$cores" -v sampled="$sampled" -v source="$source" '
     function fmt(ms) {
       s = int(ms / 1000)
       if (s >= 3600) return sprintf("%dh %02dm", s / 3600, (s % 3600) / 60)
@@ -219,7 +243,11 @@ fmt_ms() {
       blk[5] = "▅"; blk[6] = "▆"; blk[7] = "▇"; blk[8] = "█"
     }
     {
-      share = (total > 0) ? 100 * $2 / total : 0
+      row = ""
+      if (source == "api") {
+        share = (total > 0) ? 100 * $2 / total : 0
+        row = sprintf("| %s | %s | %d%% ", $1, fmt($2), share + 0.5)
+      }
       if (sampled > 0) {
         # Effective busy cores alongside the percentage: "62% (5.0 of 8)" says
         # what a bigger runner would and would not have bought.
@@ -228,10 +256,9 @@ fmt_ms() {
         # A stage shorter than one sampling interval has no shape; empty
         # backticks would render as a stray code span rather than as a blank.
         shape = (length($6) > 0) ? "`" spark($6) "`" : ""
-        printf "| %s | %s | %d%% | %s | %s | %s | %s |\n", $1, fmt($2), share + 0.5, peak, mean, ($5 > 0 ? bytes($5) : ""), shape
-      } else {
-        printf "| %s | %s | %d%% |\n", $1, fmt($2), share + 0.5
+        row = row sprintf("| %s | %s | %s | %s ", peak, mean, ($5 > 0 ? bytes($5) : ""), shape)
       }
+      if (row != "") print row "|"
     }
   ' "$sorted"
 
@@ -243,6 +270,11 @@ fmt_ms() {
       echo "CPU is the share of all cores busy, measured per sampling interval from \`/proc/stat\` deltas."
     fi
     echo "A full block in the shape is every core busy for that bucket; a stage that never fills one is waiting on something and will not get faster on a bigger runner."
+  fi
+
+  if [ "$source" != api ]; then
+    echo
+    echo "Per-step stages need \`actions: read\` on the job; the report then takes each step's timings from the Actions API."
   fi
 
   # Notes carry what the durations cannot explain: whether the cache hit, and
@@ -263,12 +295,15 @@ fmt_ms() {
 cat "$dir/report.md" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
 slowest="$(head -1 "${stats}.sorted" 2>/dev/null || sort -t"$(printf '\t')" -k2,2nr "$stats" | head -1)"
+slowest_ms="$(printf '%s' "$slowest" | cut -f2)"
+case "$slowest_ms" in '' | *[!0-9]*) slowest_ms=0 ;; esac
 {
   echo "report-path=$dir/report.md"
   echo "total-ms=$total_ms"
   echo "total-seconds=$(( total_ms / 1000 ))"
   echo "slowest-stage=$(printf '%s' "$slowest" | cut -f1)"
-  echo "slowest-seconds=$(( $(printf '%s' "$slowest" | cut -f2) / 1000 ))"
+  echo "slowest-seconds=$(( slowest_ms / 1000 ))"
 } >> "${GITHUB_OUTPUT:-/dev/null}"
 
-echo "reported $(wc -l < "$stats" | tr -d ' ') stages, $(fmt_ms "$total_ms") total"
+echo "reported $(wc -l < "$stats" | tr -d ' ') stages from the ${source}, $(fmt_ms "$total_ms") total"
+exit 0
