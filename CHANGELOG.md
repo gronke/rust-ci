@@ -26,12 +26,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `publish-dry-run`: the prep refuses a `.crate` whose file list contains a cargo build tree or a cargo home, instead of validating an archive that packages them.
 - `changelog`: candidate marker tags (`vX.Y.Z-rcN`) no longer set the baseline for a stable version; a release-candidate version still measures against earlier candidates.
 - `cargo-publish` and every snippet: `rust-lang/crates-io-auth-action` sets a `token` output, which is passed as `registry-token`; it never exported `CARGO_REGISTRY_TOKEN`.
+- **Breaking:** the release flow has one go-live: a human-signed annotated tag; `require-signed-tag` gates the tag pipeline and `cargo-publish` runs behind it.
+  The candidate loop (`draft-release`, `release-guidance`) stays as the optional preview; `publish-draft-release` keeps the seal, the draft flip and the moving major.
+- The reference pipeline `release.yml` gates its tag run on the signature: `check-release-readiness`, then `require-signed-tag`, then the seal-only step, and the tag trigger is plain `v*` again.
+
+### Removed
+
+- `promote-release`: the pipeline no longer creates the final tag; a human signs and pushes it.
+- `require-signed-release` and the `vX.Y.Z-sig` companion convention: the signature lives on the release tag, checked by `require-signed-tag`, and no companion tag unlocks a registry upload.
+- `release-guidance`: the `go-live` input and the publish-draft rendering, and the `token` input that fed the ruleset probe.
+- `require-signed-tag`: the `check-ruleset` input and the ruleset alignment warning.
+- The `tags-signed.json` and `tags-sig-signed.json` rulesets and the `_lib/tag-rulesets.sh` probe.
+  A tag ruleset with `required_signatures` refuses only pushes that introduce unsigned commits and never checks a tag object's signature, so the probe, the `sign-tags` autodetection and the alignment warning rested on a false premise; `tags-maintainer-only.json` stays and restricts who creates release tags.
 
 ### Fixed
 
 - `build-image`: the Actions runtime token is masked before it is exported into the job environment.
-- `publish-draft-release`, `promote-release`: the moving major is force-pushed in one step; the delete that preceded it left `@v1` unresolvable for a moment.
-- `release-guidance`: a release-candidate version keeps its pre-release flag in the rendered publish command.
+- `publish-draft-release`: the moving major is force-pushed in one step; the delete that preceded it left `@v1` unresolvable for a moment.
 - `timing-start`: the sampler exits when its pid file disappears or after six hours, so a cancelled job leaves no loop behind.
 
 ### Documentation
@@ -40,7 +51,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - New guides: `docs/sealed-builds.md` (the seal and environment forwarding), `docs/showcase.md` (QA, test, release and publish end to end), `docs/cache-operations.md`; `docs/release-flow.md` is a runbook that links the reference pipeline instead of copying it.
 - Unsupported claims are gone: the asset attestation clause in `release-guidance`, the lightweight-tag warning, the production anecdote; `cargo-out-dir` states its jq requirement, `lint-and-test` its `--workspace`.
 - `scripts/lint.sh` and `.yamllint` run shellcheck, yamllint, actionlint and the em-dash check locally; the text carries no em-dashes.
-- `release-guidance` summary headings read `Accept: seal and publish`, `Accept: merge, then publish` and `Reject: nothing to unwind`.
+- `release-guidance` summary headings read `Accept: sign and push the tag`, `Reject: nothing to unwind` and `What the tag push triggers`.
 
 ## [1.8.0] - 2026-09-06
 
