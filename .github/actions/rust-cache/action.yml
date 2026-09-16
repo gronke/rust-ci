@@ -43,7 +43,7 @@ inputs:
     default: ""
   stats:
     description: >-
-      Record what the restore delivered (hit kind, restored sizes) for the timing-report Cache section.
+      Record what the restore delivered (hit kind, restored sizes) in the step summary and for the timing-report Cache section.
       Off by default because it walks the restored trees with du, which takes seconds on a multi-gigabyte target.
     required: false
     default: "false"

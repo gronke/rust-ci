@@ -18,7 +18,7 @@ inputs:
     default: "."
   stats:
     description: >-
-      Record the pruned size, and the share the prune removed when `rust-cache` measured the tree before the build, for the `timing-report` Cache section.
+      Record the pruned size, and the share the prune removed when `rust-cache` measured the tree before the build, in the step summary and for the `timing-report` Cache section.
       Pair it with `stats: "true"` on `rust-cache`.
     required: false
     default: "false"

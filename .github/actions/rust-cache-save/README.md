@@ -20,7 +20,7 @@ Use it as the last step of a job that ran `rust-cache` with `cache-target: "true
 | --- | --- | --- |
 | `save` | `"true"` | Upload the pruned target. Pass the expression `github.ref == 'refs/heads/main'` for the restore-everywhere, save-on-main pattern. |
 | `working-directory` | `.` | Workspace directory whose `cargo metadata` names the members to prune. |
-| `stats` | `"false"` | Record the pruned size, and the share the prune removed when `rust-cache` measured the tree before the build, for the `timing-report` Cache section. |
+| `stats` | `"false"` | Record the pruned size, and the share the prune removed when `rust-cache` measured the tree before the build, in the step summary and for the `timing-report` Cache section. |
 
 ## How it works
 

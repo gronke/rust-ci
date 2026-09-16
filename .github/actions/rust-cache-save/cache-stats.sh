@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Record what the prune removed, for the timing report's Cache section.
-# Inputs arrive as env vars from action.yml:
+# Record what the prune removed, into the step summary and as notes for the
+# timing report's Cache section. Inputs arrive as env vars from action.yml:
 #   TARGET_DIR             pruned target directory
 #   RUST_CI_TARGET_BYTES_IN size before the prune, when rust-cache measured it
 #
@@ -27,6 +27,8 @@ if [ "$before" -gt 0 ] && [ "$after" -le "$before" ]; then
   timing_note "cache.target.prune_removed" \
     "$(timing_bytes "$(( before - after ))") of $(timing_bytes "$before") ($(( 100 - after * 100 / before ))%)"
 fi
+
+timing_summary "Cache save"
 
 # See the note in rust-cache/cache-stats.sh: never end on a conditional.
 exit 0
