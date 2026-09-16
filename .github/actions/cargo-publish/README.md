@@ -1,7 +1,7 @@
 # cargo-publish
 
 Publish the crate to crates.io, or rehearse the publish with `cargo publish --dry-run`.
-Run it last in the release pipeline, behind [`require-signed-release`](../require-signed-release/README.md) or another human gate; the GitHub Release is published by [`publish-draft-release`](../publish-draft-release/README.md).
+Run it last in the tag run of the release pipeline, behind [`require-signed-tag`](../require-signed-tag/README.md) on the tag ref; the GitHub Release is published by [`publish-draft-release`](../publish-draft-release/README.md).
 
 ## Usage
 
@@ -9,6 +9,7 @@ Run it last in the release pipeline, behind [`require-signed-release`](../requir
 permissions:
   id-token: write   # crates.io Trusted Publishing
 steps:
+  - uses: gronke/rust-ci/.github/actions/require-signed-tag@v1
   - id: auth
     uses: rust-lang/crates-io-auth-action@v1
   - uses: gronke/rust-ci/.github/actions/cargo-publish@v1
@@ -44,3 +45,4 @@ steps:
 - The already-published probe runs before the credential is read, so an allowed re-run needs no token.
 - The token reaches cargo through one call's environment and is never written to disk (no `cargo login`).
 - `rust-lang/crates-io-auth-action` sets a `token` output (needs `id-token: write`) and never exports `CARGO_REGISTRY_TOKEN`; an upload is irreversible, a published version can only be yanked.
+- The upload runs on the tag ref behind `require-signed-tag`, so an unsigned or lightweight tag never reaches the registry; a job-level `CARGO_REGISTRY_TOKEN` is the fallback credential.

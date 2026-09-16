@@ -2,8 +2,8 @@ name: Cargo publish
 description: >-
   Publish the crate to crates.io, or rehearse it.
   `publish` defaults to "false", which runs `cargo publish --dry-run` and reads no credential.
-  With `publish: true` only a version matching `tag-pattern` (stable vX.Y.Z by default) is checked against crates.io and uploaded.
-  Pass the `token` output of rust-lang/crates-io-auth-action as `registry-token`, or a classic token; a job-level CARGO_REGISTRY_TOKEN is the fallback.
+  With `publish: true` only a version matching `tag-pattern` (stable vX.Y.Z by default) is checked against crates.io and uploaded; run it behind `require-signed-tag` on the tag ref.
+  Pass the `token` output of rust-lang/crates-io-auth-action as `registry-token`, or a classic token.
 
 inputs:
   publish:

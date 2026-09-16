@@ -1,8 +1,8 @@
 name: Require signed tag
 description: >-
-  Gate a release pipeline on a verified signed tag: the ref must be an annotated tag object whose signature GitHub verifies, read through the API with no keyring on the runner.
+  Gate the release pipeline on its signature: the ref must be an annotated tag object whose signature GitHub verifies, read through the API with no keyring on the runner.
   Lightweight and unverified tags are refused, or warned about with `warn-only`.
-  The action warns when no active tag ruleset with required signatures backs the workflow's preference.
+  A tag ruleset restricts who creates release tags but never verifies a tag's signature; this gate does.
 
 inputs:
   tag:
@@ -13,12 +13,6 @@ inputs:
     description: Emit a warning instead of failing when the tag is lightweight or unverified.
     required: false
     default: "false"
-  check-ruleset:
-    description: >-
-      When enforcing, warn if no active tag ruleset requires signatures on the tag.
-      Skipped quietly when the token cannot read the rulesets.
-    required: false
-    default: "true"
   token:
     description: Token for the API reads.
     required: false
@@ -44,6 +38,5 @@ runs:
       env:
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_WARN_ONLY: ${{ inputs.warn-only }}
-        INPUT_CHECK_RULESET: ${{ inputs.check-ruleset }}
         GH_TOKEN: ${{ inputs.token }}
       run: bash "$GITHUB_ACTION_PATH/require-signed-tag.sh"

@@ -45,15 +45,15 @@ git config user.email "$INPUT_GIT_USER_EMAIL"
 latest="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-rc" --jq '.[].ref' \
   | sed -n 's|.*-rc\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)"
 n=$((${latest:-0} + 1))
-# The marker's message is the plain-text render (so promoting a candidate copies
-# it into the signed tag), else a bare candidate label.
+# The marker's message is the plain-text render (so the signed final tag copies
+# it through the guidance command), else a bare candidate label.
 if [ -s release-tag.md ]; then
   git tag -a -F release-tag.md "v${VERSION}-rc${n}" "${GITHUB_SHA}"
 else
   git tag -a -m "v${VERSION} candidate ${n}" "v${VERSION}-rc${n}" "${GITHUB_SHA}"
 fi
 git push origin "refs/tags/v${VERSION}-rc${n}" || {
-  echo "::error::the marker push was rejected (GH013). The tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting and signature-requiring tag rules."
+  echo "::error::the marker push was rejected (GH013). The tag ruleset must let Actions create unsigned v*-rc* markers: exclude v*-rc* from creation-restricting tag rules."
   exit 1
 }
 

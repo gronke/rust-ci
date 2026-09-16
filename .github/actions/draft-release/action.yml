@@ -1,7 +1,7 @@
 name: Draft release
 description: >-
   Build the reviewable release candidate: render the changelog's released section into `release-notes.md`, create or refresh the draft pre-release whose body it becomes, and push the next unsigned `v<version>-rcN` marker tag on the run's commit, carrying the same text as its message.
-  Pair with `release-guidance` and, optionally, `promote-release`.
+  Pair with `release-guidance`, which writes the sign-and-push runbook for the marker.
 
 inputs:
   version:
