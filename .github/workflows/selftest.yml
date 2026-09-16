@@ -1363,11 +1363,20 @@ jobs:
           [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
           echo "✓ $hits hit(s) through the backend"
       - uses: ./.github/actions/sccache-stats
-      - name: the stats landed as cache.sccache facts
+      - name: the stats landed as cache.sccache facts and in the step summary
         run: |
-          notes="${RUST_CI_TIMING_DIR:-$RUNNER_TEMP/rust-ci-timing}/notes.tsv"
+          notes="$RUNNER_TEMP/rust-ci-timing/notes.tsv"
           grep -q '^cache\.sccache' "$notes" || { echo "::error::no cache.sccache fact in $notes"; exit 1; }
-          echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded"
+          # The runner owns $GITHUB_STEP_SUMMARY and a later step cannot read it
+          # back, so the writer runs once more by hand against a readable file.
+          S="$RUNNER_TEMP/sccache-summary.md"
+          GITHUB_ACTION_PATH=.github/actions/sccache-stats RUNNER_TEMP="$RUNNER_TEMP/sccache-unit" GITHUB_STEP_SUMMARY="$S" \
+            bash .github/actions/sccache-stats/sccache-stats.sh >/dev/null
+          cat "$S"
+          # shellcheck disable=SC2016  # the backticks are Markdown, not a subshell
+          grep -q '| `cache.sccache` | .* hits / .* misses of ' "$S" \
+            || { echo "::error::the sccache facts did not reach the step summary"; exit 1; }
+          echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded, and rendered in the step summary"
 
   # gha: GitHub's cache service as the backend, the explicit hosted-runner
   # choice. The round-trip is real: the rebuild's hits come back from the
@@ -1721,16 +1730,21 @@ jobs:
           [ "$GIT_CONFIG_COUNT" = "2" ] \
             || { echo "::error::a refused token disturbed the exported entries (count ${GIT_CONFIG_COUNT:-none})"; exit 1; }
 
-  # The timing actions end to end: marks bound stages, the sampler attributes
-  # CPU to the stage that spent it, and the report renders and closes the last
-  # stage itself. The CPU assertion is the one that matters: a load average
-  # would smear an eight-second burn across the stage after it, which is the
-  # failure the /proc/stat delta exists to avoid, so it burns every core in one
-  # stage and sleeps through the next, then asserts the ordering rather than any
-  # absolute number.
-  selftest-timing:
-    name: exercise the timing actions
+  # The timing actions end to end: the report takes its stage boundaries from
+  # the job's own steps through the Actions API, and the sampler attributes CPU
+  # to the step that spent it. The CPU assertion is the one that matters: a
+  # load average would smear an eight-second burn across the step after it,
+  # which is the failure the /proc/stat delta exists to avoid, so it burns every
+  # core in one step and sleeps through the next, then asserts the ordering of
+  # the two means rather than any absolute number.
+  selftest-timing-from-api:
+    name: exercise the timing actions from the Actions API
     runs-on: ubuntu-latest
+    permissions:
+      # contents too: a permissions block replaces the default set, and the
+      # checkout of a private clone of this repository needs the read.
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
 
@@ -1739,25 +1753,19 @@ jobs:
         uses: ./.github/actions/timing-start
         with:
           sample-interval: "1"
-          first-stage: setup
 
-      - name: timing-start exported the state directory
+      - name: timing-start laid down the state
         run: |
           set -euo pipefail
-          test -n "${RUST_CI_TIMING_DIR:-}" || { echo "::error::RUST_CI_TIMING_DIR not exported"; exit 1; }
-          test "${{ steps.start.outputs.timing-dir }}" = "$RUST_CI_TIMING_DIR" \
-            || { echo "::error::the timing-dir output disagrees with the exported env"; exit 1; }
-          for f in marks.tsv samples.tsv notes.tsv sampler.pid; do
-            test -f "$RUST_CI_TIMING_DIR/$f" || { echo "::error::missing $f"; exit 1; }
+          dir='${{ steps.start.outputs.timing-dir }}'
+          test "$dir" = "$RUNNER_TEMP/rust-ci-timing" \
+            || { echo "::error::the timing-dir output is not the shared location: '$dir'"; exit 1; }
+          for f in samples.tsv notes.tsv sampler.pid; do
+            test -f "$dir/$f" || { echo "::error::missing $f"; exit 1; }
           done
-          grep -q "	setup$" "$RUST_CI_TIMING_DIR/marks.tsv" \
-            || { echo "::error::the first-stage mark was not recorded"; exit 1; }
-          echo "✓ state at $RUST_CI_TIMING_DIR, sampler pid $(cat "$RUST_CI_TIMING_DIR/sampler.pid")"
-
-      - name: timing-mark (busy stage)
-        uses: ./.github/actions/timing-mark
-        with:
-          name: busy stage
+          grep -q '^started	[0-9]' "$dir/notes.tsv" \
+            || { echo "::error::the job start was not recorded"; exit 1; }
+          echo "✓ state at $dir, sampler pid $(cat "$dir/sampler.pid")"
 
       # Saturate every core for long enough to cover several sampling ticks.
       - name: burn all cores
@@ -1767,42 +1775,43 @@ jobs:
           done
           wait
 
-      - name: timing-mark (idle stage)
-        uses: ./.github/actions/timing-mark
-        with:
-          name: idle stage
-
       - name: sleep
         run: sleep 8
 
       - name: the sampler collected ticks while the steps ran
         run: |
           set -euo pipefail
-          n=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          n=$(wc -l < "$RUNNER_TEMP/rust-ci-timing/samples.tsv")
           test "$n" -ge 10 || { echo "::error::only $n samples across ~17s at 1s; the sampler did not survive the step boundary"; exit 1; }
           echo "✓ $n samples"
 
+      # The Actions API lists a step a few seconds after it completes; a short
+      # final step keeps the two asserted steps out of that window.
+      - name: settle
+        run: sleep 5
       - name: timing-report
         id: report
         uses: ./.github/actions/timing-report
         with:
           columns: "10"
 
-      - name: the report attributed CPU to the stage that spent it
+      # Means, not peaks: the API places step boundaries at whole seconds, so
+      # the first tick inside "sleep" can still carry the burn's last moments.
+      - name: the report attributed CPU to the step that spent it
         run: |
           set -euo pipefail
-          stats="$RUST_CI_TIMING_DIR/stages.tsv"
+          stats="$RUNNER_TEMP/rust-ci-timing/stages.tsv"
           test -f "$stats" || { echo "::error::no per-stage stats were written"; exit 1; }
           cat "$stats"
-          busy=$(awk -F'\t' '$1 == "busy stage" {print int($3)}' "$stats")
-          idle=$(awk -F'\t' '$1 == "idle stage" {print int($3)}' "$stats")
+          busy=$(awk -F'\t' '$1 == "burn all cores" {print int($4)}' "$stats")
+          idle=$(awk -F'\t' '$1 == "sleep" {print int($4)}' "$stats")
           test -n "$busy" && test -n "$idle" \
-            || { echo "::error::a stage is missing from the report"; exit 1; }
+            || { echo "::error::a step is missing from the API-derived stages"; exit 1; }
           test "$busy" -gt "$idle" \
-            || { echo "::error::peak CPU did not separate the stages (busy ${busy}%, idle ${idle}%): samples are not being attributed per stage"; exit 1; }
+            || { echo "::error::mean CPU did not separate the steps (burn ${busy}%, sleep ${idle}%): samples are not being attributed per stage"; exit 1; }
           test "$busy" -ge 50 \
-            || { echo "::error::burning every core measured only ${busy}%"; exit 1; }
-          echo "✓ busy ${busy}% against idle ${idle}%"
+            || { echo "::error::burning every core measured a mean of only ${busy}%"; exit 1; }
+          echo "✓ burn ${busy}% against sleep ${idle}%"
 
       # Asserted against the rendered report on disk, NOT $GITHUB_STEP_SUMMARY:
       # that path is a separate file per step, so a later step opening it reads
@@ -1817,165 +1826,78 @@ jobs:
           cat "$report"
           grep -q '^## Where the time went' "$report" \
             || { echo "::error::no report heading"; exit 1; }
-          grep -q '| busy stage |' "$report" \
-            || { echo "::error::the busy stage is missing from the rendered table"; exit 1; }
+          # "Set up job" is always the first step and completes before any of
+          # ours, so the API has it regardless of any lag on the freshest step.
+          grep -q '| Set up job |' "$report" \
+            || { echo "::error::the API-derived report is missing the job's real step names"; exit 1; }
+          grep -q '| burn all cores |' "$report" \
+            || { echo "::error::the burn step is missing from the rendered table"; exit 1; }
           # The sentinel closes the last stage and is not itself a row.
           if grep -q '__report' "$report"; then
             echo "::error::the internal sentinel leaked into the table"; exit 1
           fi
           total='${{ steps.report.outputs.total-seconds }}'
-          test "$total" -ge 15 || { echo "::error::total of ${total}s is short of the ~17s of stages"; exit 1; }
+          test "$total" -ge 15 || { echo "::error::total of ${total}s is short of the ~17s of steps"; exit 1; }
+          test '${{ steps.report.outputs.total-ms }}' -ge 15000 \
+            || { echo "::error::total-ms disagrees with total-seconds"; exit 1; }
           echo "✓ rendered; total ${total}s, slowest '${{ steps.report.outputs.slowest-stage }}'"
 
       - name: the report stopped the sampler
         run: |
           set -euo pipefail
-          test ! -f "$RUST_CI_TIMING_DIR/sampler.pid" \
+          test ! -f "$RUNNER_TEMP/rust-ci-timing/sampler.pid" \
             || { echo "::error::the pid file survived the report"; exit 1; }
-          before=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          before=$(wc -l < "$RUNNER_TEMP/rust-ci-timing/samples.tsv")
           sleep 3
-          after=$(wc -l < "$RUST_CI_TIMING_DIR/samples.tsv")
+          after=$(wc -l < "$RUNNER_TEMP/rust-ci-timing/samples.tsv")
           test "$before" = "$after" \
             || { echo "::error::the sampler is still writing ($before -> $after); it would outlive the job"; exit 1; }
           echo "✓ sampler stopped"
 
-  # Durations without sampling, and a report with nothing to report: the two
-  # shapes a consumer hits on a non-Linux runner and on a misordered workflow.
-  selftest-timing-degenerate:
-    name: exercise the timing actions without samples
+  # The report without the Actions API, the shape a consumer sees before the
+  # job grants actions: read: timing-start with its defaults, then a report that
+  # shows the job totals, says how to get per-step stages, and passes. A timing
+  # action is instrumentation; it has no business turning a green build red.
+  # token: "" denies the API deterministically; on a public repository the jobs
+  # endpoint answers without one.
+  selftest-timing-no-api:
+    name: exercise timing-report without the Actions API
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      # Negative control: with no marks and no API access, timing-report must
-      # warn and pass, not fail the job. A timing action is instrumentation; it
-      # has no business turning a green build red. token: "" denies the Actions
-      # API, so this stays a genuine no-data case rather than deriving the run's
-      # own steps (the API path is exercised by "from the Actions API" below).
-      - name: timing-report without marks (negative control)
+      - uses: ./.github/actions/timing-start
+
+      - name: spend a measurable moment
+        run: sleep 6
+
+      - name: timing-report
+        id: report
         uses: ./.github/actions/timing-report
         with:
           token: ""
 
-      - name: the empty report wrote nothing and did not fail
+      - name: the report shows the job totals and did not fail
         run: |
           set -euo pipefail
-          report="${RUNNER_TEMP}/rust-ci-timing/report.md"
-          if [ -e "$report" ]; then
-            echo "::error::a report was rendered with no marks"; cat "$report"; exit 1
+          report='${{ steps.report.outputs.report-path }}'
+          test -n "$report" && test -f "$report" \
+            || { echo "::error::no report was rendered without the API"; exit 1; }
+          cat "$report"
+          grep -q 'for the whole job' "$report" \
+            || { echo "::error::the totals line is missing"; exit 1; }
+          grep -q 'actions: read' "$report" \
+            || { echo "::error::the report does not say how to get per-step stages"; exit 1; }
+          if grep -q 'Set up job' "$report"; then
+            echo "::error::stages came from the API with an empty token"; exit 1
           fi
-          echo "✓ no marks, no report, no failure"
-
-      - name: timing-start with sampling off
-        uses: ./.github/actions/timing-start
-        with:
-          sample-interval: "0"
-          first-stage: unsampled setup
-
-      - name: sampling off starts no sampler
-        run: |
-          set -euo pipefail
-          test ! -f "$RUST_CI_TIMING_DIR/sampler.pid" \
-            || { echo "::error::sample-interval 0 still started a sampler"; exit 1; }
-          grep -q 'sampling disabled' "$RUST_CI_TIMING_DIR/notes.tsv" \
-            || { echo "::error::the report will not say why there are no samples"; exit 1; }
-          echo "✓ no sampler, and the reason is recorded"
-
-      - uses: ./.github/actions/timing-mark
-        with:
-          name: a stage
-      - run: sleep 2
-
-      - name: timing-report
-        id: report
-        uses: ./.github/actions/timing-report
-        with:
-          order: chronological
-
-      - name: the table degrades to durations only
-        run: |
-          set -euo pipefail
-          report='${{ steps.report.outputs.report-path }}'
-          cat "$report"
-          grep -q '| stage | duration | share |' "$report" \
-            || { echo "::error::expected the durations-only header without samples"; exit 1; }
-          if grep -q 'cpu shape' "$report"; then
-            echo "::error::CPU columns rendered with no samples behind them"; exit 1
-          fi
-          grep -q 'sampling disabled by input' "$report" \
-            || { echo "::error::the report did not say sampling was off"; exit 1; }
-          echo "✓ durations only, and it says why"
-
-  # The API-derived path: with no manual marks and an actions:read token,
-  # timing-report reads the job's own per-step timings from the Actions API,
-  # which is what a workflow opts into by dropping its timing-mark steps. No
-  # timing-start here either, so this also covers the no-sampler degrade.
-  selftest-timing-from-api:
-    name: exercise the timing actions from the Actions API
-    runs-on: ubuntu-latest
-    permissions:
-      # contents too: a permissions block replaces the default set, and the
-      # checkout of a private clone of this repository needs the read.
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: spend a measurable moment
-        run: sleep 3
-
-      - name: timing-report
-        id: report
-        uses: ./.github/actions/timing-report
-
-      - name: the stages are the job's real step names, with no marks placed
-        run: |
-          set -euo pipefail
-          report='${{ steps.report.outputs.report-path }}'
-          test -e "$report" || { echo "::error::no report was produced from the API"; exit 1; }
-          cat "$report"
-          # "Set up job" is always the first step and completes before this one,
-          # so the API has it regardless of any lag on the freshest step.
-          grep -q 'Set up job' "$report" \
-            || { echo "::error::the API-derived report is missing the job's real step names"; exit 1; }
-          echo "✓ stages derived from the Actions API without any timing-mark"
-
-  # first-stage: "" starts the sampler but lays down no mark, so a job keeps the
-  # CPU/memory shape while still deriving its stages from the Actions API and the
-  # setup a workflow adopts when it drops its timing-mark steps but wants the
-  # sampler. The assertion would fail if timing-start still marked: an empty-named
-  # mark would send timing-report down the marks path, and "Set up job" only
-  # appears when the stages come from the API.
-  selftest-timing-sampler-only:
-    name: exercise sampler-only timing-start with the Actions API
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: timing-start (sampler only, no first-stage mark)
-        uses: ./.github/actions/timing-start
-        with:
-          first-stage: ""
-
-      - name: spend a measurable moment
-        run: sleep 3
-
-      - name: timing-report
-        id: report
-        uses: ./.github/actions/timing-report
-
-      - name: the report comes from the API even though the sampler ran
-        run: |
-          set -euo pipefail
-          report='${{ steps.report.outputs.report-path }}'
-          test -e "$report" || { echo "::error::no report was produced"; exit 1; }
-          cat "$report"
-          grep -q 'Set up job' "$report" \
-            || { echo "::error::sampler-only timing-start left a mark; the API path was not taken"; exit 1; }
-          echo "✓ sampler-only timing-start kept the API-derived stages"
+          test '${{ steps.report.outputs.slowest-stage }}' = "$GITHUB_JOB" \
+            || { echo "::error::the single stage is not named after the job: '${{ steps.report.outputs.slowest-stage }}'"; exit 1; }
+          total='${{ steps.report.outputs.total-seconds }}'
+          test "$total" -ge 6 || { echo "::error::total of ${total}s is short of the 6s spent"; exit 1; }
+          test ! -f "$RUNNER_TEMP/rust-ci-timing/sampler.pid" \
+            || { echo "::error::the pid file survived the report"; exit 1; }
+          echo "✓ totals rendered without the API; ${total}s"
 
   # rust-cache's opt-in statistics: the hit kind and the restored size reach the
   # timing notes, which is what lets a report distinguish a cold run from a warm
@@ -1989,9 +1911,9 @@ jobs:
       - uses: ./.github/actions/timing-start
         with:
           sample-interval: "0"
-          first-stage: setup
 
       - uses: ./.github/actions/rust-cache
+        id: cache
         with:
           prefix: stats-fixture
           cache-target: "true"
@@ -2002,7 +1924,7 @@ jobs:
       - name: the restore recorded a hit kind and, on a hit, a size
         run: |
           set -euo pipefail
-          notes="$RUST_CI_TIMING_DIR/notes.tsv"
+          notes="$RUNNER_TEMP/rust-ci-timing/notes.tsv"
           cat "$notes"
           kind=$(awk -F'\t' '$1 == "cache.target" {print $2}' "$notes" | tail -1)
           case "$kind" in
@@ -2015,6 +1937,34 @@ jobs:
             grep -q '^cache\.target\.restored	' "$notes" \
               || { echo "::error::a restored tree recorded no size"; exit 1; }
           fi
+
+      # The same facts land in the step's own summary, for a job without
+      # timing-report. The runner owns $GITHUB_STEP_SUMMARY and a later step
+      # cannot read it back, so the writer runs once more by hand against a
+      # readable file, with its state kept apart from the job's notes.
+      - name: the stats writer puts the same facts into the step summary
+        env:
+          TARGET_DIR: fixtures/sample-crate/target
+          TARGET_HIT: ${{ steps.cache.outputs.target-cache-hit }}
+          TARGET_KEY: stats-fixture-summary-check
+          TARGET_LOCAL: "false"
+          REGISTRY_DIRS: ""
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/cache-summary.md"
+          GITHUB_ACTION_PATH=.github/actions/rust-cache RUNNER_TEMP="$RUNNER_TEMP/cache-unit" \
+            GITHUB_STEP_SUMMARY="$S" GITHUB_ENV=/dev/null \
+            bash .github/actions/rust-cache/cache-stats.sh
+          cat "$S"
+          grep -q '^### Cache restore' "$S" \
+            || { echo "::error::no heading in the step summary"; exit 1; }
+          # shellcheck disable=SC2016  # the backticks are Markdown, not a subshell
+          grep -q '| `cache.target` | ' "$S" \
+            || { echo "::error::the hit kind did not reach the step summary"; exit 1; }
+          # shellcheck disable=SC2016
+          grep -q '| `cache.target.key` | stats-fixture-summary-check |' "$S" \
+            || { echo "::error::the cache key did not reach the step summary"; exit 1; }
+          echo "✓ the facts render in the step summary without timing-report"
 
       - id: report
         uses: ./.github/actions/timing-report
@@ -2029,4 +1979,10 @@ jobs:
           # shellcheck disable=SC2016  # the single quotes are the point
           grep -q '`cache.target`' "$report" \
             || { echo "::error::the hit kind did not reach the report"; exit 1; }
-          echo "✓ Cache section rendered"
+          # sample-interval "0" above: the report says so and draws no CPU columns.
+          grep -q 'sampling disabled by input' "$report" \
+            || { echo "::error::the report did not say sampling was off"; exit 1; }
+          if grep -q 'cpu shape' "$report"; then
+            echo "::error::CPU columns rendered with no samples behind them"; exit 1
+          fi
+          echo "✓ Cache section rendered, durations only"
