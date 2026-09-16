@@ -38,20 +38,15 @@ inputs:
     required: false
     default: "."
   env-include:
-    description: >-
-      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
-      Default forwards cargo's own vars.
+    description: Regex (POSIX ERE) of runner variable names to forward, anchored full-name; see docs/sealed-builds.md.
     required: false
     default: "CARGO_.*"
   env-exclude:
-    description: >-
-      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
-      Defaults to the action-owned vars.
+    description: Regex (POSIX ERE) of names to drop from the included set (exclusion wins); see docs/sealed-builds.md.
     required: false
-    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+    default: ""
   env:
-    description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
+    description: Literal KEY=VALUE lines forwarded verbatim; a bare NAME line forwards that variable from the runner environment; see docs/sealed-builds.md.
     required: false
     default: ""
 
@@ -68,6 +63,8 @@ runs:
         OFFLINE: ${{ inputs.offline }}
         TARGET_DIR: ${{ inputs.target-dir }}
         ARGS: ${{ inputs.args }}
+        # The shared bin dir as the container sees it (seal.sh mounts cargo-cache there).
+        USE_BIN_DIR: /cache/cargo/bin
         ENV_INCLUDE: ${{ inputs.env-include }}
         ENV_EXCLUDE: ${{ inputs.env-exclude }}
         INPUT_ENV: ${{ inputs.env }}
@@ -75,12 +72,10 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
-        export CICD_DIR="$GITHUB_ACTION_PATH"
         # seal_run reads OFFLINE from this env for the --network=none decision. ARGS
         # and the in-container bin dir aren't CARGO_* (env-include won't forward
-        # them); inject them as explicit env-file lines for the in-container script.
-        EXTRA_ENV="$(printf '%s\n%s' "ARGS=$ARGS" "USE_BIN_DIR=/cache/cargo/bin")"
-        export EXTRA_ENV
+        # them); hand them to the in-container script.
+        export SEAL_PASS="ARGS USE_BIN_DIR"
         seal_run bash /cicd/cargo-use.sh
 
     - name: run (host)

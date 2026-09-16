@@ -27,8 +27,8 @@ Pair it with [`cargo-use`](../cargo-use/README.md), which prepends the same cach
 | `cargo-cache` | `.cargo-cache` | Host dir mounted read-write as `CARGO_HOME`; the tool lands in its `bin/`. |
 | `working-directory` | `.` | Directory the action runs from (mounted read-only). |
 | `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
-| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
-| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
+| `env-exclude` | `""` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim; a bare `NAME` forwards the runner's value. |
 
 ## Outputs
 

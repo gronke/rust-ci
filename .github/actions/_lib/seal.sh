@@ -24,15 +24,23 @@
 #   OFFLINE      "true" → --network=none (sealed); anything else → networked
 #   TARGET_DIR   if non-empty: mount it RW at /work/target + set CARGO_TARGET_DIR;
 #                relative to $PWD or absolute (rust-cache's local-target exports one)
-#   CICD_DIR     if non-empty: mount it RO at /cicd (so `bash /cicd/<script>` resolves)
+#   CICD_DIR     directory mounted RO at /cicd (so `bash /cicd/<script>` resolves);
+#                unset → $GITHUB_ACTION_PATH (the calling action's own directory),
+#                set but empty → no /cicd mount
 #   ENV_INCLUDE / ENV_EXCLUDE   POSIX-ERE name filters for env forwarding (exclusion wins)
-#   INPUT_ENV    extra literal KEY=VALUE lines (the action's `env` input), forwarded verbatim
-#   EXTRA_ENV    extra literal KEY=VALUE lines the action itself injects (e.g. ARGS, a masked token)
+#   INPUT_ENV    extra literal KEY=VALUE lines (the action's `env` input), forwarded verbatim;
+#                a bare NAME line makes docker copy that variable from the runner environment
+#   SEAL_PASS    space-separated variable NAMES whose current values are appended as
+#                NAME=value lines (an unset name is skipped, an empty one gives NAME=);
+#                the way an action hands its own step env (ARGS, OFFLINE, …) to its script
+#   EXTRA_ENV    extra literal KEY=VALUE lines the action itself injects (a computed value,
+#                e.g. the masked private-git token)
 # Args ("$@"): the command to exec inside the container.
+# The env-file is assembled in that order: filtered runner env, INPUT_ENV, SEAL_PASS, EXTRA_ENV.
 #
 # The owner vars (CARGO_HOME / RUSTUP_HOME / CARGO_TARGET_DIR) are pinned as explicit
-# `-e` AFTER --env-file (last-wins), so no env-include/-exclude tinkering can redirect
-# the mounted cache or target.
+# `-e` flags, and `-e` overrides `--env-file`, so no env-include/-exclude tinkering and no
+# forwarded copy of those names can redirect the mounted cache or target.
 
 # A host directory input is relative to $PWD unless absolute.
 _seal_host_dir() {
@@ -71,12 +79,15 @@ _seal_run() {
     target_args=(-e CARGO_TARGET_DIR=/work/target -v "$target_host:/work/target")
   fi
 
+  # The calling action's directory unless the caller points elsewhere (or at nothing).
+  local cicd_dir="${CICD_DIR-${GITHUB_ACTION_PATH:-}}"
   local cicd_args=()
-  [ -n "${CICD_DIR:-}" ] && cicd_args=(-v "$CICD_DIR:/cicd:ro")
+  [ -n "$cicd_dir" ] && cicd_args=(-v "$cicd_dir:/cicd:ro")
 
   # Forward env: keep names matching ENV_INCLUDE (default CARGO_.*), drop ENV_EXCLUDE
-  # (exclusion wins), then append the literal `env` input and any action-injected EXTRA_ENV.
-  local ef
+  # (exclusion wins), then append the literal `env` input, the SEAL_PASS names with
+  # their current values, and any action-injected EXTRA_ENV.
+  local ef name
   ef="$(mktemp)"
   env | awk -v inc="${ENV_INCLUDE:-}" -v exc="${ENV_EXCLUDE:-}" '
     { name = $0; sub(/=.*/, "", name) }
@@ -85,6 +96,9 @@ _seal_run() {
     { print }
   ' > "$ef"
   [ -n "${INPUT_ENV:-}" ] && printf '%s\n' "$INPUT_ENV" >> "$ef"
+  for name in ${SEAL_PASS:-}; do
+    [ -n "${!name+x}" ] && printf '%s=%s\n' "$name" "${!name}" >> "$ef"
+  done
   [ -n "${EXTRA_ENV:-}" ] && printf '%s\n' "$EXTRA_ENV" >> "$ef"
 
   local rc=0

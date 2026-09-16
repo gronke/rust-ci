@@ -28,8 +28,8 @@ Use it on a release tag before `cargo-publish`; `check-release-readiness` runs s
 | `require-deps-published` | `"false"` | Probe crates.io for every workspace path dependency at the version the manifest requires; a 404 fails the run. |
 | `git-token` | `""` | Token for private git dependencies during the prep fetch, masked and applied as `x-access-token` on `github.com`. |
 | `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
-| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
-| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
+| `env-exclude` | `""` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim; a bare `NAME` forwards the runner's value. |
 
 ## Notes
 

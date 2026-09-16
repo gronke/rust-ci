@@ -29,8 +29,8 @@ Use it after `cargo-install` with the same `cargo-cache` and `image`; `<cargo-ca
 | `target-dir` | `""` | Optional host dir mounted read-write at `/work/target` (plus `CARGO_TARGET_DIR`) for a tool that builds. Empty mounts no target. |
 | `working-directory` | `.` | Directory the action runs from (mounted read-only). |
 | `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
-| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
-| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
+| `env-exclude` | `""` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim; a bare `NAME` forwards the runner's value. |
 
 ## Notes
 

@@ -29,8 +29,8 @@ Use it for a build, check or test that `lint-and-test-docker` does not cover; ru
 | `out-dir-package` | `""` | Package whose build-script `OUT_DIR` to resolve and expose as `out-dir`. Needs a non-empty `target-dir`. |
 | `out-dir-args` | `""` | Extra args for the resolve build; mirror the main build's profile and features. Do not include `--offline`. |
 | `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
-| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
-| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
+| `env-exclude` | `""` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim; a bare `NAME` forwards the runner's value. |
 
 ## Outputs
 
