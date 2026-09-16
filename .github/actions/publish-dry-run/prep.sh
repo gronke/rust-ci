@@ -6,15 +6,10 @@
 #   4. probe crates.io that the version is not already published.
 # Hands the resolved package name + publishability to the sealed verify step via a
 # marker file under the mounted (RW, shared) target dir.
-# Inputs via env: INPUT_PACKAGE, INPUT_EXPECTED_VERSION, GITHUB_REF, CICD_GIT_TOKEN.
+# Inputs via env: INPUT_PACKAGE, INPUT_EXPECTED_VERSION, GITHUB_REF. A private-git
+# token arrives as GIT_CONFIG_* entries plus CARGO_NET_GIT_FETCH_WITH_CLI, which git
+# and cargo read on their own.
 set -euo pipefail
-
-# Private git deps: authenticate github.com as x-access-token and force the git CLI
-# so cargo can clone them (no-op for public deps). Same handling as cargo-fetch.
-if [ -n "${CICD_GIT_TOKEN:-}" ]; then
-  git config --global url."https://x-access-token:${CICD_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-  export CARGO_NET_GIT_FETCH_WITH_CLI=true
-fi
 
 echo "::group::cargo fetch"
 cargo fetch --locked
