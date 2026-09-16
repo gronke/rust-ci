@@ -79,7 +79,7 @@ Each name links to the action's README.
 | [`rust-cache`](.github/actions/rust-cache/README.md) | Restore cargo's registry cache and, optionally, `target/`. |
 | [`rust-cache-save`](.github/actions/rust-cache-save/README.md) | Prune `target/` to dependency artifacts and save it, as the job's last step. |
 | [`sccache`](.github/actions/sccache/README.md) | Install a pinned sccache as `RUSTC_WRAPPER`; the backend comes from `SCCACHE_*` in the job environment. |
-| [`sccache-stats`](.github/actions/sccache-stats/README.md) | Record sccache's hits and misses for the timing report. |
+| [`sccache-stats`](.github/actions/sccache-stats/README.md) | Record sccache's hits and misses in the step summary and for the timing report. |
 | [`crates-mirror`](.github/actions/crates-mirror/README.md) | Point cargo's crates-io source at a mirror URL. |
 
 ### Release
@@ -104,7 +104,7 @@ Each name links to the action's README.
 
 | Action | Does |
 | --- | --- |
-| [`timing-start`](.github/actions/timing-start/README.md), [`timing-mark`](.github/actions/timing-mark/README.md), [`timing-report`](.github/actions/timing-report/README.md) | Per-stage durations, CPU and memory for one job, rendered into the step summary. |
+| [`timing-start`](.github/actions/timing-start/README.md), [`timing-report`](.github/actions/timing-report/README.md) | Per-step durations from the Actions API, CPU and memory from a sampler, for one job, rendered into the step summary. |
 
 ## Self-hosted runners
 
