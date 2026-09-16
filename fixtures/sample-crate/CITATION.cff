@@ -2,7 +2,7 @@
 # a cut stamps `version` and `date-released` here, and leaves `cff-version` be.
 cff-version: 1.2.0
 message: "Fixture crate for the rust-ci selftests."
-title: cicd-rust-selftest-fixture
+title: rust-ci-selftest-fixture
 type: software
 version: 0.0.0
 date-released: 2020-01-01

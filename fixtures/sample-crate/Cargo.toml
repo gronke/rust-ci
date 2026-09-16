@@ -1,12 +1,12 @@
 [package]
-name = "cicd-rust-selftest-fixture"
+name = "rust-ci-selftest-fixture"
 version = "0.1.0"
 edition = "2021"
 # Declared MSRV: the `msrv` action reads this and builds + checks at exactly this toolchain.
 rust-version = "1.82"
-description = "Trivial crate exercised by cicd-rust's self-test workflow; not intended for release."
+description = "Trivial crate exercised by rust-ci's self-test workflow; not intended for release."
 license = "MIT"
-repository = "https://github.com/gronke/cicd-rust"
+repository = "https://github.com/gronke/rust-ci"
 
 [dependencies]
 # A real (tiny, ubiquitous) dependency so the self-test proves the network

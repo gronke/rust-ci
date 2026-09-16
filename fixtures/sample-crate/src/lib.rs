@@ -1,4 +1,4 @@
-//! Trivial fixture crate exercised by cicd-rust's self-test workflow.
+//! Trivial fixture crate exercised by rust-ci's self-test workflow.
 //!
 //! It exists only to give the actions a real, green crate to run against and,
 //! via its one dependency, to prove that a sealed `--network none` build can
