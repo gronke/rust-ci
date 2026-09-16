@@ -91,16 +91,14 @@ Each name links to the action's README.
 | [`cut-release`](.github/actions/cut-release/README.md) | Start a release: changelog cut, release branch, merge-back pull request, pipeline dispatch. |
 | [`draft-release`](.github/actions/draft-release/README.md) | Create or refresh the draft pre-release and push the next candidate marker. |
 | [`release-guidance`](.github/actions/release-guidance/README.md) | Write the release manager's next steps into the step summary. |
-| [`promote-release`](.github/actions/promote-release/README.md) | Promote a candidate from the pipeline, or defer to a human signature. |
-| [`require-signed-tag`](.github/actions/require-signed-tag/README.md) | Gate a pipeline on a verified signed annotated tag. |
+| [`require-signed-tag`](.github/actions/require-signed-tag/README.md) | The signature gate: a verified signed annotated tag, or the tag run stops. |
 | [`publish-draft-release`](.github/actions/publish-draft-release/README.md) | Seal the final tag against the newest marker, publish the draft, move the major tag. |
 
 ### Publish
 
 | Action | Does |
 | --- | --- |
-| [`require-signed-release`](.github/actions/require-signed-release/README.md) | Answer whether a verified human signature covers the release commit. |
-| [`cargo-publish`](.github/actions/cargo-publish/README.md) | Publish the crate to crates.io, or rehearse it. |
+| [`cargo-publish`](.github/actions/cargo-publish/README.md) | Publish the crate to crates.io behind [`require-signed-tag`](.github/actions/require-signed-tag/README.md), or rehearse it. |
 
 ### Observability
 
@@ -117,7 +115,7 @@ An sccache backend, a crates mirror and a persistent target directory reach the 
 
 - [docs/showcase.md](docs/showcase.md): QA, test, release and publish end to end, and the hardened variant.
 - [docs/sealed-builds.md](docs/sealed-builds.md): the seal model and how environment reaches the container.
-- [docs/release-flow.md](docs/release-flow.md): the release runbook, candidate loop and go-live modes.
+- [docs/release-flow.md](docs/release-flow.md): the release runbook, candidate loop and tag pipeline.
 - [docs/self-hosted.md](docs/self-hosted.md): host-provided services.
 - [docs/private-git-dependencies.md](docs/private-git-dependencies.md): tokens for private git dependencies.
 - [docs/cache-operations.md](docs/cache-operations.md): inspecting and trimming the repository cache.
