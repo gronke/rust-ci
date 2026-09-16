@@ -12,7 +12,7 @@ Use it before the build steps of a runner-native or `container:` job; pair it wi
     cache-target: "true"     # also restore target/ (off by default)
     # local-target: "auto"   # keep target/ on a runner whose work tree persists
     # save: "false"          # registry restore-only, for pure consumers
-    # stats: "true"          # hit kind and restored size for timing-report
+    # stats: "true"          # hit kind and restored size in the step summary
 ```
 
 ## Inputs
@@ -26,7 +26,7 @@ Use it before the build steps of a runner-native or `container:` job; pair it wi
 | `target-dir` | `target` | Workspace-relative target directory to restore. Ignored when local-target is active. |
 | `lockfiles` | `**/Cargo.lock` | Glob of lockfiles whose hash keys the caches. |
 | `cache-directories` | `""` | Extra newline-separated paths added to the registry entry. |
-| `stats` | `"false"` | Record the hit kind and restored sizes for the `timing-report` Cache section. |
+| `stats` | `"false"` | Record the hit kind and restored sizes in the step summary and for the `timing-report` Cache section. |
 
 ## Outputs
 

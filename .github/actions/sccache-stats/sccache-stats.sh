@@ -31,6 +31,7 @@ if command -v jq >/dev/null 2>&1; then
     if [ "${errors:-0}" != "0" ]; then
       timing_note cache.sccache.errors "$errors"
     fi
+    timing_summary "sccache"
   fi
 else
   echo "sccache-stats: jq is unavailable; the log group above is the record."

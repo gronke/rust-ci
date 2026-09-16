@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Record what the restore actually delivered, for the timing report's Cache
-# section. Inputs arrive as env vars from action.yml:
+# Record what the restore actually delivered, into the step summary and as
+# notes for the timing report's Cache section. Inputs arrive as env vars from
+# action.yml:
 #   TARGET_DIR   restored target directory ("" when cache-target is off)
 #   TARGET_HIT   actions/cache "cache-hit": "true" on an exact key match
 #   TARGET_KEY   the exact key the restore asked for
@@ -58,6 +59,8 @@ done <<< "$REGISTRY_DIRS"
 if [ "$reg" -gt 0 ]; then
   timing_note "cache.registry.restored" "$(timing_bytes "$reg")"
 fi
+
+timing_summary "Cache restore"
 
 # An explicit success: a trailing `[ ... ] && cmd` whose test is false leaves the
 # script's exit status at 1, which fails the step even under `set -e` (the -e

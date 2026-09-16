@@ -1,7 +1,7 @@
 name: sccache statistics
 description: >-
-  Record what sccache delivered (compile requests, hits, misses, errors) as cache.sccache.* facts for the timing-report Cache section, plus the raw sccache --show-stats output in a log group.
-  Run it as a late job step, after the builds it accounts for, because composite actions have no post hooks.
+  Record sccache's compile requests, hits, misses and errors as cache.sccache.* facts in the step summary and the timing-report Cache section, plus the raw sccache --show-stats output in a log group.
+  Run it late, after the builds it accounts for; composite actions have no post hooks.
   A no-op unless RUSTC_WRAPPER is an sccache binary; statistics never fail a job.
 
 runs:
