@@ -40,6 +40,61 @@ jobs:
         with:
           working-directory: fixtures/sample-crate
 
+      # lint-and-test-docker runs this same script inside its container with
+      # LOCKED=true and CLIPPY_ARGS=--all-targets; a job log cannot be grepped
+      # from inside the job, so pin the argv here with a recording cargo shim,
+      # for the sealed parameter set and for the native action's defaults.
+      - name: lint-and-test script builds the sealed clippy/test argv
+        working-directory: fixtures/sample-crate
+        run: |
+          shim="$RUNNER_TEMP/cargo-shim"
+          mkdir -p "$shim"
+          cat > "$shim/cargo" <<'SHIM'
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> "$CARGO_ARGV"
+          SHIM
+          chmod +x "$shim/cargo"
+          script="$GITHUB_WORKSPACE/.github/actions/lint-and-test/lint-and-test.sh"
+          export CARGO_ARGV="$RUNNER_TEMP/cargo-argv"
+
+          : > "$CARGO_ARGV"
+          PATH="$shim:$PATH" FMT=true CLIPPY=true TEST=true CLIPPY_ARGS=--all-targets \
+            LOCKED=true OFFLINE=false FEATURES="" bash "$script"
+          printf '%s\n' 'fmt --all -- --check' \
+            'clippy --workspace --all-targets --locked -- -D warnings' \
+            'test --workspace --locked' | diff - "$CARGO_ARGV"
+          echo "✓ sealed parameter set: --all-targets and --locked on clippy, --locked on test"
+
+          : > "$CARGO_ARGV"
+          PATH="$shim:$PATH" FMT=true CLIPPY=true TEST=true CLIPPY_ARGS=--all-targets \
+            LOCKED=true OFFLINE=true FEATURES=--all-features bash "$script"
+          printf '%s\n' 'fmt --all -- --check' \
+            'clippy --workspace --all-targets --offline --locked --all-features -- -D warnings' \
+            'test --workspace --offline --locked --all-features' | diff - "$CARGO_ARGV"
+          echo "✓ OFFLINE=true adds --offline in front of --locked"
+
+          : > "$CARGO_ARGV"
+          PATH="$shim:$PATH" FMT=true CLIPPY=true TEST=true CLIPPY_ARGS=--all-targets \
+            FEATURES="" TEST_ARGS="" bash "$script"
+          printf '%s\n' 'fmt --all -- --check' \
+            'clippy --workspace --all-targets -- -D warnings' \
+            'test --workspace' | diff - "$CARGO_ARGV"
+          echo "✓ native defaults: no --locked, no --offline"
+
+      # The same toggles against the real toolchain: --locked accepts the fixture's
+      # committed Cargo.lock, and LOCKED=false drops the flag again.
+      - name: lint-and-test script runs clippy --all-targets --locked natively
+        working-directory: fixtures/sample-crate
+        env:
+          FMT: "false"
+          CLIPPY: "true"
+          TEST: "false"
+          CLIPPY_ARGS: --all-targets
+          OFFLINE: "false"
+        run: |
+          LOCKED=true bash "$GITHUB_WORKSPACE/.github/actions/lint-and-test/lint-and-test.sh"
+          LOCKED=false bash "$GITHUB_WORKSPACE/.github/actions/lint-and-test/lint-and-test.sh"
+
       # cargo-out-dir: resolve the fixture build script's OUT_DIR.
       # Dependencies' build scripts emit the same cargo message, so the
       # assertion pins the PACKAGE filter: the resolved path must be the
@@ -809,7 +864,7 @@ jobs:
           # Exclusion wins: CICD_PROBE matches env-include but is also in
           # env-exclude, so it must NOT cross (CICD_EXPECT=absent asserts that).
           env-include: "CICD_.*"
-          env-exclude: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR|CICD_PROBE"
+          env-exclude: "CICD_PROBE"
           env: |
             CICD_EXPECT=absent
 
@@ -907,10 +962,18 @@ jobs:
           test ! -e "$RUNNER_TEMP/bad-msrv/pwned"
           echo "✓ build-image rejected a non-numeric declared rust-version"
 
-      # msrv: build an image at the fixture's DECLARED rust-version and cargo check there.
-      # Exercises the Cargo.toml extraction, the image-at-MSRV build, and the sealed check.
-      # locked: true takes the committed-lockfile path: the fixture pins one.
-      - name: msrv (image at the declared MSRV, sealed check)
+  # The msrv action pulls rust:<msrv> itself, so its legs need no image build and
+  # run beside the Docker legs instead of after them.
+  selftest-msrv:
+    name: exercise the msrv action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # msrv: pull rust:<declared rust-version> and cargo check there, sealed.
+      # Exercises the Cargo.toml extraction, the image pull, and the sealed check.
+      # locked: true (the default) takes the committed-lockfile path: the fixture pins one.
+      - name: msrv (locked true, rust image at the declared MSRV, sealed check)
         uses: ./.github/actions/msrv
         with:
           working-directory: fixtures/sample-crate
@@ -919,6 +982,7 @@ jobs:
 
       # Negative control: a non-numeric rust-version is rejected before it can reach a docker
       # tag or shell (proves the input validation; the smuggled command must not run).
+      # locked: true, so the lockfile precondition passes and the version check is what fails.
       - name: msrv rejects a non-numeric rust-version (negative control)
         id: msrv_bad
         continue-on-error: true
@@ -926,6 +990,7 @@ jobs:
         with:
           working-directory: fixtures/sample-crate
           rust-version: "latest; touch pwned"
+          locked: "true"
 
       - name: assert the bad rust-version was rejected
         run: |
@@ -962,12 +1027,13 @@ jobs:
           test ! -e "$RUNNER_TEMP/fixture-nolock/Cargo.lock"
           echo "✓ msrv locked:true requires a committed lockfile"
 
-      # Default (locked: false): resolve a fresh lockfile at the MSRV up front, then check it sealed.
+      # locked: false (opt-in): resolve a fresh lockfile at the MSRV up front, then check it sealed.
       - name: msrv (locked false) resolves a lockfile when none is committed
         uses: ./.github/actions/msrv
         with:
           working-directory: ${{ runner.temp }}/fixture-nolock
           package: cicd-rust-selftest-fixture
+          locked: "false"
 
       # The resolution happens in a disposable copy, so the lockless checkout must STAY lockless,
       # the action may not leave an untracked Cargo.lock behind.
@@ -985,6 +1051,7 @@ jobs:
         with:
           working-directory: fixtures/sample-crate
           package: cicd-rust-selftest-fixture
+          locked: "false"
       - name: assert the committed lockfile is byte-identical
         run: |
           cmp "$RUNNER_TEMP/Cargo.lock.before" fixtures/sample-crate/Cargo.lock
@@ -1012,6 +1079,7 @@ jobs:
         with:
           working-directory: ${{ runner.temp }}/fixture-gitdir
           package: cicd-rust-selftest-fixture
+          locked: "false"
           env: |
             FIXTURE_REQUIRE_GIT=1
 
@@ -1028,6 +1096,7 @@ jobs:
         with:
           working-directory: ${{ runner.temp }}/fixture-gitfile
           package: cicd-rust-selftest-fixture
+          locked: "false"
           env: |
             FIXTURE_REQUIRE_GIT=1
 
