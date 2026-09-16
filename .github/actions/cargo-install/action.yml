@@ -44,20 +44,15 @@ inputs:
     required: false
     default: "."
   env-include:
-    description: >-
-      Regex (POSIX ERE) of env-var names to forward from the runner into the container, anchored full-name.
-      Default forwards cargo's own vars.
+    description: Regex (POSIX ERE) of runner variable names to forward, anchored full-name; see docs/sealed-builds.md.
     required: false
     default: "CARGO_.*"
   env-exclude:
-    description: >-
-      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
-      Defaults to the action-owned vars.
+    description: Regex (POSIX ERE) of names to drop from the included set (exclusion wins); see docs/sealed-builds.md.
     required: false
-    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+    default: ""
   env:
-    description: >-
-      Extra literal KEY=VALUE lines (one per line) forwarded verbatim, regardless of env-include/env-exclude.
+    description: Literal KEY=VALUE lines forwarded verbatim; a bare NAME line forwards that variable from the runner environment; see docs/sealed-builds.md.
     required: false
     default: ""
 
@@ -120,7 +115,6 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
-        export CICD_DIR="$GITHUB_ACTION_PATH"
         # Networked: downloading crates needs egress. seal.sh still applies
         # --cap-drop=ALL, no-new-privileges, non-root and repo-RO (OFFLINE toggles
         # ONLY --network=none), so the install (and the build.rs / proc-macros it
@@ -128,9 +122,8 @@ runs:
         # builds in its own temp dir, not the workspace target/.
         export OFFLINE=false
         # TOOL/VERSION/ARGS/LOCKED aren't CARGO_* (env-include won't forward them);
-        # inject them as explicit env-file lines for the in-container script.
-        EXTRA_ENV="$(printf '%s\n%s\n%s\n%s' "TOOL=$TOOL" "VERSION=$VERSION" "ARGS=$ARGS" "LOCKED=$LOCKED")"
-        export EXTRA_ENV
+        # hand them to the in-container script.
+        export SEAL_PASS="TOOL VERSION ARGS LOCKED"
         seal_run bash /cicd/cargo-install.sh
 
     - name: install (host)

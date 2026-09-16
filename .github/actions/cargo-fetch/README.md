@@ -22,8 +22,8 @@ It is the one networked step of the sealed pipeline: run it once after `build-im
 | `working-directory` | `.` | Crate or workspace directory, mounted read-only. |
 | `cargo-cache` | `.cargo-cache` | Host dir for `CARGO_HOME` (registry and git cache), mounted read-write. Relative to `working-directory`, or absolute. |
 | `env-include` | `CARGO_.*` | POSIX ERE of runner variable names to forward, anchored full-name. |
-| `env-exclude` | `CARGO_HOME\|RUSTUP_HOME\|CARGO_TARGET_DIR` | Names dropped from the included set; exclusion wins. |
-| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim. |
+| `env-exclude` | `""` | Names dropped from the included set; exclusion wins. |
+| `env` | `""` | Literal `KEY=VALUE` lines forwarded verbatim; a bare `NAME` forwards the runner's value. |
 | `git-token` | `""` | Token for private git dependencies: authenticates `github.com` fetches as `x-access-token` and sets `CARGO_NET_GIT_FETCH_WITH_CLI=true`. Leave empty for public deps. |
 
 ## Notes

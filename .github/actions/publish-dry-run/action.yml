@@ -40,19 +40,15 @@ inputs:
     required: false
     default: ""
   env-include:
-    description: >-
-      Regex (POSIX ERE) of env-var names to forward into the container, anchored full-name.
-      Default forwards cargo's own vars.
+    description: Regex (POSIX ERE) of runner variable names to forward, anchored full-name; see docs/sealed-builds.md.
     required: false
     default: "CARGO_.*"
   env-exclude:
-    description: >-
-      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
-      Widening env-include to ".*" forwards secrets like GITHUB_TOKEN; prefer a tight include.
+    description: Regex (POSIX ERE) of names to drop from the included set (exclusion wins); see docs/sealed-builds.md.
     required: false
-    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+    default: ""
   env:
-    description: Extra literal KEY=VALUE lines forwarded verbatim, regardless of include/exclude.
+    description: Literal KEY=VALUE lines forwarded verbatim; a bare NAME line forwards that variable from the runner environment; see docs/sealed-builds.md.
     required: false
     default: ""
 
@@ -77,7 +73,6 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
-        export CICD_DIR="$GITHUB_ACTION_PATH"
 
         # Optional private-git token: mask it and forward as one explicit env-file line.
         token_line=""
@@ -87,16 +82,15 @@ runs:
         fi
 
         # 1) Networked prep: cargo fetch + metadata + tag<->version + crates.io probe.
+        # The inputs and the tag ref aren't CARGO_* (env-include won't forward them);
+        # hand them to the prep script, the masked token as the one computed line.
         export OFFLINE=false
-        export EXTRA_ENV="$(printf '%s\n%s\n%s\n%s\n%s' \
-          "INPUT_PACKAGE=$INPUT_PACKAGE" \
-          "INPUT_EXPECTED_VERSION=$INPUT_EXPECTED_VERSION" \
-          "INPUT_REQUIRE_DEPS_PUBLISHED=$INPUT_REQUIRE_DEPS_PUBLISHED" \
-          "GITHUB_REF=${GITHUB_REF:-}" \
-          "$token_line")"
+        export SEAL_PASS="INPUT_PACKAGE INPUT_EXPECTED_VERSION INPUT_REQUIRE_DEPS_PUBLISHED GITHUB_REF"
+        export EXTRA_ENV="$token_line"
         seal_run bash /cicd/prep.sh
 
-        # 2) Sealed verify-build: cargo publish --dry-run --offline, --network=none.
+        # 2) Sealed verify-build: cargo package --offline, --network=none; it reads the
+        # prep's marker file, not the inputs.
         export OFFLINE=true
-        export EXTRA_ENV=""
+        export SEAL_PASS="" EXTRA_ENV=""
         seal_run bash /cicd/verify.sh
