@@ -9,7 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - `sccache`: installs a pinned sccache (version + per-arch sha256) as `RUSTC_WRAPPER`; the backend is whatever `SCCACHE_*` the job environment carries, and `"auto"` no-ops without one, so one workflow runs unchanged on hosted and self-hosted runners.
   `mode: gha` targets GitHub's cache service instead; an explicit opt-in, since it exports the masked Actions runtime token into the job env and spends the repository's cache pool.
-- `sccache-stats`: hit/miss/request facts as `cache.sccache.*` rows in timing-report's Cache section, run as a late job step; never fails a job.
+- `sccache-stats`: hit/miss/request facts as `cache.sccache.*` rows in the step summary and in timing-report's Cache section, run as a late job step; never fails a job.
 - `crates-mirror`: writes the crates-io source replacement into `$CARGO_HOME/config.toml` from the `url` input or `RUST_CI_CRATES_MIRROR` in the job environment (source replacement is config-file-only, cargo#5416).
   Lockfile checksums keep pinning canonical crates.io hashes, so the mirror is an availability dependency, not a trust dependency.
 - `cut-release`: stamps a `CITATION.cff` into the release commit, where the repository keeps one: top-level `version`, and `date-released` where the file has one, both on the cut's date.
@@ -37,12 +37,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `publish-dry-run`: the prep refuses a `.crate` whose file list contains a cargo build tree or a cargo home, instead of validating an archive that packages them.
 - `changelog`: candidate marker tags (`vX.Y.Z-rcN`) no longer set the baseline for a stable version; a release-candidate version still measures against earlier candidates.
 - `cargo-publish` and every snippet: `rust-lang/crates-io-auth-action` sets a `token` output, which is passed as `registry-token`; it never exported `CARGO_REGISTRY_TOKEN`.
+- `timing-report`: stages are the job's steps as the Actions API reports them (`actions: read`); without the API the report shows the job totals as one stage named after the job, warns, and still exits 0.
+  The `total-ms` output is declared.
+- `rust-cache`, `rust-cache-save`: the cache facts also render as a table in the step's own summary, so they show without `timing-report`.
 - **Breaking:** the release flow has one go-live: a human-signed annotated tag; `require-signed-tag` gates the tag pipeline and `cargo-publish` runs behind it.
   The candidate loop (`draft-release`, `release-guidance`) stays as the optional preview; `publish-draft-release` keeps the seal, the draft flip and the moving major.
 - The reference pipeline `release.yml` gates its tag run on the signature: `check-release-readiness`, then `require-signed-tag`, then the seal-only step, and the tag trigger is plain `v*` again.
 
 ### Removed
 
+- **Breaking:** `timing-mark`, the `first-stage` input of `timing-start` and the `RUST_CI_TIMING_DIR` export.
+  Stages come from the Actions API; a consumer deletes its `timing-mark` steps and grants the job `actions: read`, and every reader resolves `$RUNNER_TEMP/rust-ci-timing` on its own.
 - `promote-release`: the pipeline no longer creates the final tag; a human signs and pushes it.
 - `require-signed-release` and the `vX.Y.Z-sig` companion convention: the signature lives on the release tag, checked by `require-signed-tag`, and no companion tag unlocks a registry upload.
 - `release-guidance`: the `go-live` input and the publish-draft rendering, and the `token` input that fed the ruleset probe.
