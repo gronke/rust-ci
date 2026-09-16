@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com); releases are cut from the `[Unreleased]` section by this repository's own `changelog` action, so the flow dogfoods itself.
 
+## [Unreleased]
+
+### Changed
+
+- `require-signed-tag`: the lightweight-tag refusal says what a tag that came from publishing the draft in the web UI means: the immutable release has locked it and the version is spent, so the next version goes through the flow.
+- `release-guidance`: the step summary names the consequence of publishing the draft in the web UI, an unsigned tag that no signed tag can replace, instead of a gate failure that could be fixed.
+
+### Documentation
+
+- The release runbook accounts for immutable releases: the flip locks the release, its assets and its tag; the refusal table gains the row for a by-hand publish, and the settings list names the feature.
+
 ## [2.0.0] - 2026-09-16
 
 ### Added
@@ -247,6 +258,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - First release: reusable Rust CI/CD actions (bring-up baseline).
 
+[Unreleased]: https://github.com/gronke/rust-ci/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/gronke/rust-ci/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/gronke/rust-ci/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/gronke/rust-ci/compare/v1.6.1...v1.7.0
