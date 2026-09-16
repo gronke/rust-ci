@@ -43,7 +43,7 @@ jobs:
 | `rust-version` | `latest` | `rust:<tag>` base for the image, or `msrv`. |
 | `targets` | `""` | Space-separated rustup targets to cross-check. |
 | `features` | `""` | Feature flag for the sealed lint-and-test leg. |
-| `msrv` | `true` | Also verify the crate on its declared MSRV. |
+| `msrv` | `true` | Also verify the crate on its declared MSRV; skipped when `rust-version` is `msrv`. |
 | `working-directory` | `.` | Crate directory. |
 
 ## Actions
@@ -56,7 +56,7 @@ Each name links to the action's README.
 | --- | --- |
 | [`install-toolchain`](.github/actions/install-toolchain/README.md) | Install a rustup toolchain with components and targets and put cargo on `PATH`. |
 | [`lint-and-test`](.github/actions/lint-and-test/README.md) | Run `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test` for one feature set. |
-| [`msrv`](.github/actions/msrv/README.md) | Compile the crate on its declared `rust-version` inside a container built at that toolchain. |
+| [`msrv`](.github/actions/msrv/README.md) | Compile the crate on its declared `rust-version` inside the plain `rust:<version>` image, sealed. |
 | [`cargo-out-dir`](.github/actions/cargo-out-dir/README.md) | Build a package and expose its build script's `OUT_DIR`. |
 
 ### Sealed Docker builds
