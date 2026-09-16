@@ -32,6 +32,8 @@ Use it for jobs that run plain `cargo build` or `git clone` on the runner; [`car
 
 ## Notes
 
+- The entries are built by `.github/actions/_lib/git-route.sh`, which `cargo-fetch` and `publish-dry-run` also use for their `git-token`, so the validation and the rewrite shape are identical on the runner and inside the container.
+
 - The rewrite lives in `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n` and `GIT_CONFIG_COUNT`, not in a gitconfig file: it dies with the job, which matters on self-hosted runners.
 - A second invocation appends behind the entries an earlier one exported (`GIT_CONFIG_COUNT` is the cursor), so several hosts or namespaces can be routed in one job.
 - `token` must match `^[A-Za-z0-9._~+=-]+$`; a value with whitespace or one of `@:/?#%` is refused before it is masked or exported, because it is interpolated into a `GITHUB_ENV` line and a git URL.

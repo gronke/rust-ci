@@ -37,6 +37,7 @@ Two work, both passed the same way (`git-token: <value>`):
 ### In the workflow
 
 Mint the token just before `cargo-fetch` and hand the output to `git-token`:
+For a host other than GitHub, add `git-host` (and `git-username`, `oauth2` on GitLab); `git-path` narrows the rewrite to one namespace.
 
 ```yaml
 - name: Mint an installation token for private deps

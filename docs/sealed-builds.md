@@ -65,5 +65,5 @@ Keep the include tight, or add sensitive names to `env-exclude`.
 
 ## Private git dependencies
 
-`cargo-fetch` and `publish-dry-run` take a `git-token` that the container's git uses as `x-access-token` for `github.com`, with `CARGO_NET_GIT_FETCH_WITH_CLI=true` so cargo honours the rewrite.
+`cargo-fetch` and `publish-dry-run` take a `git-token`, with `git-host`, `git-username` and `git-path`, and hand it to the container as `GIT_CONFIG_*` env-file lines plus `CARGO_NET_GIT_FETCH_WITH_CLI=true`; `route-git-token` exports the same entries through `GITHUB_ENV` for steps on the runner, and both build them with `.github/actions/_lib/git-route.sh`.
 How to obtain a token that can read the dependency repositories: [private-git-dependencies.md](private-git-dependencies.md).

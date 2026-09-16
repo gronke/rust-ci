@@ -35,8 +35,19 @@ inputs:
     default: "false"
   git-token:
     description: >-
-      Token for cloning private git dependencies during the prep fetch.
-      Masked and forwarded to the container's git as x-access-token; leave empty for public deps.
+      Token for cloning private git dependencies during the prep fetch, routed as GIT_CONFIG_* entries the container's git honours; leave empty for public dependencies.
+    required: false
+    default: ""
+  git-host:
+    description: Git host the token routes, optionally with a port; see route-git-token.
+    required: false
+    default: "github.com"
+  git-username:
+    description: Userinfo name the token is presented under (x-access-token for GitHub, oauth2 for GitLab).
+    required: false
+    default: "x-access-token"
+  git-path:
+    description: Restrict the rewrite to a namespace under the host; empty routes every fetch on the host.
     required: false
     default: ""
   env-include:
@@ -66,6 +77,9 @@ runs:
         INPUT_EXPECTED_VERSION: ${{ inputs.expected-version }}
         INPUT_REQUIRE_DEPS_PUBLISHED: ${{ inputs.require-deps-published }}
         GIT_TOKEN: ${{ inputs.git-token }}
+        GIT_HOST: ${{ inputs.git-host }}
+        GIT_USERNAME: ${{ inputs.git-username }}
+        GIT_PATH: ${{ inputs.git-path }}
         ENV_INCLUDE: ${{ inputs.env-include }}
         ENV_EXCLUDE: ${{ inputs.env-exclude }}
         INPUT_ENV: ${{ inputs.env }}
@@ -73,12 +87,16 @@ runs:
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$GITHUB_ACTION_PATH/../_lib/seal.sh"
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/git-route.sh"
 
-        # Optional private-git token: mask it and forward as one explicit env-file line.
-        token_line=""
+        # Optional private-git token: validated, masked (the first line printed) and
+        # handed to the prep container as GIT_CONFIG_* env-file lines.
+        route_lines=""
         if [ -n "${GIT_TOKEN:-}" ]; then
-          printf '::add-mask::%s\n' "$GIT_TOKEN"
-          token_line="CICD_GIT_TOKEN=$GIT_TOKEN"
+          lines="$(git_route_lines "$GIT_TOKEN" "$GIT_HOST" "$GIT_USERNAME" "$GIT_PATH" 0)"
+          printf '%s\n' "$lines" | sed -n '1p'
+          route_lines="$(printf '%s\n' "$lines" | sed -n '2,$p')"
         fi
 
         # 1) Networked prep: cargo fetch + metadata + tag<->version + crates.io probe.
@@ -86,7 +104,7 @@ runs:
         # hand them to the prep script, the masked token as the one computed line.
         export OFFLINE=false
         export SEAL_PASS="INPUT_PACKAGE INPUT_EXPECTED_VERSION INPUT_REQUIRE_DEPS_PUBLISHED GITHUB_REF"
-        export EXTRA_ENV="$token_line"
+        export EXTRA_ENV="$route_lines"
         seal_run bash /cicd/prep.sh
 
         # 2) Sealed verify-build: cargo package --offline, --network=none; it reads the
