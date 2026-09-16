@@ -18,6 +18,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
   `"auto"` follows `RUST_CI_LOCAL_TARGET=1` in the job environment, so one workflow runs unchanged on hosted and self-hosted runners.
   Consumers must read `CARGO_TARGET_DIR` rather than assume `./target`.
 - `docs/self-hosted.md`: how a host hands these variables to every job through the runner's job-started hook, which reaches `container:` jobs too.
+- `cargo-fetch` and `publish-dry-run`: `git-host`, `git-username` and `git-path` next to `git-token`, so a private git dependency on GitLab, Bitbucket or a self-hosted forge routes like on GitHub.
+- selftest: `publish-draft-release`'s seal is exercised against a fake `gh`: same tree passes, another tree is refused, the newest candidate wins by numeric order, a version without markers is refused.
 
 ### Changed
 
@@ -29,6 +31,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `lint-and-test-docker` runs the `lint-and-test` action's script inside the container with `LOCKED=true`, `CLIPPY_ARGS=--all-targets` and its `offline` and `features` inputs; the commands it runs are unchanged.
   The script gained the `OFFLINE` and `LOCKED` toggles, both off unless set, so the native action's commands are unchanged too.
 - `ci.yml`: the msrv leg is skipped when `rust-version` is `msrv`, since the main gate already runs at the MSRV.
+- `cargo-fetch` and `publish-dry-run` hand a `git-token` to the container as `GIT_CONFIG_*` entries built by the shared `_lib/git-route.sh`, the same shape `route-git-token` exports, instead of writing a gitconfig inside the container; the token is validated first.
 - `cargo-docker`: `--offline` goes in front of the cargo subcommand, so `args` may end in `-- <arguments for the test binary>`.
 - `_lib/seal.sh`: `target-dir` and `cargo-cache` accept absolute paths, which lets a sealed action reuse rust-cache's `local-target` directory.
 - `publish-dry-run`: the prep refuses a `.crate` whose file list contains a cargo build tree or a cargo home, instead of validating an archive that packages them.
