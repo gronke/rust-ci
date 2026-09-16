@@ -1,7 +1,7 @@
 name: Rust CI (sealed)
 
 # Reusable, sealed Rust CI in one hardened Docker pipeline: fmt + clippy + test,
-# an optional cross-target check, and an optional MSRV build, all run --offline
+# an optional cross-target check, and an optional MSRV check, all run --offline
 # under --network=none against a cache that a single networked cargo-fetch warmed.
 # A consumer's whole CI becomes:
 #
@@ -29,7 +29,9 @@ on:
         type: string
         default: ""
       msrv:
-        description: Also verify the crate builds on its declared MSRV (Cargo.toml `rust-version`).
+        description: >-
+          Also verify the crate builds on its declared MSRV (Cargo.toml `rust-version`).
+          Skipped when rust-version is `msrv`, since the main gate then already runs at the MSRV.
         type: boolean
         default: true
       working-directory:
@@ -88,8 +90,9 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           args: "check --workspace${{ steps.xt.outputs.flags }} --locked"
 
-      # MSRV: builds an image at the crate's declared rust-version and cargo-checks on it.
+      # MSRV: cargo-checks inside the plain rust:<declared rust-version> image. With
+      # rust-version: msrv the image above already is the MSRV, so the leg is redundant.
       - uses: gronke/rust-ci/.github/actions/msrv@v1
-        if: ${{ inputs.msrv }}
+        if: ${{ inputs.msrv && inputs.rust-version != 'msrv' }}
         with:
           working-directory: ${{ inputs.working-directory }}
