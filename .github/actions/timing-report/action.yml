@@ -1,7 +1,7 @@
 name: Timing report
 description: >-
-  Render the timing report to the job summary: per-stage durations with their share of the job and, where the sampler ran, peak CPU and memory plus a CPU shape per stage.
-  Stages come from timing-mark steps or, without marks, from the Actions API with actions: read.
+  Render the timing report to the job summary: per-step durations with their share of the job and, where the sampler ran, peak CPU and memory plus a CPU shape per step.
+  Steps come from the Actions API and need actions: read; without it the report shows the job totals.
   Run it last with if: always(); it stops the sampler first.
 
 inputs:
@@ -21,19 +21,22 @@ inputs:
     default: "12"
   token:
     description: >-
-      Token used to read the job's per-step timings from the Actions API when the workflow places no timing-mark steps.
-      Needs actions: read; defaults to the job's github.token.
+      Token used to read the job's per-step timings from the Actions API.
+      Needs actions: read; defaults to the job's github.token. Empty skips the API and the report shows the job totals.
     required: false
     default: ${{ github.token }}
 outputs:
   report-path:
     description: The rendered Markdown report on disk, for an artifact upload or a diff between two runs.
     value: ${{ steps.report.outputs.report-path }}
+  total-ms:
+    description: Sum of every stage's duration in milliseconds.
+    value: ${{ steps.report.outputs.total-ms }}
   total-seconds:
     description: Sum of every stage's duration.
     value: ${{ steps.report.outputs.total-seconds }}
   slowest-stage:
-    description: Name of the longest stage, for a threshold check or an alert.
+    description: Name of the longest stage, for a threshold check or an alert; the job's id when the report has no per-step stages.
     value: ${{ steps.report.outputs.slowest-stage }}
   slowest-seconds:
     description: Duration of the longest stage.

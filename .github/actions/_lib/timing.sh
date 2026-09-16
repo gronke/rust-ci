@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
-# Shared state for the timing actions (timing-start, timing-mark, timing-report)
-# and for the optional cache statistics in rust-cache / rust-cache-save.
-# Source it; every function is a no-op-safe append.
+# Shared state for timing-start and timing-report and for the cache statistics
+# in rust-cache, rust-cache-save and sccache-stats. Source it; every function is
+# a no-op-safe append.
 #
-# Everything lives in one directory under $RUNNER_TEMP, exported as
-# RUST_CI_TIMING_DIR so later steps in the same job find it without an input:
+# Everything lives in $RUNNER_TEMP/rust-ci-timing, the one place every step of
+# a job resolves without an input or an exported variable:
 #
-#   marks.tsv     epoch_ms <TAB> stage name          one line per timing-mark
-#   samples.tsv   epoch_ms <TAB> cpu-busy-percent <TAB> mem_used_kb <TAB> mem_total_kb <TAB> disk_avail_kb
-#   notes.tsv     key <TAB> value                    facts contributed by other actions
-#   sampler.pid   pid of the background resource sampler, when one runs
+#   samples.tsv     epoch_ms <TAB> cpu-busy-percent <TAB> mem_used_kb <TAB> mem_total_kb <TAB> disk_avail_kb
+#   notes.tsv       key <TAB> value            facts contributed by the actions
+#   sampler.pid     pid of the background resource sampler, when one runs
+#   boundaries.tsv  epoch_ms <TAB> stage name  stage bounds the report derived
 #
 # TSV rather than JSON on purpose: the writers are shell one-liners appending
 # under concurrency, and awk reads it in the report without a jq dependency.
-# A tab-free field discipline keeps that parse honest, so stage names are
+# A tab-free field discipline keeps that parse honest, so keys and values are
 # sanitized on the way in.
 
-# Directory the whole job shares. Resolved rather than required, so a
-# timing-mark placed before timing-start still records instead of failing:
-# a missing mark is a hole in the report that nothing else would explain.
 timing_dir() {
-  local dir="${RUST_CI_TIMING_DIR:-${RUNNER_TEMP:-/tmp}/rust-ci-timing}"
+  local dir="${RUNNER_TEMP:-/tmp}/rust-ci-timing"
   mkdir -p "$dir"
   printf '%s\n' "$dir"
 }
@@ -38,29 +35,31 @@ timing_now_ms() {
 }
 
 # Tabs and newlines would desynchronize every later awk field split, and a
-# stage name reaches this from a workflow input. Collapse both to a space.
+# value can reach this from a workflow input. Collapse both to a space.
 timing_sanitize() {
   printf '%s' "$1" | tr '\t\n\r' '   ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//'
 }
 
-# Append a stage boundary. A mark records where a stage BEGINS; its duration is
-# the distance to the next mark, which is why timing-report writes a final
-# sentinel of its own before rendering.
-timing_mark() {
-  local dir name
-  dir="$(timing_dir)"
-  name="$(timing_sanitize "${1:-unnamed}")"
-  printf '%s\t%s\n' "$(timing_now_ms)" "$name" >> "$dir/marks.tsv"
-}
-
-# Append a free-form fact. Used by rust-cache for hit/miss and restore sizes,
-# so the report can say why a run was slow rather than only that it was.
+# Append a fact. rust-cache notes hit kind and restored sizes, sccache-stats
+# its hit counts, so the report can say why a run was slow rather than only
+# that it was. The same row is kept for timing_summary below.
 timing_note() {
   local dir key value
   dir="$(timing_dir)"
   key="$(timing_sanitize "${1:-unnamed}")"
   value="$(timing_sanitize "${2:-}")"
   printf '%s\t%s\n' "$key" "$value" >> "$dir/notes.tsv"
+  _timing_rows="${_timing_rows:-}| \`$key\` | $value |"$'\n'
+}
+
+# Append the facts noted so far as a table to the step summary, under the given
+# heading, so a consumer without timing-report still sees them. Nothing noted,
+# or no summary file (outside Actions), appends nothing; a failed write is not
+# an error, statistics never fail a job.
+timing_summary() {
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -n "${_timing_rows:-}" ] || return 0
+  printf '### %s\n\n| key | value |\n| --- | --- |\n%s\n' "${1:-Cache}" "$_timing_rows" \
+    2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
 }
 
 # Human-readable byte count for the summary tables.
