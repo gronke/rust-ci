@@ -33,3 +33,4 @@ Use it after [`install-toolchain`](../install-toolchain/README.md) with the `rus
 - `features`, `clippy-args` and `test-args` are word-split on whitespace; shell quoting inside them is not interpreted.
 - `fmt` does not depend on `features`; in a matrix, enable it on one leg and set `fmt: "false"` on the others.
 - Each command runs in its own collapsible log group.
+- The same script runs inside [`lint-and-test-docker`](../lint-and-test-docker/README.md), which fixes `--all-targets` and `--locked` and adds `--offline` from its `offline` input; here neither `--locked` nor `--offline` is passed unless `clippy-args` or `test-args` carry them.
