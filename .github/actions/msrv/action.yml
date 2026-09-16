@@ -1,6 +1,6 @@
 name: MSRV check (Docker, sealed)
 description: >-
-  Compile a crate on its declared minimum supported Rust version inside a container built at exactly that toolchain, so a plain `cargo check` is the MSRV check.
+  Compile a crate on its declared minimum supported Rust version: the plain rust:<msrv> image is pulled and a sealed `cargo check` runs inside it, so no toolchain image is built.
   The version is read from Cargo.toml's `rust-version` (override with `rust-version`); a dependency that raises its own MSRV fails on the PR that pulls it in.
 
 inputs:
@@ -24,20 +24,16 @@ inputs:
     default: "."
   locked:
     description: >-
-      Default "false": resolve a fresh Cargo.lock at the MSRV in a disposable copy of the source before the check, so a newer in-range dependency release (which a committed Cargo.lock would hide) is exercised on the floor.
-      "true": require a committed Cargo.lock and check exactly those versions; the checkout is never modified either way.
+      Default "true": require a committed Cargo.lock and check exactly those versions, like every other sealed action.
+      "false": resolve a fresh Cargo.lock at the MSRV in a disposable copy of the source before the check, so a newer in-range dependency release (which the committed Cargo.lock would hide) is exercised on the floor; the checkout is never modified either way.
     required: false
-    default: "false"
+    default: "true"
   offline:
     description: >-
       Run sealed with --network none plus cargo --offline (needs a prior cargo-fetch).
       Default "false": networked but otherwise sealed, so deps resolve fresh with no warmup step.
     required: false
     default: "false"
-  image-tag:
-    description: Local tag for the MSRV image, kept distinct from rust-ci:latest.
-    required: false
-    default: rust-ci:msrv
   target-dir:
     description: Host dir for cargo target (read-write, cacheable).
     required: false
@@ -47,19 +43,15 @@ inputs:
     required: false
     default: .cargo-cache
   env-include:
-    description: >-
-      Regex (POSIX ERE) of env-var names to forward into the container, anchored full-name.
-      Default forwards cargo's own vars.
+    description: Regex (POSIX ERE) of runner variable names to forward, anchored full-name; see docs/sealed-builds.md.
     required: false
     default: "CARGO_.*"
   env-exclude:
-    description: >-
-      Regex (POSIX ERE) of names to drop from the included set (exclusion wins).
-      Defaults to the action-owned vars.
+    description: Regex (POSIX ERE) of names to drop from the included set (exclusion wins); see docs/sealed-builds.md.
     required: false
-    default: "CARGO_HOME|RUSTUP_HOME|CARGO_TARGET_DIR"
+    default: ""
   env:
-    description: Extra literal KEY=VALUE lines (one per line) forwarded verbatim.
+    description: Literal KEY=VALUE lines forwarded verbatim; a bare NAME line forwards that variable from the runner environment; see docs/sealed-builds.md.
     required: false
     default: ""
 
@@ -75,8 +67,8 @@ runs:
         INPUT_LOCKED: ${{ inputs.locked }}
       run: |
         set -euo pipefail
-        # locked: true checks a committed lockfile, so require one before building an image.
-        if [ "${INPUT_LOCKED:-false}" = "true" ] && [ ! -f Cargo.lock ]; then
+        # locked: true checks a committed lockfile, so require one before pulling an image.
+        if [ "${INPUT_LOCKED:-true}" = "true" ] && [ ! -f Cargo.lock ]; then
           echo "::error::locked: true but no committed Cargo.lock in $(pwd)"; exit 1
         fi
         # shellcheck source=/dev/null
@@ -93,19 +85,23 @@ runs:
         echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
         echo "Declared MSRV: $msrv"
 
-    - name: Build the image at the MSRV
+    - name: Pull the rust image at the MSRV
       shell: bash
       env:
-        RUST_VERSION: ${{ steps.resolve.outputs.msrv }}
-        TAG: ${{ inputs.image-tag }}
-        CACHE: "false"
-      run: bash "$GITHUB_ACTION_PATH/../build-image/build-image.sh"
+        IMAGE: rust:${{ steps.resolve.outputs.msrv }}
+      run: |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "$GITHUB_ACTION_PATH/../_lib/retry-transient.sh"
+        # The plain rust:<msrv> image is all `cargo check` needs; Docker Hub times out
+        # and rate-limits for reasons that have nothing to do with this check.
+        retry_transient docker pull "$IMAGE"
 
     - name: cargo check on the MSRV (sealed)
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        IMAGE: ${{ inputs.image-tag }}
+        IMAGE: rust:${{ steps.resolve.outputs.msrv }}
         TARGET_DIR: ${{ inputs.target-dir }}
         CARGO_CACHE: ${{ inputs.cargo-cache }}
         OFFLINE: ${{ inputs.offline }}
@@ -206,9 +202,7 @@ runs:
           echo "::endgroup::"
         fi
 
-        export CICD_DIR="$GITHUB_ACTION_PATH"
-        # PACKAGE/FEATURES/MSRV aren't CARGO_* (env-include won't forward them); inject them for
+        # PACKAGE/FEATURES/MSRV aren't CARGO_* (env-include won't forward them); hand them to
         # the in-container script. seal_run reads OFFLINE for --network; the check is always --locked.
-        EXTRA_ENV="$(printf '%s\n%s\n%s' "PACKAGE=$PACKAGE" "FEATURES=$FEATURES" "MSRV=$MSRV")"
-        export EXTRA_ENV
+        export SEAL_PASS="PACKAGE FEATURES MSRV"
         seal_run bash /cicd/msrv.sh
