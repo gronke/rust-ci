@@ -45,7 +45,7 @@ REF_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")"
 TYPE="$(printf '%s' "$REF_JSON" | jq -r '.object.type')"
 SHA="$(printf '%s' "$REF_JSON" | jq -r '.object.sha')"
 if [ "$TYPE" != "tag" ]; then
-  refuse "${TAG} is a lightweight tag; release tags must be annotated and signed" "$SHA" "lightweight"
+  refuse "${TAG} is a lightweight tag; release tags must be annotated and signed. If it came from publishing the draft in the web UI, the immutable release has locked it and the version is spent: leave the release as it is and take the next version through the flow (docs/release-flow.md, When a gate refuses)" "$SHA" "lightweight"
 fi
 
 OBJ="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${SHA}")"

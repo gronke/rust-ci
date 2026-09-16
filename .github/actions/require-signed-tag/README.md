@@ -30,7 +30,7 @@ Run it in the tag run's gate job, after [`check-release-readiness`](../check-rel
 ## Notes
 
 - The verification is GitHub's own, read through the API: no keyring on the runner, and a signature from a key that no account with the tagger identity has registered fails.
-- Lightweight tags are refused.
+- Lightweight tags are refused; the message also covers the tag GitHub creates when the draft is published in the web UI, which the immutable release locks, so that version is spent and the next one goes through the flow.
 - A non-tag ref without a `tag` input is a wiring error and fails regardless of `warn-only`.
 - A tag ruleset restricts who may create, update or delete release tags (the shipped `.github/rulesets/tags-maintainer-only.json`); a `required_signatures` rule on tags refuses only pushes that introduce unsigned commits and never checks the tag object's signature.
   This gate is where the signature is enforced.
