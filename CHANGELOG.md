@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Changed
 
+- `sccache`: the client waits `server-startup-timeout-ms` (default 30 s) for its server, set through sccache's own `server_startup_timeout_ms` in a configuration file the action exports as `SCCACHE_CONF` unless the job brings its own; the client's message reaches the log when the start fails. sccache's ten-second default was crossed when several jobs' servers checked one WebDAV backend at once, and the step said only "the server did not start".
 - `require-signed-tag`: the lightweight-tag refusal says what a tag that came from publishing the draft in the web UI means: the immutable release has locked it and the version is spent, so the next version goes through the flow.
 - `release-guidance`: the step summary names the consequence of publishing the draft in the web UI, an unsigned tag that no signed tag can replace, instead of a gate failure that could be fixed.
 
