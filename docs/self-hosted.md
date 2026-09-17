@@ -8,7 +8,7 @@ The actions read that offer from the job environment and from their inputs, noth
 | Variable | Read by | Meaning |
 | --- | --- | --- |
 | `SCCACHE_*` | `sccache` | sccache's own backend configuration, for example `SCCACHE_WEBDAV_ENDPOINT`, `SCCACHE_BUCKET` with `SCCACHE_ENDPOINT`, `SCCACHE_REDIS_ENDPOINT` or `SCCACHE_DIR`; credentials such as `AWS_ACCESS_KEY_ID` are ordinary variables next to them. |
-| `RUST_CI_CRATES_MIRROR` | `crates-mirror` | A `sparse+http(s)://.../` registry URL of a crates.io pull-through, written into `$CARGO_HOME/config.toml` as the crates-io source replacement. |
+| `RUST_CI_CRATES_MIRROR` | `crates-mirror`, `rust-cache` with `cache-registry: auto` | A `sparse+http(s)://.../` registry URL of a crates.io pull-through, written into `$CARGO_HOME/config.toml` as the crates-io source replacement; `rust-cache` then skips the registry archive, since the mirror serves the same downloads without the transfer. |
 | `RUST_CI_LOCAL_TARGET=1` | `rust-cache` with `local-target: auto` | The runner keeps its work tree between jobs, so `target/` stays on disk instead of travelling through the cache. Never set it on ephemeral runners. |
 
 One rule for every `auto`: the mode activates when its variable is present and non-empty, and does nothing otherwise.

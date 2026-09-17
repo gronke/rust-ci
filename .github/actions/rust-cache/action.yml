@@ -1,7 +1,7 @@
 name: Rust cache
 description: >-
   Restore cargo's download cache and, on request, the build target directory through actions/cache.
-  The registry entry restores here and saves at job end unless save is "false".
+  The registry entry restores here and saves at job end unless save is "false"; cache-registry "auto" skips it on a runner that offers a crates mirror.
   The target entry (cache-target) is restore-only here; the paired rust-cache-save action prunes and uploads it as the job's last step.
   CARGO_INCREMENTAL defaults to 0 when unset.
 
@@ -14,6 +14,11 @@ inputs:
     description: >-
       Also save the registry entry at job end (the actions/cache post step).
       Set "false" for restore-only consumers such as pull-request jobs reading a cache that a default-branch warmup job maintains; the target entry is restore-only here regardless.
+    required: false
+    default: "true"
+  cache-registry:
+    description: >-
+      Restore the registry entry: "true", "false" or "auto", which skips it when RUST_CI_CRATES_MIRROR is non-empty in the job environment (docs/self-hosted.md), because a host mirror serves the same downloads without the transfer.
     required: false
     default: "true"
   cache-target:
@@ -49,6 +54,9 @@ inputs:
     default: "false"
 
 outputs:
+  registry-cached:
+    description: '"true" when the registry entry went through actions/cache, "false" when cache-registry turned it off.'
+    value: ${{ steps.meta.outputs.cache_registry }}
   target-cache-hit:
     description: '"true" when the target entry restored from its exact key. Empty under local-target, which restores nothing.'
     value: ${{ steps.target.outputs.cache-hit }}
@@ -67,6 +75,7 @@ runs:
         EXTRA_DIRS: ${{ inputs.cache-directories }}
         LOCAL_TARGET: ${{ inputs.local-target }}
         CACHE_TARGET: ${{ inputs.cache-target }}
+        CACHE_REGISTRY: ${{ inputs.cache-registry }}
         PREFIX: ${{ inputs.prefix }}
       run: |
         set -euo pipefail
@@ -117,6 +126,22 @@ runs:
           echo "local_target_dir=$work/.rust-ci-target/$PREFIX" >> "$GITHUB_OUTPUT"
         fi
 
+        # "auto" follows RUST_CI_CRATES_MIRROR: a host that mirrors crates.io serves the
+        # index and the tarballs at LAN speed, so the archive would only transfer bytes
+        # the mirror already holds (docs/self-hosted.md).
+        cache_registry=true
+        case "$CACHE_REGISTRY" in
+          true) ;;
+          false) cache_registry=false ;;
+          auto) [ -n "${RUST_CI_CRATES_MIRROR:-}" ] && cache_registry=false ;;
+          *)
+            echo "::error::rust-cache: cache-registry must be true, false or auto (got '$CACHE_REGISTRY')"
+            exit 1
+            ;;
+        esac
+        echo "cache_registry=$cache_registry" >> "$GITHUB_OUTPUT"
+        [ "$cache_registry" = true ] || echo "rust-cache: registry entry skipped; the crates mirror in the job environment serves the downloads."
+
         # Cargo's DOWNLOAD cache: registry index + .crate tarballs + git db. Never registry/src:
         # cargo re-extracts it from the tarballs, so caching it is pure duplication (it roughly
         # doubles the registry footprint for no benefit). The cargo home comes from CARGO_HOME when
@@ -137,7 +162,7 @@ runs:
     # grows the cache; a changed lock seeds a fresh entry and the stale one is removed after seven days without access, no
     # ratchet. `save: "false"` swaps in the restore-only variant of the same first-party action.
     - name: Cache cargo registry/git
-      if: inputs.save == 'true'
+      if: inputs.save == 'true' && steps.meta.outputs.cache_registry == 'true'
       uses: actions/cache@v6
       with:
         path: ${{ steps.meta.outputs.registry_paths }}
@@ -146,7 +171,7 @@ runs:
           ${{ inputs.prefix }}-${{ runner.os }}-registry-
 
     - name: Restore cargo registry/git without saving
-      if: inputs.save != 'true'
+      if: inputs.save != 'true' && steps.meta.outputs.cache_registry == 'true'
       uses: actions/cache/restore@v6
       with:
         path: ${{ steps.meta.outputs.registry_paths }}
@@ -206,4 +231,5 @@ runs:
         TARGET_KEY: ${{ inputs.prefix }}-${{ runner.os }}-target-${{ steps.meta.outputs.rust }}-${{ hashFiles(inputs.lockfiles) }}
         TARGET_LOCAL: ${{ steps.meta.outputs.local_target }}
         REGISTRY_DIRS: ${{ steps.meta.outputs.registry_paths }}
+        REGISTRY_CACHED: ${{ steps.meta.outputs.cache_registry }}
       run: bash "$GITHUB_ACTION_PATH/cache-stats.sh"

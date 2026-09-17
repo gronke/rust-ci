@@ -7,6 +7,7 @@
 #   TARGET_KEY   the exact key the restore asked for
 #   TARGET_LOCAL "true" under local-target: nothing was restored
 #   REGISTRY_DIRS newline-separated registry paths
+#   REGISTRY_CACHED "false" when cache-registry skipped the entry
 #
 # The distinction this exists to make: a cache that restores but whose
 # artifacts are not reusable reports success at every step, every suite still
@@ -49,6 +50,9 @@ if [ -n "$TARGET_DIR" ]; then
   fi
 fi
 
+if [ "${REGISTRY_CACHED:-true}" = "false" ]; then
+  timing_note "cache.registry" "skipped (crates mirror in the job environment)"
+fi
 reg=0
 while IFS= read -r d; do
   [ -n "$d" ] || continue

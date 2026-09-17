@@ -12,6 +12,7 @@ Use it before the build steps of a runner-native or `container:` job; pair it wi
     cache-target: "true"     # also restore target/ (off by default)
     # local-target: "auto"   # keep target/ on a runner whose work tree persists
     # save: "false"          # registry restore-only, for pure consumers
+    # cache-registry: "auto" # skip the registry entry on a host with a crates mirror
     # stats: "true"          # hit kind and restored size in the step summary
 ```
 
@@ -21,6 +22,7 @@ Use it before the build steps of a runner-native or `container:` job; pair it wi
 | --- | --- | --- |
 | `prefix` | `rust` | Cache-family name, so independent jobs keep separate caches. |
 | `save` | `"true"` | Save the registry entry at job end. `"false"` restores only; the target entry is restore-only here regardless. |
+| `cache-registry` | `"true"` | `"true"`, `"false"` or `"auto"`: restore the registry entry; `auto` skips it when `RUST_CI_CRATES_MIRROR` is set in the job environment. |
 | `cache-target` | `"false"` | Also restore the build `target/` directory. |
 | `local-target` | `"false"` | `"true"`, `"false"` or `"auto"`: keep `target/` on the runner instead of transferring it. Requires `cache-target`. |
 | `target-dir` | `target` | Workspace-relative target directory to restore. Ignored when local-target is active. |
@@ -32,6 +34,7 @@ Use it before the build steps of a runner-native or `container:` job; pair it wi
 
 | Output | Description |
 | --- | --- |
+| `registry-cached` | `"true"` when the registry entry went through `actions/cache`, `"false"` when `cache-registry` turned it off. |
 | `target-cache-hit` | `"true"` when the target entry restored from its exact key. Empty under local-target, which restores nothing. |
 
 ## How it works
@@ -44,6 +47,9 @@ The key, directory and hit state reach `rust-cache-save` as `RUST_CI_TARGET_KEY`
 `CARGO_INCREMENTAL` defaults to `0` and `CARGO_TERM_COLOR` to `always`; a value already present in the job environment is left untouched and flows through, into the Docker actions included.
 No build profile is imposed.
 The cargo home is `$CARGO_HOME` when set, else `$HOME/.cargo`, so a container image that bakes the toolchain elsewhere (for example `/opt/cargo`) is cached correctly.
+
+`cache-registry: "auto"` skips the registry entry, restore and save alike, when the job environment carries `RUST_CI_CRATES_MIRROR`: a host that mirrors crates.io ([docs/self-hosted.md](../../../docs/self-hosted.md)) serves the index and the tarballs at LAN speed, and `crates-mirror` routes cargo there, so the archive would only transfer bytes the mirror already holds.
+Without the variable the entry goes through `actions/cache` as always, so one workflow runs unchanged on hosted runners.
 
 `local-target` requires `cache-target`: `"true"` without it fails, `"auto"` stays off.
 `"auto"` activates when the job environment carries `RUST_CI_LOCAL_TARGET=1`, which a host whose work tree persists provides ([docs/self-hosted.md](../../../docs/self-hosted.md)); ephemeral runners must not set it, because the directory dies with the instance.
