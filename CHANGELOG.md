@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ## [Unreleased]
 
+### Added
+
+- `rust-cache`: `cache-registry` (`"true"`, `"false"`, `"auto"`); `auto` skips the registry archive, restore and save alike, when `RUST_CI_CRATES_MIRROR` is set in the job environment, and the `registry-cached` output says what happened.
+
 ### Changed
 
 - `require-signed-tag`: the lightweight-tag refusal says what a tag that came from publishing the draft in the web UI means: the immutable release has locked it and the version is spent, so the next version goes through the flow.
