@@ -1352,6 +1352,7 @@ jobs:
       - name: auto fired and the wrapper is an absolute, executable path
         run: |
           [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
+          grep -qx 'server_startup_timeout_ms = 30000' "${SCCACHE_CONF:-/nonexistent}" || { echo "::error::SCCACHE_CONF does not carry the startup timeout: ${SCCACHE_CONF:-unset}"; exit 1; }
           [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
           case "$RUSTC_WRAPPER" in /*) ;; *) echo "::error::RUSTC_WRAPPER is not absolute"; exit 1 ;; esac
           echo "✓ active, $RUSTC_WRAPPER wraps rustc"

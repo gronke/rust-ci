@@ -2,6 +2,7 @@
 # Inputs arrive as env vars from action.yml:
 #   MODE            auto | on | off | gha
 #   VERSION         sccache release (X.Y.Z, no v prefix)
+#   STARTUP_TIMEOUT_MS  server_startup_timeout_ms for sccache's configuration file
 #   SHA256_X86_64   pinned archive checksum, x86_64-unknown-linux-musl
 #   SHA256_AARCH64  pinned archive checksum, aarch64-unknown-linux-musl
 set -euo pipefail
@@ -78,6 +79,10 @@ esac
   echo "::error::sccache: invalid sha256 pin for $triple"
   exit 1
 }
+[[ "$STARTUP_TIMEOUT_MS" =~ ^[0-9]{1,7}$ ]] || {
+  echo "::error::sccache: server-startup-timeout-ms must be a number of milliseconds (got '$STARTUP_TIMEOUT_MS')"
+  exit 1
+}
 
 # Static musl build under RUNNER_TEMP: inside a job container that is the
 # bind-mounted _work/_temp, so the absolute RUSTC_WRAPPER path below stays
@@ -101,14 +106,27 @@ echo "RUSTC_WRAPPER=$bin" >> "$GITHUB_ENV"
 # rust-cache does, while obeying an explicit consumer value.
 if [ -z "${CARGO_INCREMENTAL:-}" ]; then echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"; fi
 
+# The client waits for the server, which checks its storage before it
+# answers; sccache's ten-second default is short for a remote backend busy
+# with other jobs' servers. The wait is sccache's own setting, so it goes into
+# its configuration file, exported for every later client in the job too. A
+# job that brings its own SCCACHE_CONF, or a default file, keeps it.
+if [ -z "${SCCACHE_CONF:-}" ] && [ ! -f "${HOME:-/nonexistent}/.config/sccache/config" ]; then
+  conf="$dir/config.toml"
+  printf 'server_startup_timeout_ms = %s\n' "$STARTUP_TIMEOUT_MS" > "$conf"
+  echo "SCCACHE_CONF=$conf" >> "$GITHUB_ENV"
+  export SCCACHE_CONF="$conf"
+fi
+
 # One server per host and port: a server left by an earlier job keeps that
 # job's backend and makes --start-server fail with "Address in use", so stop
-# it first. Starting now makes a broken install fail THIS step loudly;
-# backend reachability still proves itself on first use, because sccache
-# connects lazily.
+# it first. Starting now makes a broken install fail THIS step loudly, with
+# the client's message; backend reachability still proves itself on first
+# use, because sccache connects lazily.
 "$bin" --stop-server >/dev/null 2>&1 || true
-"$bin" --start-server >/dev/null 2>&1 || {
+"$bin" --start-server >/dev/null 2>"$dir/start-server.log" || {
   echo "::error::sccache: the server did not start"
+  sed 's/^/sccache: /' "$dir/start-server.log"
   exit 1
 }
 

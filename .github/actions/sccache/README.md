@@ -16,6 +16,7 @@ Use it before the build steps of a runner-native or `container:` job; the backen
 
 | Input | Default | Description |
 | --- | --- | --- |
+| `server-startup-timeout-ms` | `"30000"` | How long the client waits for the server, written as `server_startup_timeout_ms` into a configuration file the action points `SCCACHE_CONF` at; a job that sets `SCCACHE_CONF` itself, or has a default file, keeps its own. |
 | `mode` | `auto` | `auto` activates when a non-empty `SCCACHE_*` variable is set, `on` activates regardless, `off` changes nothing, `gha` uses GitHub's cache service. |
 | `version` | `"0.17.0"` | sccache release to install, pinned together with the checksums. |
 | `sha256-x86_64` | `67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006` | SHA256 of the x86_64-unknown-linux-musl release archive. |
@@ -47,3 +48,4 @@ It is never part of `auto`; a bare `SCCACHE_GHA_ENABLED` in the job environment 
 - Every mode fetches `actions/github-script` at "Set up job", because the runner resolves a nested `uses` before its `if`.
 - The sealed Docker actions are untouched: they pin `CARGO_HOME`, forward `CARGO_.*` only and build offline.
 - sccache runs one server per host and port; a runner that executes jobs concurrently sets `SCCACHE_SERVER_PORT` per job.
+- The server checks its storage before it answers and the client waits `server-startup-timeout-ms` for it; sccache's own default of ten seconds was crossed when several jobs' servers checked one WebDAV backend at once. The client's message reaches the log when the start fails.

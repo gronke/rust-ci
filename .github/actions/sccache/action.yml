@@ -13,6 +13,13 @@ inputs:
       "gha" uses GitHub's cache service as the backend, the choice for hosted runners; it is explicit on purpose because it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment and spends the repository's cache pool (see the README).
     required: false
     default: auto
+  server-startup-timeout-ms:
+    description: >-
+      How long the sccache client waits for its server to start, in milliseconds, written as server_startup_timeout_ms into a configuration file the action points SCCACHE_CONF at.
+      The server checks its storage before it answers, and a remote backend busy with other jobs' servers can take longer than sccache's ten-second default.
+      A job that sets SCCACHE_CONF itself keeps its own file.
+    required: false
+    default: "30000"
   version:
     description: sccache release to install, pinned together with the checksums below.
     required: false
@@ -68,6 +75,7 @@ runs:
       env:
         MODE: ${{ inputs.mode }}
         VERSION: ${{ inputs.version }}
+        STARTUP_TIMEOUT_MS: ${{ inputs.server-startup-timeout-ms }}
         SHA256_X86_64: ${{ inputs.sha256-x86_64 }}
         SHA256_AARCH64: ${{ inputs.sha256-aarch64 }}
       run: bash "$GITHUB_ACTION_PATH/sccache.sh"
