@@ -1291,17 +1291,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-cache
+        id: cache
         with:
           prefix: localoff-${{ github.run_id }}
           cache-target: "true"
           local-target: "auto"
+          cache-registry: "auto"
           save: "false"
           lockfiles: fixtures/sample-crate/Cargo.lock
       - name: rust-cache took the normal path
         run: |
           [ -z "${CARGO_TARGET_DIR:-}" ] || { echo "::error::CARGO_TARGET_DIR was set: $CARGO_TARGET_DIR"; exit 1; }
           [ -n "${RUST_CI_TARGET_KEY:-}" ] || { echo "::error::no key handed over"; exit 1; }
-          echo "✓ local-target auto stayed off; key handed over as usual"
+          [ "${{ steps.cache.outputs.registry-cached }}" = "true" ] || { echo "::error::registry-cached is '${{ steps.cache.outputs.registry-cached }}', expected true"; exit 1; }
+          echo "✓ local-target and cache-registry auto stayed off; key handed over as usual"
       - name: local-target true without cache-target refuses
         id: refuse
         continue-on-error: true
@@ -1438,6 +1441,18 @@ jobs:
           for _ in $(seq 1 20); do curl -sf http://127.0.0.1:8399/config.json >/dev/null && break; sleep 0.5; done
       - uses: ./.github/actions/crates-mirror
         id: mirror
+      - name: rust-cache with cache-registry auto skips the registry entry
+        id: cache
+        uses: ./.github/actions/rust-cache
+        with:
+          prefix: mirrored-${{ github.run_id }}
+          cache-registry: "auto"
+          save: "false"
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: the registry entry was skipped
+        run: |
+          [ "${{ steps.cache.outputs.registry-cached }}" = "false" ] || { echo "::error::registry-cached is '${{ steps.cache.outputs.registry-cached }}', expected false"; exit 1; }
+          echo "✓ registry archive skipped in favour of the mirror"
       - name: the replacement was written
         run: |
           [ "${{ steps.mirror.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
