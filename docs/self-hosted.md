@@ -24,8 +24,15 @@ Every later step sees them, including the steps of a `container:` job, because t
 #!/bin/sh
 # /usr/local/lib/ci/job-started.sh
 {
-  echo "SCCACHE_WEBDAV_ENDPOINT=http://10.0.0.1:9980/"
-  echo "RUST_CI_CRATES_MIRROR=sparse+http://10.0.0.1:9980/crates/index/"
+  # A credential-free S3 endpoint on the host: an object proxy that signs
+  # the requests itself, so the job holds no key.
+  echo "SCCACHE_ENDPOINT=http://10.0.0.1:9982"
+  echo "SCCACHE_BUCKET=build-cache"
+  echo "SCCACHE_REGION=auto"
+  echo "SCCACHE_S3_KEY_PREFIX=sccache"
+  echo "SCCACHE_S3_USE_SSL=false"
+  echo "SCCACHE_S3_NO_CREDENTIALS=true"
+  echo "RUST_CI_CRATES_MIRROR=sparse+http://10.0.0.1:9981/index/"
 } >> "$GITHUB_ENV"
 # A credential is masked before it is written: echo "::add-mask::$secret"
 ```
