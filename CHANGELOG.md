@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 ### Documentation
 
+- `docs/self-hosted.md`: the hook example hands a job the credential-free S3 set of a host object proxy and the crates mirror URL, in place of a WebDAV endpoint.
 - The release runbook accounts for immutable releases: the flip locks the release, its assets and its tag; the refusal table gains the row for a by-hand publish, and the settings list names the feature.
 
 ## [2.0.0] - 2026-09-16
