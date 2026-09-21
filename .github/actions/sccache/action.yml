@@ -13,6 +13,13 @@ inputs:
       "gha" uses GitHub's cache service as the backend, the choice for hosted runners; it is explicit on purpose because it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment and spends the repository's cache pool (see the README).
     required: false
     default: auto
+  namespace:
+    description: >-
+      A path below the configured backend's key prefix, `release/linux-amd64` for example, so tiers or platforms share one backend without sharing objects.
+      Segments of A-Za-z0-9._- joined by "/"; applied to whichever backend the job environment configures (the S3, GCS, Azure, WebDAV, Redis, Memcached or OSS key prefix, the gha version, or a subdirectory of SCCACHE_DIR) and ignored without one.
+      A namespace separates objects, not writers.
+    required: false
+    default: ""
   server-startup-timeout-ms:
     description: >-
       How long the sccache client waits for its server to start, in milliseconds, written as server_startup_timeout_ms into a configuration file the action points SCCACHE_CONF at.
@@ -74,6 +81,7 @@ runs:
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
+        NAMESPACE: ${{ inputs.namespace }}
         VERSION: ${{ inputs.version }}
         STARTUP_TIMEOUT_MS: ${{ inputs.server-startup-timeout-ms }}
         SHA256_X86_64: ${{ inputs.sha256-x86_64 }}

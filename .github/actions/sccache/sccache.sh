@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Inputs arrive as env vars from action.yml:
 #   MODE            auto | on | off | gha
+#   NAMESPACE       path below the backend's key prefix ("" for none)
 #   VERSION         sccache release (X.Y.Z, no v prefix)
 #   STARTUP_TIMEOUT_MS  server_startup_timeout_ms for sccache's configuration file
 #   SHA256_X86_64   pinned archive checksum, x86_64-unknown-linux-musl
@@ -116,6 +117,23 @@ if [ -z "${SCCACHE_CONF:-}" ] && [ ! -f "${HOME:-/nonexistent}/.config/sccache/c
   printf 'server_startup_timeout_ms = %s\n' "$STARTUP_TIMEOUT_MS" > "$conf"
   echo "SCCACHE_CONF=$conf" >> "$GITHUB_ENV"
   export SCCACHE_CONF="$conf"
+fi
+
+# A namespace puts this job's objects below the backend's key prefix
+# (_lib/sccache-namespace.sh): exported for the server started below, and
+# written to $GITHUB_ENV for every compile after this step.
+if [ -n "${NAMESPACE:-}" ]; then
+  # shellcheck source=../_lib/sccache-namespace.sh disable=SC1091
+  source "$GITHUB_ACTION_PATH/../_lib/sccache-namespace.sh"
+  namespaced=$(sccache_namespace_env "$NAMESPACE" "$MODE") || exit $?
+  if [ -n "$namespaced" ]; then
+    printf '%s\n' "$namespaced" >> "$GITHUB_ENV"
+    # shellcheck disable=SC2163  # the NAME=VALUE line is the export
+    export "$namespaced"
+    echo "sccache: namespace $NAMESPACE (${namespaced%%=*})"
+  else
+    echo "::warning title=sccache namespace without a backend::namespace '$NAMESPACE' applies to no configured backend"
+  fi
 fi
 
 # One server per host and port: a server left by an earlier job keeps that

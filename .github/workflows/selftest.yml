@@ -1349,13 +1349,16 @@ jobs:
         run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
       - uses: ./.github/actions/sccache
         id: sccache
+        with:
+          namespace: tier/linux-x64
       - name: auto fired and the wrapper is an absolute, executable path
         run: |
           [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::auto did not activate"; exit 1; }
           grep -qx 'server_startup_timeout_ms = 30000' "${SCCACHE_CONF:-/nonexistent}" || { echo "::error::SCCACHE_CONF does not carry the startup timeout: ${SCCACHE_CONF:-unset}"; exit 1; }
           [ -x "${RUSTC_WRAPPER:-/nonexistent}" ] || { echo "::error::RUSTC_WRAPPER is not executable: ${RUSTC_WRAPPER:-unset}"; exit 1; }
           case "$RUSTC_WRAPPER" in /*) ;; *) echo "::error::RUSTC_WRAPPER is not absolute"; exit 1 ;; esac
-          echo "✓ active, $RUSTC_WRAPPER wraps rustc"
+          case "$SCCACHE_DIR" in */sccache-store/tier/linux-x64) ;; *) echo "::error::the namespace did not reach SCCACHE_DIR: $SCCACHE_DIR"; exit 1 ;; esac
+          echo "✓ active, $RUSTC_WRAPPER wraps rustc, storing under $SCCACHE_DIR"
       - name: first build stores, second build hits
         working-directory: fixtures/sample-crate
         run: |
@@ -1381,6 +1384,49 @@ jobs:
           grep -q '| `cache.sccache` | .* hits / .* misses of ' "$S" \
             || { echo "::error::the sccache facts did not reach the step summary"; exit 1; }
           echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded, and rendered in the step summary"
+
+  # The namespace library alone, in a clean environment per case: the
+  # namespace lands below the prefix of the backend sccache itself would
+  # pick, the gha version and a local directory take it too, no backend
+  # prints nothing, and a malformed value is refused before anything is
+  # exported.
+  selftest-sccache-namespace:
+    name: the sccache namespace follows the configured backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: table of backends and refusals
+        run: |
+          set -euo pipefail
+          lib=.github/actions/_lib/sccache-namespace.sh
+          # probe <namespace> <mode> [VAR=VALUE…]: the function in an
+          # environment holding exactly the given variables.
+          probe() {
+            local ns="$1" mode="$2"; shift 2
+            env -i PATH="$PATH" "$@" bash -c 'source "$0" && sccache_namespace_env "$1" "$2"' "$lib" "$ns" "$mode"
+          }
+          expect() {
+            local want="$1"; shift
+            local got; got="$(probe "$@")"
+            [ "$got" = "$want" ] || { echo "::error::probe $* printed '$got', expected '$want'"; exit 1; }
+          }
+          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache
+          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b
+          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache/
+          expect 'SCCACHE_WEBDAV_KEY_PREFIX=ci/release/linux-amd64' release/linux-amd64 auto SCCACHE_WEBDAV_ENDPOINT=http://h SCCACHE_WEBDAV_KEY_PREFIX=ci
+          # S3 outranks WebDAV, as in sccache's own fallback order.
+          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_WEBDAV_ENDPOINT=http://h
+          expect 'SCCACHE_GHA_VERSION=release/linux-amd64' release/linux-amd64 gha
+          expect 'SCCACHE_GHA_VERSION=v1/release/linux-amd64' release/linux-amd64 gha SCCACHE_GHA_VERSION=v1
+          expect 'SCCACHE_DIR=/tmp/store/release/linux-amd64' release/linux-amd64 auto SCCACHE_DIR=/tmp/store/
+          expect '' release/linux-amd64 auto
+          expect '' '' auto SCCACHE_BUCKET=b
+          for bad in '../x' 'a//b' 'a b' 'a?b' '/a' 'a/'; do
+            status=0
+            probe "$bad" auto SCCACHE_BUCKET=b >/dev/null 2>&1 || status=$?
+            [ "$status" = 2 ] || { echo "::error::namespace '$bad' was accepted ($status)"; exit 1; }
+          done
+          echo "✓ the namespace lands below the configured backend's prefix in sccache's precedence; malformed values are refused"
 
   # gha: GitHub's cache service as the backend, the explicit hosted-runner
   # choice. The round-trip is real: the rebuild's hits come back from the
