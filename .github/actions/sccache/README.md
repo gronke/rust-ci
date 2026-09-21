@@ -18,6 +18,7 @@ Use it before the build steps of a runner-native or `container:` job; the backen
 | --- | --- | --- |
 | `server-startup-timeout-ms` | `"30000"` | How long the client waits for the server, written as `server_startup_timeout_ms` into a configuration file the action points `SCCACHE_CONF` at; a job that sets `SCCACHE_CONF` itself, or has a default file, keeps its own. |
 | `mode` | `auto` | `auto` activates when a non-empty `SCCACHE_*` variable is set, `on` activates regardless, `off` changes nothing, `gha` uses GitHub's cache service. |
+| `namespace` | `""` | A path below the configured backend's key prefix (`release/linux-amd64`), so tiers or platforms share one backend without sharing objects; ignored without a backend. |
 | `version` | `"0.17.0"` | sccache release to install, pinned together with the checksums. |
 | `sha256-x86_64` | `67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006` | SHA256 of the x86_64-unknown-linux-musl release archive. |
 | `sha256-aarch64` | `821a86343191aa1cbab74bd42f9e93c9a63bf85e4742945f40d3ae84193c1c77` | SHA256 of the aarch64-unknown-linux-musl release archive. |
@@ -40,6 +41,10 @@ A server left by an earlier job is stopped and a fresh one started, so a broken 
 `mode: gha` exports `ACTIONS_RUNTIME_TOKEN` (masked) and `ACTIONS_RESULTS_URL` into the job environment through `actions/github-script`, which the runner otherwise hands only to JavaScript action steps, and sets `SCCACHE_GHA_ENABLED=true`.
 It spends the repository's Actions cache: 10 GB per repository by default, entries removed after 7 days without access, writes scoped per ref, so pull-request objects never reach the default branch's scope.
 It is never part of `auto`; a bare `SCCACHE_GHA_ENABLED` in the job environment without `mode: gha` fails this step instead of the first compile.
+
+`namespace` puts the job's objects below the backend's key prefix: `release/linux-amd64` on a host prefix `sccache` reads and writes `sccache/release/linux-amd64/…`, so tiers or platforms share one backend without sharing objects.
+It follows whichever backend the environment configures, in sccache's own fallback order (S3, Redis, Memcached, GCS, the gha version, Azure, WebDAV, OSS, then a subdirectory of a local `SCCACHE_DIR`), and is ignored when no backend is configured; a malformed value (anything but `[A-Za-z0-9._-]` segments joined by `/`) fails the step.
+A namespace separates objects, not writers: every job that reaches the backend can still write any key, so a trust boundary needs a backend of its own.
 
 ## Notes
 

@@ -52,6 +52,7 @@ Other routes, for completeness:
 Everything the hook exports is readable by every job the runner executes, third-party actions included.
 Scope credentials to the cache backend alone, on a network the runners can reach and the world cannot.
 A compile cache written by untrusted jobs is a poisoning surface: keep release builds cache-off, or give trust tiers separate backends.
+The action's `namespace` input keeps the objects of a tier or a platform apart within one backend (`release/linux-amd64` below the host prefix); it separates objects, not writers, so it orders a shared backend rather than securing it.
 The crates mirror serves under `Cargo.lock` checksum protection, so its requirement is availability, not trust.
 
 ## Limits

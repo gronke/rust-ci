@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 ### Added
 
 - `rust-cache`: `cache-registry` (`"true"`, `"false"`, `"auto"`); `auto` skips the registry archive, restore and save alike, when `RUST_CI_CRATES_MIRROR` is set in the job environment, and the `registry-cached` output says what happened.
+- `sccache`: `namespace` puts a job's objects below the configured backend's key prefix (S3, GCS, Azure, WebDAV, Redis, Memcached, OSS, the gha version, or a subdirectory of `SCCACHE_DIR`), so tiers or platforms share one backend without sharing objects; it separates objects, not writers.
 
 ### Changed
 
