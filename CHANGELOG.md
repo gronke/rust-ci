@@ -16,11 +16,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 - `sccache`: with a namespace, a read/write mode or an archive set, the started server must report the detected backend as its cache location, or the step fails.
 - `sccache`: a warning names an http(s) backend endpoint that gives no answer within three seconds.
 - `sccache`: `archive` (with `archive-size` and `lockfiles`) carries the local disk cache as one GitHub Actions cache entry per job where no backend is configured, keyed by archive, namespace, toolchain, `CARGO_*` environment and lockfile, restored before the server starts and saved once per key at job end when `write` is `"true"`.
+- `cargo-install`: `url`, `sha256-x86_64` and `sha256-aarch64` install a pinned prebuilt release instead of compiling, and `bin` names its binary; in host mode an exact version that later steps would run is skipped, which the `installed` output reports, while docker mode runs nothing from the cache on the runner and installs every time.
 
 ### Changed
 
 - `sccache`: `auto` activates on a backend configured by the rules of the pinned release, a configuration file's cache and a multi-level chain included; a tuning variable alone (`SCCACHE_CACHE_SIZE`, a `SCCACHE_CONF` without a cache) no longer does.
-- `sccache` downloads its release through `_lib/install-release.sh`, which verifies the pinned sha256 before anything is extracted.
+- `cargo-install`: host mode puts `<cargo-cache>/bin` on `PATH` for later steps, and `cargo-cache` may be absolute there too.
+- `sccache` downloads its release through `_lib/install-release.sh`, the installer `cargo-install` uses for prebuilt releases.
 - `sccache`: the client waits `server-startup-timeout-ms` (default 30 s) for its server, set through sccache's own `server_startup_timeout_ms` in a configuration file the action exports as `SCCACHE_CONF` unless the job brings its own; the client's message reaches the log when the start fails. sccache's ten-second default was crossed when several jobs' servers checked one WebDAV backend at once, and the step said only "the server did not start".
 - `require-signed-tag`: the lightweight-tag refusal says what a tag that came from publishing the draft in the web UI means: the immutable release has locked it and the version is spent, so the next version goes through the flow.
 - `release-guidance`: the step summary names the consequence of publishing the draft in the web UI, an unsigned tag that no signed tag can replace, instead of a gate failure that could be fixed.

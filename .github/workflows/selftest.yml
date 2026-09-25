@@ -178,6 +178,57 @@ jobs:
           fi
           echo "✓ malicious tool name rejected; no injection"
 
+      # A pinned prebuilt release in host mode: no compile, the binary lands in
+      # an absolute cache dir that joins PATH, and a second call finds the exact
+      # version and skips.
+      - name: cargo-install (host) a prebuilt release
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-nextest
+          version: "0.9.146"
+          url: https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{version}/cargo-nextest-{version}-{target}.tar.gz
+          sha256-x86_64: b64617e8640624e8f9ba99819e37d7971154e97836d7ae4774fed4715501a6aa
+          sha256-aarch64: 62ae8b4ad034704f67417f8ed8b897566d82359ab44952729b925fb37eeb7622
+          cargo-cache: ${{ runner.temp }}/cargo-tools-prebuilt
+
+      - name: cargo-install (host) finds the exact version and skips
+        id: prebuilt-again
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-nextest
+          version: "0.9.146"
+          url: https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{version}/cargo-nextest-{version}-{target}.tar.gz
+          sha256-x86_64: b64617e8640624e8f9ba99819e37d7971154e97836d7ae4774fed4715501a6aa
+          sha256-aarch64: 62ae8b4ad034704f67417f8ed8b897566d82359ab44952729b925fb37eeb7622
+          cargo-cache: ${{ runner.temp }}/cargo-tools-prebuilt
+
+      - name: the prebuilt tool answers on PATH at its pinned version
+        run: |
+          got=$(cargo nextest --version | head -n 1)
+          case "$got" in "cargo-nextest 0.9.146"*) ;; *) echo "::error::cargo nextest reports '$got'"; exit 1 ;; esac
+          [ "${{ steps.prebuilt-again.outputs.installed }}" = false ] || { echo "::error::the second call installed again"; exit 1; }
+          echo "✓ $got on PATH; the second call skipped"
+
+      - name: a prebuilt release with a wrong pin is refused
+        id: bad-pin
+        continue-on-error: true
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-deny
+          version: "0.20.2"
+          url: https://github.com/EmbarkStudios/cargo-deny/releases/download/{version}/cargo-deny-{version}-{target}.tar.gz
+          sha256-x86_64: "0000000000000000000000000000000000000000000000000000000000000000"
+          sha256-aarch64: "0000000000000000000000000000000000000000000000000000000000000000"
+          cargo-cache: ${{ runner.temp }}/cargo-tools-bad-pin
+
+      - name: the wrong pin stopped the install
+        run: |
+          [ "${{ steps.bad-pin.outcome }}" = failure ] || { echo "::error::a wrong pin was accepted"; exit 1; }
+          [ ! -e "$RUNNER_TEMP/cargo-tools-bad-pin/bin/cargo-deny" ] || { echo "::error::a binary landed despite the wrong pin"; exit 1; }
+          echo "✓ the wrong pin was refused and nothing landed"
 
       # The save half of rust-cache: prune target/ to dependency artifacts,
       # upload under the restore's key. Runs as (nearly) the last step, the
@@ -205,6 +256,53 @@ jobs:
         with:
           save: "false"
           working-directory: fixtures/sample-crate
+
+  # Host mode resolves the tool the way later steps do, the cache's bin/ ahead
+  # of PATH. A version on PATH with nothing in the cache is present; a stale
+  # binary in the cache shadows the right version on PATH, so the release is
+  # installed over it. Fakes report the versions and name themselves.
+  selftest-cargo-install-precedence:
+    name: cargo-install checks the binary later steps run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the pinned version on PATH, a stale one in a cache
+        run: |
+          fake() { mkdir -p "$(dirname "$1")"; printf '#!/bin/sh\necho "cargo-nextest %s (fake)"\n' "$2" > "$1"; chmod +x "$1"; }
+          fake "$RUNNER_TEMP/image-tools/cargo-nextest" 0.9.146
+          fake "$RUNNER_TEMP/stale-cache/bin/cargo-nextest" 0.9.100
+          echo "$RUNNER_TEMP/image-tools" >> "$GITHUB_PATH"
+      - name: cargo-install, empty cache and the version on PATH
+        id: path-hit
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-nextest
+          version: "0.9.146"
+          url: https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{version}/cargo-nextest-{version}-{target}.tar.gz
+          sha256-x86_64: b64617e8640624e8f9ba99819e37d7971154e97836d7ae4774fed4715501a6aa
+          sha256-aarch64: 62ae8b4ad034704f67417f8ed8b897566d82359ab44952729b925fb37eeb7622
+          cargo-cache: ${{ runner.temp }}/empty-cache
+      - name: cargo-install, a stale version in the cache
+        id: shadowed
+        uses: ./.github/actions/cargo-install
+        with:
+          docker: "false"
+          tool: cargo-nextest
+          version: "0.9.146"
+          url: https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{version}/cargo-nextest-{version}-{target}.tar.gz
+          sha256-x86_64: b64617e8640624e8f9ba99819e37d7971154e97836d7ae4774fed4715501a6aa
+          sha256-aarch64: 62ae8b4ad034704f67417f8ed8b897566d82359ab44952729b925fb37eeb7622
+          cargo-cache: ${{ runner.temp }}/stale-cache
+      - name: later steps run the pinned release
+        run: |
+          [ "${{ steps.path-hit.outputs.installed }}" = false ] || { echo "::error::the version on PATH was installed again"; exit 1; }
+          [ ! -e "$RUNNER_TEMP/empty-cache/bin/cargo-nextest" ] || { echo "::error::the PATH hit landed a binary in the cache"; exit 1; }
+          [ "${{ steps.shadowed.outputs.installed }}" = true ] || { echo "::error::the stale cache binary was taken for the pinned version"; exit 1; }
+          [ "$(command -v cargo-nextest)" = "$RUNNER_TEMP/stale-cache/bin/cargo-nextest" ] || { echo "::error::cargo-nextest resolves to $(command -v cargo-nextest)"; exit 1; }
+          got=$(cargo nextest --version | head -n 1)
+          case "$got" in "cargo-nextest 0.9.146"*"(fake)"*) echo "::error::a fake answers: $got"; exit 1 ;; "cargo-nextest 0.9.146"*) ;; *) echo "::error::cargo nextest reports '$got'"; exit 1 ;; esac
+          echo "✓ $got"
 
   # The changelog action, both modes, against the fixture crate: the check gate
   # (bump present, bump missing, breaking without more than a patch bump) and
@@ -902,6 +1000,43 @@ jobs:
           offline: "true"
           args: "cargo npm-utils --help"
 
+      # A pinned prebuilt release in docker mode: downloaded on the runner into
+      # the shared cache, no compile, and the static binary runs sealed. The
+      # cache is writable from sealed steps, so a binary planted under the
+      # tool's name must never run on the runner: it would leave a marker.
+      - name: plant a binary in the shared cache, as a sealed step could
+        run: |
+          mkdir -p .cargo-tools-prebuilt/bin
+          printf '#!/bin/sh\ntouch "%s"\necho "cargo-nextest 0.9.146"\n' "$RUNNER_TEMP/host-exec-marker" > .cargo-tools-prebuilt/bin/cargo-nextest
+          chmod +x .cargo-tools-prebuilt/bin/cargo-nextest
+
+      - name: cargo-install (sealed) a prebuilt release into the shared cache
+        id: prebuilt-sealed
+        uses: ./.github/actions/cargo-install
+        with:
+          image: rust-ci:selftest
+          tool: cargo-nextest
+          version: "0.9.146"
+          url: https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{version}/cargo-nextest-{version}-{target}.tar.gz
+          sha256-x86_64: b64617e8640624e8f9ba99819e37d7971154e97836d7ae4774fed4715501a6aa
+          sha256-aarch64: 62ae8b4ad034704f67417f8ed8b897566d82359ab44952729b925fb37eeb7622
+          cargo-cache: .cargo-tools-prebuilt
+
+      - name: the planted binary never ran on the runner, and the release replaced it
+        run: |
+          [ ! -e "$RUNNER_TEMP/host-exec-marker" ] || { echo "::error::cargo-install ran the cache's binary on the runner"; exit 1; }
+          [ "${{ steps.prebuilt-sealed.outputs.installed }}" = true ] || { echo "::error::docker mode skipped the install"; exit 1; }
+          magic=$(head -c 4 .cargo-tools-prebuilt/bin/cargo-nextest | od -An -tx1 | tr -d ' \n')
+          [ "$magic" = 7f454c46 ] || { echo "::error::the cache still holds the planted script"; exit 1; }
+          echo "✓ nothing from the cache ran on the runner; the verified release took its place"
+
+      - name: cargo-use (sealed, offline) runs the prebuilt cargo subcommand
+        uses: ./.github/actions/cargo-use
+        with:
+          image: rust-ci:selftest
+          cargo-cache: .cargo-tools-prebuilt
+          offline: "true"
+          args: "cargo nextest --version"
 
       # Negative control: cargo-use offline really seals the network: a tool that
       # reaches out must fail (proves the action wires OFFLINE -> --network=none).

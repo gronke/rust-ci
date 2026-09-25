@@ -90,7 +90,7 @@ Each name links to the action's README.
 | [`cargo-fetch`](.github/actions/cargo-fetch/README.md) | Warm the cargo cache, the one networked step. |
 | [`cargo-docker`](.github/actions/cargo-docker/README.md) | Run one cargo command sealed: non-root, no capabilities, read-only source, no network. |
 | [`lint-and-test-docker`](.github/actions/lint-and-test-docker/README.md) | The lint-and-test gate, sealed. |
-| [`cargo-install`](.github/actions/cargo-install/README.md) | Install a cargo tool into the shared cargo cache, sealed. |
+| [`cargo-install`](.github/actions/cargo-install/README.md) | Install a cargo tool into the shared cargo cache, sealed, or from a pinned prebuilt release; an exact version already present is skipped. |
 | [`cargo-use`](.github/actions/cargo-use/README.md) | Run an installed tool from that cache, sealed. |
 | [`publish-dry-run`](.github/actions/publish-dry-run/README.md) | Publish checks without a build, then the verify-build sealed. |
 | [`route-git-token`](.github/actions/route-git-token/README.md) | Route git fetches on the runner through a short-lived token, minted from a GitHub App on request, with remaps for dependencies pinned outside the routed namespace. |
