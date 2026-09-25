@@ -1,5 +1,7 @@
 name: Cargo install (shared cache, sealed)
-description: Install a cargo-based CLI tool into a shared, hardened cargo cache so later sealed runs can use it.
+description: >-
+  Install a cargo-based CLI tool into a shared, hardened cargo cache so later sealed runs can use it.
+  With `url`, the tool comes from a pinned prebuilt release instead of a compile; in host mode, an exact version that later steps would run already is skipped.
 
 inputs:
   tool:
@@ -10,7 +12,25 @@ inputs:
   version:
     description: >-
       Version or version requirement passed as `--version` (e.g. 0.21.2 or ^0.21), validated to a conservative charset.
-      Empty (default) installs the latest.
+      Empty (default) installs the latest; with `url`, an exact version is required.
+    required: false
+    default: ""
+  url:
+    description: >-
+      Release archive (.tar.gz) of a prebuilt static binary, with {version} and {target} placeholders ({target} is x86_64-unknown-linux-musl or aarch64-unknown-linux-musl).
+      Set, it replaces the compile: downloaded on the runner, verified against the sha256 pins and the version, and the binary lands in <cargo-cache>/bin in both modes.
+    required: false
+    default: ""
+  sha256-x86_64:
+    description: SHA256 of the x86_64-unknown-linux-musl archive; required with `url`.
+    required: false
+    default: ""
+  sha256-aarch64:
+    description: SHA256 of the aarch64-unknown-linux-musl archive; required with `url`.
+    required: false
+    default: ""
+  bin:
+    description: Name of the tool's binary, in the archive and on PATH; defaults to the tool name.
     required: false
     default: ""
   args:
@@ -26,7 +46,7 @@ inputs:
   docker:
     description: >-
       Install inside the sealed container (default).
-      Set "false" to run `cargo install` directly on the host runner.
+      Set "false" to install on the host runner, where <cargo-cache>/bin joins PATH for later steps and an exact version counts as installed when the binary later steps would run (the cache's first, then PATH) reports it.
     required: false
     default: "true"
   image:
@@ -36,7 +56,7 @@ inputs:
   cargo-cache:
     description: >-
       Host dir mounted RW as CARGO_HOME (/cache/cargo); the tool installs to its bin/ and is shared with later sealed runs.
-      Reuse the same value in cargo-use.
+      Relative to working-directory, or absolute. Reuse the same value in cargo-use.
     required: false
     default: .cargo-cache
   working-directory:
@@ -60,6 +80,9 @@ outputs:
   bin-dir:
     description: Host path to the shared bin dir holding the installed tool (<cargo-cache>/bin).
     value: ${{ steps.validate.outputs.bin-dir }}
+  installed:
+    description: '"true" when this step installed the tool, "false" when host mode found the exact version present already.'
+    value: ${{ steps.prebuilt.outputs.installed || steps.sealed.outputs.installed || steps.host.outputs.installed }}
 
 runs:
   using: composite
@@ -77,6 +100,10 @@ runs:
       env:
         TOOL: ${{ inputs.tool }}
         VERSION: ${{ inputs.version }}
+        BIN: ${{ inputs.bin }}
+        URL: ${{ inputs.url }}
+        SHA256_X86_64: ${{ inputs.sha256-x86_64 }}
+        SHA256_AARCH64: ${{ inputs.sha256-aarch64 }}
         CARGO_CACHE: ${{ inputs.cargo-cache }}
       run: |
         set -euo pipefail
@@ -89,16 +116,57 @@ runs:
         if [[ ! "$TOOL" =~ $tool_re ]]; then
           echo "::error::cargo-install: invalid tool name '$TOOL' (allowed: A-Za-z0-9 _ -, leading alphanumeric)"; exit 1
         fi
+        bin="${BIN:-$TOOL}"
+        if [[ ! "$bin" =~ $tool_re ]]; then
+          echo "::error::cargo-install: invalid binary name '$bin' (allowed: A-Za-z0-9 _ -, leading alphanumeric)"; exit 1
+        fi
         if [ -n "${VERSION:-}" ]; then
           ver_re='^[0-9A-Za-z.+~^=-]+$'   # exact version or a single ^/~/= requirement
           if [[ ! "$VERSION" =~ $ver_re ]]; then
             echo "::error::cargo-install: invalid version '$VERSION' (use an exact version or a single ^/~/= requirement)"; exit 1
           fi
         fi
-        printf 'bin-dir=%s/bin\n' "${CARGO_CACHE%/}" >> "$GITHUB_OUTPUT"
+        if [ -n "${URL:-}" ]; then
+          exact_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          [[ "${VERSION:-}" =~ $exact_re ]] || { echo "::error::cargo-install: url needs an exact version (got '${VERSION:-}')"; exit 1; }
+          # The placeholders are the only braces; the rest is a plain https URL.
+          rest="${URL//\{version\}/}"
+          rest="${rest//\{target\}/}"
+          url_re='^https://[A-Za-z0-9./_~%+:=@-]+$'
+          [[ "$rest" =~ $url_re ]] || { echo "::error::cargo-install: url '$URL' is not an https URL with {version} and {target} placeholders"; exit 1; }
+          sha_re='^[a-f0-9]{64}$'
+          [[ "$SHA256_X86_64" =~ $sha_re ]] && [[ "$SHA256_AARCH64" =~ $sha_re ]] \
+            || { echo "::error::cargo-install: url needs sha256-x86_64 and sha256-aarch64, 64 hex digits each"; exit 1; }
+        fi
+        # Relative to the working directory or absolute, the same rule as seal.sh.
+        case "$CARGO_CACHE" in
+          /*) cache="${CARGO_CACHE%/}" ;;
+          *) cache="$PWD/${CARGO_CACHE%/}" ;;
+        esac
+        {
+          printf 'bin-dir=%s/bin\n' "${CARGO_CACHE%/}"
+          printf 'bin=%s\n' "$bin"
+          printf 'cache=%s\n' "$cache"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: install (prebuilt)
+      id: prebuilt
+      if: ${{ inputs.url != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BIN: ${{ steps.validate.outputs.bin }}
+        VERSION: ${{ inputs.version }}
+        URL: ${{ inputs.url }}
+        SHA256_X86_64: ${{ inputs.sha256-x86_64 }}
+        SHA256_AARCH64: ${{ inputs.sha256-aarch64 }}
+        BIN_DIR: ${{ steps.validate.outputs.cache }}/bin
+        ON_HOST: ${{ inputs.docker != 'true' }}
+      run: bash "$GITHUB_ACTION_PATH/prebuilt.sh"
 
     - name: install (sealed)
-      if: ${{ inputs.docker == 'true' }}
+      id: sealed
+      if: ${{ inputs.docker == 'true' && inputs.url == '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -125,22 +193,45 @@ runs:
         # hand them to the in-container script.
         export SEAL_PASS="TOOL VERSION ARGS LOCKED"
         seal_run bash /cicd/cargo-install.sh
+        echo "installed=true" >> "$GITHUB_OUTPUT"
 
     - name: install (host)
-      if: ${{ inputs.docker != 'true' }}
+      id: host
+      if: ${{ inputs.docker != 'true' && inputs.url == '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        CARGO_CACHE: ${{ inputs.cargo-cache }}
+        CARGO_CACHE_DIR: ${{ steps.validate.outputs.cache }}
+        BIN: ${{ steps.validate.outputs.bin }}
         TOOL: ${{ inputs.tool }}
         VERSION: ${{ inputs.version }}
         ARGS: ${{ inputs.args }}
         LOCKED: ${{ inputs.locked }}
       run: |
         set -euo pipefail
+        # shellcheck source=present.sh disable=SC1091
+        source "$GITHUB_ACTION_PATH/present.sh"
+        # An exact version counts as installed when the binary later steps run,
+        # the cache's ahead of PATH (a runner image's baked tool), reports it;
+        # a requirement like ^0.21 always asks cargo.
+        if [[ "${VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] \
+          && found=$(tool_found "$BIN" "$VERSION" "$CARGO_CACHE_DIR/bin"); then
+          echo "cargo-install: $BIN $VERSION is present at $found; nothing to install."
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         # Host mode: a plain `cargo install` on the runner. NOTE: ARGS word-splits on
         # the host shell here, so use docker mode (the default) for untrusted input.
         # CARGO_HOME points at the same shared dir so the binary lands where cargo-use
         # (host or docker) expects it. Reuses the same script as the sealed path.
-        export CARGO_HOME="$PWD/${CARGO_CACHE}"
-        bash "$GITHUB_ACTION_PATH/cargo-install.sh"
+        CARGO_HOME="$CARGO_CACHE_DIR" bash "$GITHUB_ACTION_PATH/cargo-install.sh"
+        echo "installed=true" >> "$GITHUB_OUTPUT"
+
+    # Later steps call the tool directly (`cargo nextest run`), not only through
+    # cargo-use; a sealed container never reads the runner's PATH.
+    - name: put the tools on PATH (host)
+      if: ${{ inputs.docker != 'true' }}
+      shell: bash
+      env:
+        BIN_DIR: ${{ steps.validate.outputs.cache }}/bin
+      run: echo "$BIN_DIR" >> "$GITHUB_PATH"
