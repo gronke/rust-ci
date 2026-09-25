@@ -1,16 +1,18 @@
 name: Route git token
 description: >-
   Route git fetches on the runner through a short-lived token.
-  Exports an url.insteadOf rewrite as GIT_CONFIG_* entries via GITHUB_ENV and sets CARGO_NET_GIT_FETCH_WITH_CLI so cargo's fetches honor it.
+  Exports url.insteadOf rewrites as GIT_CONFIG_* entries via GITHUB_ENV and sets CARGO_NET_GIT_FETCH_WITH_CLI so cargo's fetches honor them.
   Use it for jobs that run plain cargo build or git clone on the runner; cargo-fetch's git-token input is the sealed equivalent.
-  Any authenticated https git host works.
+  Any authenticated https git host works; the app-* inputs mint a GitHub App token in place.
 
 inputs:
   token:
     description: >-
       Token the fetches authenticate with.
       Pass a secret with read access on the repositories the job needs; the action masks it in logs.
-    required: true
+      Leave it empty when the app-* inputs mint the token.
+    required: false
+    default: ""
   host:
     description: Git host to route, optionally with a port (my.gitlab.example:8443).
     required: false
@@ -27,15 +29,77 @@ inputs:
       Empty routes every fetch on the host, matching cargo-fetch's in-container behavior.
     required: false
     default: ""
+  remaps:
+    description: >-
+      Lines of from=to, each sending fetches of an https URL to a repository path on the host with the token presented, for a dependency pinned at a URL outside the routed namespace (https://github.com/upstream/dep=my-org/dep-mirror).
+      git applies the longest matching rewrite, so a remap outranks the namespace rule.
+    required: false
+    default: ""
+  app-client-id:
+    description: >-
+      Client ID of a GitHub App: with app-private-key, the action mints an installation token through actions/create-github-app-token, read-only on contents, in place of token.
+    required: false
+    default: ""
+  app-private-key:
+    description: Private key of that App; pass a secret.
+    required: false
+    default: ""
+  app-owner:
+    description: Owner of the App installation the token is minted for.
+    required: false
+    default: ${{ github.repository_owner }}
+  app-repositories:
+    description: >-
+      Comma- or newline-separated repositories the minted token covers; empty covers every repository of the owner's installation.
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: The token the rewrites present, minted or passed in; masked in logs.
+    value: ${{ steps.mint.outputs.token || inputs.token }}
 
 runs:
   using: composite
   steps:
-    - name: Export the rewrite
+    - name: Check the token source
       shell: bash
       env:
-        ROUTE_TOKEN: ${{ inputs.token }}
+        HAS_TOKEN: ${{ inputs.token != '' }}
+        HAS_APP_ID: ${{ inputs.app-client-id != '' }}
+        HAS_APP_KEY: ${{ inputs.app-private-key != '' }}
+      run: |
+        set -euo pipefail
+        if [ "$HAS_APP_ID" != "$HAS_APP_KEY" ]; then
+          echo "::error::app-client-id and app-private-key go together"
+          exit 1
+        fi
+        if [ "$HAS_TOKEN" = true ] && [ "$HAS_APP_ID" = true ]; then
+          echo "::error::pass either token or the app-* inputs, not both"
+          exit 1
+        fi
+        if [ "$HAS_TOKEN" != true ] && [ "$HAS_APP_ID" != true ]; then
+          echo "::error::no token: pass token, or app-client-id with app-private-key"
+          exit 1
+        fi
+
+    - name: Mint the App token
+      id: mint
+      if: inputs.app-client-id != ''
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: ${{ inputs.app-owner }}
+        repositories: ${{ inputs.app-repositories }}
+        permission-contents: read
+
+    - name: Export the rewrites
+      shell: bash
+      env:
+        ROUTE_TOKEN: ${{ steps.mint.outputs.token || inputs.token }}
         ROUTE_HOST: ${{ inputs.host }}
         ROUTE_USERNAME: ${{ inputs.username }}
         ROUTE_PATH: ${{ inputs.path }}
+        ROUTE_REMAPS: ${{ inputs.remaps }}
       run: bash "$GITHUB_ACTION_PATH/route.sh"

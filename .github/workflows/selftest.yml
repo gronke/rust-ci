@@ -2194,16 +2194,32 @@ jobs:
           username: oauth2
           path: my-group/sub-group
 
+      # A dependency pinned at a URL outside the routed namespace, fetched from
+      # a mirror inside it: one namespace entry plus one remap entry.
+      - name: route a namespace with a remap
+        uses: ./.github/actions/route-git-token
+        with:
+          token: third-fake-token
+          path: octo-mirrors
+          remaps: |
+            https://github.com/upstream/dep=octo-mirrors/dep-mirror
+
       - name: the rewrites resolve and cargo is switched to the git CLI
         shell: bash
         run: |
           set -euo pipefail
-          [ "$GIT_CONFIG_COUNT" = "2" ] || { echo "::error::expected 2 entries, got ${GIT_CONFIG_COUNT:-none}"; exit 1; }
+          [ "$GIT_CONFIG_COUNT" = "4" ] || { echo "::error::expected 4 entries, got ${GIT_CONFIG_COUNT:-none}"; exit 1; }
           [ "$CARGO_NET_GIT_FETCH_WITH_CLI" = "true" ] || { echo "::error::cargo git-CLI switch missing"; exit 1; }
           got="$(git config --get 'url.https://x-access-token:not-a-real-token@github.com/octo-test/.insteadOf')"
           [ "$got" = "https://github.com/octo-test/" ] || { echo "::error::github rewrite did not resolve (got '$got')"; exit 1; }
           got="$(git config --get 'url.https://oauth2:second-fake-token@gitlab.example.com:8443/my-group/sub-group/.insteadOf')"
           [ "$got" = "https://gitlab.example.com:8443/my-group/sub-group/" ] || { echo "::error::gitlab rewrite did not resolve (got '$got')"; exit 1; }
+          # git's own expansion, without contacting a remote: the remap wins for
+          # its URL, and the namespace rule still covers the mirror's siblings.
+          got="$(git ls-remote --get-url https://github.com/upstream/dep.git)"
+          [ "$got" = "https://x-access-token:third-fake-token@github.com/octo-mirrors/dep-mirror.git" ] || { echo "::error::remap did not resolve (got '$got')"; exit 1; }
+          got="$(git ls-remote --get-url https://github.com/octo-mirrors/other)"
+          [ "$got" = "https://x-access-token:third-fake-token@github.com/octo-mirrors/other" ] || { echo "::error::namespace rewrite beside the remap did not resolve (got '$got')"; exit 1; }
 
       - name: an invalid path is refused
         id: bad-path
@@ -2232,6 +2248,57 @@ jobs:
           token: "ghs_looks_fine\nGIT_CONFIG_COUNT=99"
           path: octo-test
 
+      # A refused remap comes after a valid one: the valid line must not reach
+      # $GITHUB_ENV on its own either.
+      - name: a remap target outside the path charset is refused
+        id: bad-remap-target
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          remaps: |
+            https://github.com/upstream/ok=octo-mirrors/ok
+            https://github.com/upstream/dep=../evil
+
+      - name: a remap source that is no https URL is refused
+        id: bad-remap-source
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          remaps: "http://github.com/upstream/dep=octo-mirrors/dep-mirror"
+
+      - name: a remap line without = is refused
+        id: bad-remap-line
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          remaps: "https://github.com/upstream/dep"
+
+      - name: no token source is refused
+        id: no-source
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          path: octo-test
+
+      - name: a token beside the app inputs is refused
+        id: two-sources
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          token: t
+          app-client-id: Iv1.not-a-real-app
+          app-private-key: not-a-real-key
+
+      - name: an app id without its key is refused
+        id: half-app
+        continue-on-error: true
+        uses: ./.github/actions/route-git-token
+        with:
+          app-client-id: Iv1.not-a-real-app
+
       - name: the refusals actually happened
         shell: bash
         run: |
@@ -2241,9 +2308,21 @@ jobs:
             || { echo "::error::invalid host was accepted"; exit 1; }
           [ "${{ steps.bad-token.outcome }}" = "failure" ] \
             || { echo "::error::a token containing a newline was accepted"; exit 1; }
-          # …and it changed nothing: the two good entries above still stand.
-          [ "$GIT_CONFIG_COUNT" = "2" ] \
-            || { echo "::error::a refused token disturbed the exported entries (count ${GIT_CONFIG_COUNT:-none})"; exit 1; }
+          [ "${{ steps.bad-remap-target.outcome }}" = "failure" ] \
+            || { echo "::error::a remap target outside the path charset was accepted"; exit 1; }
+          [ "${{ steps.bad-remap-source.outcome }}" = "failure" ] \
+            || { echo "::error::a remap source that is no https URL was accepted"; exit 1; }
+          [ "${{ steps.bad-remap-line.outcome }}" = "failure" ] \
+            || { echo "::error::a remap line without = was accepted"; exit 1; }
+          [ "${{ steps.no-source.outcome }}" = "failure" ] \
+            || { echo "::error::a call without a token source was accepted"; exit 1; }
+          [ "${{ steps.two-sources.outcome }}" = "failure" ] \
+            || { echo "::error::a token beside the app inputs was accepted"; exit 1; }
+          [ "${{ steps.half-app.outcome }}" = "failure" ] \
+            || { echo "::error::an app id without its key was accepted"; exit 1; }
+          # …and they changed nothing: the four good entries above still stand.
+          [ "$GIT_CONFIG_COUNT" = "4" ] \
+            || { echo "::error::a refused input disturbed the exported entries (count ${GIT_CONFIG_COUNT:-none})"; exit 1; }
 
   # The timing actions end to end: the report takes its stage boundaries from
   # the job's own steps through the Actions API, and the sampler attributes CPU
