@@ -8,17 +8,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 ### Added
 
 - `rust-cache`: `cache-registry` (`"true"`, `"false"`, `"auto"`); `auto` skips the registry archive, restore and save alike, when `RUST_CI_CRATES_MIRROR` is set in the job environment, and the `registry-cached` output says what happened.
-- `sccache`: `namespace` puts a job's objects below the configured backend's key prefix (S3, GCS, Azure, WebDAV, Redis, Memcached, OSS, the gha version, or a subdirectory of `SCCACHE_DIR`), so tiers or platforms share one backend without sharing objects; it separates objects, not writers.
+- `sccache`: `namespace` puts a job's objects below the configured backend's key prefix (S3, GCS, Azure, WebDAV, Redis, Memcached, OSS, COS, or a subdirectory of `SCCACHE_DIR`), so tiers or platforms share one backend without sharing objects; it separates objects, not writers.
+- `sccache`: `write`; `"false"` reads the configured backend and stores nothing, through the backend's own read/write mode (`SCCACHE_S3_RW_MODE=READ_ONLY` on S3), and `"true"` exports `READ_WRITE` on GCS, sccache's one read-only default, unless the host set a mode.
+- `sccache`: a cache in sccache's configuration file and a multi-level chain count as backends, which `namespace` and `write: "false"` refuse, since the action cannot reach their settings.
+- `sccache`: with a namespace, a read/write mode or an archive set, the started server must report the detected backend as its cache location, or the step fails.
+- `sccache`: a warning names an http(s) backend endpoint that gives no answer within three seconds.
+- `sccache`: `archive` (with `archive-size` and `lockfiles`) carries the local disk cache as one GitHub Actions cache entry per job where no backend is configured, keyed by archive, namespace, toolchain, `CARGO_*` environment and lockfile, restored before the server starts and saved once per key at job end when `write` is `"true"`.
 
 ### Changed
 
+- `sccache`: `auto` activates on a backend configured by the rules of the pinned release, a configuration file's cache and a multi-level chain included; a tuning variable alone (`SCCACHE_CACHE_SIZE`, a `SCCACHE_CONF` without a cache) no longer does.
+- `sccache` downloads its release through `_lib/install-release.sh`, which verifies the pinned sha256 before anything is extracted.
 - `sccache`: the client waits `server-startup-timeout-ms` (default 30 s) for its server, set through sccache's own `server_startup_timeout_ms` in a configuration file the action exports as `SCCACHE_CONF` unless the job brings its own; the client's message reaches the log when the start fails. sccache's ten-second default was crossed when several jobs' servers checked one WebDAV backend at once, and the step said only "the server did not start".
 - `require-signed-tag`: the lightweight-tag refusal says what a tag that came from publishing the draft in the web UI means: the immutable release has locked it and the version is spent, so the next version goes through the flow.
 - `release-guidance`: the step summary names the consequence of publishing the draft in the web UI, an unsigned tag that no signed tag can replace, instead of a gate failure that could be fixed.
 
+### Removed
+
+- **Breaking:** `sccache`: `mode: gha` and its `actions/github-script` step; `archive: <name>` takes its place on hosted runners, and a job environment with `SCCACHE_GHA_ENABLED` or `SCCACHE_GHA_VERSION` fails the step.
+
 ### Documentation
 
 - `docs/self-hosted.md`: the hook example hands a job the credential-free S3 set of a host object proxy and the crates mirror URL, in place of a WebDAV endpoint.
+- The README shows a complete compiler-cache job, and `docs/self-hosted.md` the compiler cache for each execution model.
 - The release runbook accounts for immutable releases: the flip locks the release, its assets and its tag; the refusal table gains the row for a by-hand publish, and the settings list names the feature.
 
 ## [2.0.0] - 2026-09-16
