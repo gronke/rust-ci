@@ -93,7 +93,7 @@ Each name links to the action's README.
 | [`cargo-install`](.github/actions/cargo-install/README.md) | Install a cargo tool into the shared cargo cache, sealed. |
 | [`cargo-use`](.github/actions/cargo-use/README.md) | Run an installed tool from that cache, sealed. |
 | [`publish-dry-run`](.github/actions/publish-dry-run/README.md) | Publish checks without a build, then the verify-build sealed. |
-| [`route-git-token`](.github/actions/route-git-token/README.md) | Route git fetches on the runner through a short-lived token, for jobs outside the container. |
+| [`route-git-token`](.github/actions/route-git-token/README.md) | Route git fetches on the runner through a short-lived token, minted from a GitHub App on request, with remaps for dependencies pinned outside the routed namespace. |
 
 ### Caching
 

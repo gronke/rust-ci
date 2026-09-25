@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com); releases are 
 
 - `rust-cache`: `cache-registry` (`"true"`, `"false"`, `"auto"`); `auto` skips the registry archive, restore and save alike, when `RUST_CI_CRATES_MIRROR` is set in the job environment, and the `registry-cached` output says what happened.
 - `sccache`: `namespace` puts a job's objects below the configured backend's key prefix (S3, GCS, Azure, WebDAV, Redis, Memcached, OSS, COS, or a subdirectory of `SCCACHE_DIR`), so tiers or platforms share one backend without sharing objects; it separates objects, not writers.
+- `route-git-token`: `remaps`, lines of `from=to` that fetch a dependency pinned at a URL outside the routed namespace from a repository on the host, with the token presented.
+- `route-git-token`: `app-client-id` and `app-private-key` (with `app-owner` and `app-repositories`) mint a contents-read GitHub App token in place of `token`, and the `token` output hands it to later steps.
 - `sccache`: `write`; `"false"` reads the configured backend and stores nothing, through the backend's own read/write mode (`SCCACHE_S3_RW_MODE=READ_ONLY` on S3), and `"true"` exports `READ_WRITE` on GCS, sccache's one read-only default, unless the host set a mode.
 - `sccache`: a cache in sccache's configuration file and a multi-level chain count as backends, which `namespace` and `write: "false"` refuse, since the action cannot reach their settings.
 - `sccache`: with a namespace, a read/write mode or an archive set, the started server must report the detected backend as its cache location, or the step fails.
