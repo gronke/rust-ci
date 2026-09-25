@@ -178,6 +178,7 @@ jobs:
           fi
           echo "✓ malicious tool name rejected; no injection"
 
+
       # The save half of rust-cache: prune target/ to dependency artifacts,
       # upload under the restore's key. Runs as (nearly) the last step, the
       # position consumers use; a fresh key exercises prune + upload, an
@@ -901,6 +902,7 @@ jobs:
           offline: "true"
           args: "cargo npm-utils --help"
 
+
       # Negative control: cargo-use offline really seals the network: a tool that
       # reaches out must fail (proves the action wires OFFLINE -> --network=none).
       - name: cargo-use offline blocks egress (negative control)
@@ -1385,82 +1387,533 @@ jobs:
             || { echo "::error::the sccache facts did not reach the step summary"; exit 1; }
           echo "✓ $(grep -c '^cache\.sccache' "$notes") fact(s) recorded, and rendered in the step summary"
 
-  # The namespace library alone, in a clean environment per case: the
+  # The backend library alone, in a clean environment per case: the
   # namespace lands below the prefix of the backend sccache itself would
-  # pick, the gha version and a local directory take it too, no backend
-  # prints nothing, and a malformed value is refused before anything is
-  # exported.
-  selftest-sccache-namespace:
-    name: the sccache namespace follows the configured backend
+  # pick, a local directory takes it too, write: false names that backend's
+  # read/write variable, a configuration file's cache and a multi-level chain
+  # take neither, no backend prints nothing, and a malformed value is refused
+  # before anything is exported.
+  selftest-sccache-backend:
+    name: the sccache namespace and read-only mode follow the configured backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: table of backends and refusals
         run: |
           set -euo pipefail
-          lib=.github/actions/_lib/sccache-namespace.sh
-          # probe <namespace> <mode> [VAR=VALUE…]: the function in an
-          # environment holding exactly the given variables.
+          lib=.github/actions/_lib/sccache-backend.sh
+          # probe <namespace> [VAR=VALUE…]: the function in an
+          # environment holding exactly the given variables, with a HOME
+          # that holds no sccache configuration file.
+          # shellcheck disable=SC2016  # the inner script expands its own arguments
           probe() {
-            local ns="$1" mode="$2"; shift 2
-            env -i PATH="$PATH" "$@" bash -c 'source "$0" && sccache_namespace_env "$1" "$2"' "$lib" "$ns" "$mode"
+            local ns="$1"; shift
+            env -i PATH="$PATH" HOME="$RUNNER_TEMP/nohome" "$@" bash -c 'source "$0" && sccache_namespace_env "$1"' "$lib" "$ns"
           }
+          # shellcheck disable=SC2016  # the inner script expands its own arguments
+          rw() {
+            local write="$1"; shift
+            env -i PATH="$PATH" HOME="$RUNNER_TEMP/nohome" "$@" bash -c 'source "$0" && sccache_rw_env "$1"' "$lib" "$write"
+          }
+          # shellcheck disable=SC2016  # the inner script expands its own arguments
+          backend() {
+            env -i PATH="$PATH" HOME="$RUNNER_TEMP/nohome" "$@" bash -c 'source "$0" && sccache_backend' "$lib"
+          }
+          expect_backend() {
+            local want="$1"; shift
+            local got; got="$(backend "$@")"
+            [ "$got" = "$want" ] || { echo "::error::backend $* printed '$got', expected '$want'"; exit 1; }
+          }
+          expect_rw() {
+            local want="$1"; shift
+            local got; got="$(rw "$@")"
+            [ "$got" = "$want" ] || { echo "::error::rw $* printed '$got', expected '$want'"; exit 1; }
+          }
+          expect_rw 'SCCACHE_S3_RW_MODE=READ_ONLY' false SCCACHE_BUCKET=b
+          expect_rw 'SCCACHE_WEBDAV_RW_MODE=READ_ONLY' false SCCACHE_WEBDAV_ENDPOINT=http://h
+          expect_rw 'SCCACHE_REDIS_RW_MODE=READ_ONLY' false SCCACHE_REDIS_ENDPOINT=redis://h
+          expect_rw 'SCCACHE_COS_RW_MODE=READ_ONLY' false SCCACHE_COS_BUCKET=b
+          expect_rw 'SCCACHE_LOCAL_RW_MODE=READ_ONLY' false SCCACHE_DIR=/tmp/store
+          # A tuning variable alone configures no backend, and write: true exports nothing.
+          expect_rw '' false SCCACHE_CACHE_SIZE=2G
+          expect_rw '' true SCCACHE_BUCKET=b
+          # GCS defaults to READ_ONLY in sccache itself, so write true spells
+          # READ_WRITE out unless the host set a mode.
+          expect_rw 'SCCACHE_GCS_RW_MODE=READ_WRITE' true SCCACHE_GCS_BUCKET=b
+          expect_rw '' true SCCACHE_GCS_BUCKET=b SCCACHE_GCS_RW_MODE=READ_ONLY
+          # Azure needs its container and the connection string together, as
+          # in the pinned 0.17.0, which knows no Entra ID variables.
+          expect_rw '' false SCCACHE_AZURE_BLOB_CONTAINER=c
+          expect_rw '' false SCCACHE_AZURE_STORAGE_ACCOUNT=a SCCACHE_AZURE_ENDPOINT=e
+          expect_rw 'SCCACHE_AZURE_RW_MODE=READ_ONLY' false SCCACHE_AZURE_BLOB_CONTAINER=c SCCACHE_AZURE_CONNECTION_STRING=s
+          expect_rw '' false SCCACHE_AZURE_BLOB_CONTAINER=c SCCACHE_AZURE_STORAGE_ACCOUNT=a SCCACHE_AZURE_ENDPOINT=e
+          # A cache in sccache's configuration file, in any of the forms
+          # sccache parses, and a multi-level chain are backends the action
+          # leaves as configured; a file of other settings is none.
+          conf="$RUNNER_TEMP/sccache-conf"
+          mkdir -p "$conf/xdg/sccache" "$conf/home/.config/sccache"
+          printf '[cache.s3]\nbucket = "b"\n' > "$conf/table.toml"
+          printf 'cache.disk.dir = "/tmp/d"\n' > "$conf/dotted.toml"
+          printf '{"cache": {"disk": {"dir": "/tmp/d"}}}\n' > "$conf/conf.json"
+          printf 'server_startup_timeout_ms = 30000\n# [cache.s3]\n[dist]\ncache_dir = "/tmp/d"\n' > "$conf/plain.toml"
+          cp "$conf/table.toml" "$conf/xdg/sccache/config"
+          cp "$conf/table.toml" "$conf/home/.config/sccache/config"
+          expect_backend 'file - - -' SCCACHE_CONF="$conf/table.toml" SCCACHE_BUCKET=b
+          expect_backend 'file - - -' SCCACHE_CONF="$conf/dotted.toml"
+          expect_backend 'file - - -' SCCACHE_CONF="$conf/conf.json"
+          expect_backend 'disk SCCACHE_DIR SCCACHE_LOCAL_RW_MODE -' SCCACHE_CONF="$conf/plain.toml" SCCACHE_DIR=/tmp/store
+          expect_backend 'file - - -' XDG_CONFIG_HOME="$conf/xdg"
+          expect_backend 'file - - -' HOME="$conf/home"
+          expect_backend 's3 SCCACHE_S3_KEY_PREFIX SCCACHE_S3_RW_MODE SCCACHE_ENDPOINT' SCCACHE_CONF= XDG_CONFIG_HOME="$conf/xdg" SCCACHE_BUCKET=b
+          expect_backend 'multilevel - - -' SCCACHE_MULTILEVEL_CHAIN=disk,s3 SCCACHE_DIR=/tmp/store SCCACHE_BUCKET=b
+          # Neither takes a namespace or a read-only mode from the action.
+          expect_rw '' true SCCACHE_CONF="$conf/table.toml"
+          for refused in "rw false SCCACHE_CONF=$conf/table.toml" "rw false SCCACHE_MULTILEVEL_CHAIN=disk" "probe a/b SCCACHE_CONF=$conf/table.toml"; do
+            status=0
+            # shellcheck disable=SC2086  # the case splits into its words on purpose
+            $refused >/dev/null 2>&1 || status=$?
+            [ "$status" = 2 ] || { echo "::error::'$refused' was not refused ($status)"; exit 1; }
+          done
+          # The kinds of the cache locations a started server reports.
+          expect_kind() {
+            local want="$1" location="$2" got
+            # shellcheck disable=SC2016  # the inner script expands its own arguments
+            got=$(bash -c 'source "$0" && sccache_location_kind "$1"' "$lib" "$location")
+            [ "$got" = "$want" ] || { echo "::error::location '$location' gave '$got', expected '$want'"; exit 1; }
+          }
+          expect_kind disk 'Local disk: '
+          expect_kind s3 's3, name: b, prefix: /sccache/'
+          expect_kind azure 'azblob, name: c, prefix: /'
+          expect_kind multilevel 'Multi-level (2 levels)'
+          expect_kind '' ''
+          status=0
+          rw maybe SCCACHE_BUCKET=b >/dev/null 2>&1 || status=$?
+          [ "$status" = 2 ] || { echo "::error::write 'maybe' was accepted ($status)"; exit 1; }
+          # The endpoint probe: a closed port is no answer, a missing scheme is not probed.
+          # shellcheck disable=SC2016  # the inner script expands its own arguments
+          if bash -c 'source "$0" && sccache_endpoint_answers http://127.0.0.1:9' "$lib"; then
+            echo "::error::a closed port counted as an answer"; exit 1
+          fi
+          # shellcheck disable=SC2016  # the inner script expands its own arguments
+          bash -c 'source "$0" && sccache_endpoint_answers 10.0.0.1:9982' "$lib" \
+            || { echo "::error::an endpoint without a scheme was probed"; exit 1; }
           expect() {
             local want="$1"; shift
             local got; got="$(probe "$@")"
             [ "$got" = "$want" ] || { echo "::error::probe $* printed '$got', expected '$want'"; exit 1; }
           }
-          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache
-          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b
-          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache/
-          expect 'SCCACHE_WEBDAV_KEY_PREFIX=ci/release/linux-amd64' release/linux-amd64 auto SCCACHE_WEBDAV_ENDPOINT=http://h SCCACHE_WEBDAV_KEY_PREFIX=ci
+          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache
+          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 SCCACHE_BUCKET=b
+          expect 'SCCACHE_S3_KEY_PREFIX=sccache/release/linux-amd64' release/linux-amd64 SCCACHE_BUCKET=b SCCACHE_S3_KEY_PREFIX=sccache/
+          expect 'SCCACHE_WEBDAV_KEY_PREFIX=ci/release/linux-amd64' release/linux-amd64 SCCACHE_WEBDAV_ENDPOINT=http://h SCCACHE_WEBDAV_KEY_PREFIX=ci
           # S3 outranks WebDAV, as in sccache's own fallback order.
-          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 auto SCCACHE_BUCKET=b SCCACHE_WEBDAV_ENDPOINT=http://h
-          expect 'SCCACHE_GHA_VERSION=release/linux-amd64' release/linux-amd64 gha
-          expect 'SCCACHE_GHA_VERSION=v1/release/linux-amd64' release/linux-amd64 gha SCCACHE_GHA_VERSION=v1
-          expect 'SCCACHE_DIR=/tmp/store/release/linux-amd64' release/linux-amd64 auto SCCACHE_DIR=/tmp/store/
-          expect '' release/linux-amd64 auto
-          expect '' '' auto SCCACHE_BUCKET=b
+          expect 'SCCACHE_S3_KEY_PREFIX=release/linux-amd64' release/linux-amd64 SCCACHE_BUCKET=b SCCACHE_WEBDAV_ENDPOINT=http://h
+          expect 'SCCACHE_DIR=/tmp/store/release/linux-amd64' release/linux-amd64 SCCACHE_DIR=/tmp/store/
+          expect 'SCCACHE_COS_KEY_PREFIX=release/linux-amd64' release/linux-amd64 SCCACHE_COS_BUCKET=b
+          expect '' release/linux-amd64
+          expect '' '' SCCACHE_BUCKET=b
           for bad in '../x' 'a//b' 'a b' 'a?b' '/a' 'a/'; do
             status=0
-            probe "$bad" auto SCCACHE_BUCKET=b >/dev/null 2>&1 || status=$?
+            probe "$bad" SCCACHE_BUCKET=b >/dev/null 2>&1 || status=$?
             [ "$status" = 2 ] || { echo "::error::namespace '$bad' was accepted ($status)"; exit 1; }
           done
-          echo "✓ the namespace lands below the configured backend's prefix in sccache's precedence; malformed values are refused"
+          echo "✓ the namespace and the read-only mode follow the configured backend in sccache's precedence; configuration files and chains stay as configured; malformed values are refused"
 
-  # gha: GitHub's cache service as the backend, the explicit hosted-runner
-  # choice. The round-trip is real: the rebuild's hits come back from the
-  # cache service, write-then-read within one job.
-  selftest-sccache-gha:
-    name: sccache round-trip through the GitHub cache service
+  # write: false through the action, against a real build: the backend is a
+  # job-env SCCACHE_DIR, empty at the start, and stays empty; every compile is
+  # a miss that stores nothing.
+  selftest-sccache-read-only:
+    name: sccache with write false stores nothing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: offer an empty backend the way a job-started hook would
+        run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
+        with:
+          write: "false"
+      - name: the build reads and stores nothing
+        working-directory: fixtures/sample-crate
+        run: |
+          [ "${SCCACHE_LOCAL_RW_MODE:-}" = READ_ONLY ] || { echo "::error::SCCACHE_LOCAL_RW_MODE is '${SCCACHE_LOCAL_RW_MODE:-unset}'"; exit 1; }
+          cargo build --locked --quiet
+          stats=$("$RUSTC_WRAPPER" --show-stats --stats-format=json)
+          writes=$(jq '.stats.cache_writes // 0' <<<"$stats")
+          misses=$(jq '[.stats.cache_misses.counts[]?] | add // 0' <<<"$stats")
+          [ "$writes" = 0 ] || { echo "::error::$writes write(s) with write: false"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          [ "$misses" -gt 0 ] || { echo "::error::no compile went through sccache"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          stored=$(find "$SCCACHE_DIR" -type f 2>/dev/null | wc -l)
+          [ "$stored" = 0 ] || { echo "::error::$stored file(s) stored under $SCCACHE_DIR"; exit 1; }
+          echo "✓ $misses miss(es), no writes, nothing stored"
+
+  # The archive fallback end to end, across the jobs of one run: without a
+  # backend in the job environment, a writer carries its local cache to
+  # GitHub's cache service at job end, and a reader of its namespace restores
+  # it read-only and hits, while a reader of another namespace finds a family
+  # of its own. The name carries the run, so every run saves a fresh archive.
+  selftest-sccache-archive-save:
+    name: sccache archive, the writer saves at job end
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/sccache
         id: sccache
         with:
-          mode: gha
-      - name: the gha backend is wired
+          archive: selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          namespace: selftest/a
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: the archive engaged and the build stores into it
+        working-directory: fixtures/sample-crate
         run: |
-          [ "${{ steps.sccache.outputs.active }}" = "true" ] || { echo "::error::gha mode did not activate"; exit 1; }
-          [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || { echo "::error::SCCACHE_GHA_ENABLED not exported"; exit 1; }
-          [ -n "${ACTIONS_RESULTS_URL:-}" ] || { echo "::error::cache-service runtime not exported"; exit 1; }
-          echo "✓ gha backend wired"
-      # A warm scope (a branch cut after a main run) serves hits on the first
-      # build instead of writing; either proves the wire.
-      - name: first build stores or hits, second build hits
+          [ "${{ steps.sccache.outputs.archive }}" = true ] || { echo "::error::the archive did not engage"; exit 1; }
+          case "$SCCACHE_DIR" in */rust-ci-sccache/cache/selftest/a) ;; *) echo "::error::SCCACHE_DIR is $SCCACHE_DIR"; exit 1 ;; esac
+          [ "${SCCACHE_CACHE_SIZE:-}" = 2G ] || { echo "::error::SCCACHE_CACHE_SIZE is '${SCCACHE_CACHE_SIZE:-unset}'"; exit 1; }
+          cargo build --locked --quiet
+          stored=$(find "$SCCACHE_DIR" -type f | wc -l)
+          [ "$stored" -gt 0 ] || { echo "::error::nothing stored under $SCCACHE_DIR"; exit 1; }
+          echo "✓ $stored object(s) stored for the archive"
+
+  selftest-sccache-archive-restore:
+    name: sccache archive, a reader restores and hits
+    needs: [selftest-sccache-archive-save]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/sccache
+        id: sccache
+        with:
+          archive: selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          namespace: selftest/a
+          lockfiles: fixtures/sample-crate/Cargo.lock
+          write: "false"
+      - name: the restored archive serves the build
+        working-directory: fixtures/sample-crate
+        run: |
+          [ "${{ steps.sccache.outputs.archive }}" = true ] || { echo "::error::the archive did not engage"; exit 1; }
+          [ -z "${SCCACHE_LOCAL_RW_MODE:-}" ] || { echo "::error::an archived directory went read-only"; exit 1; }
+          cargo build --locked --quiet
+          hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
+          [ "$hits" -gt 0 ] || { echo "::error::no hits from the restored archive"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $hits hit(s) from the archive the writer saved"
+
+  # Another namespace, or another CARGO_* environment, under the same archive
+  # name is a family of its own: the writer's entry is not restored, so the
+  # archived directory is still empty when the build starts (a starting
+  # server writes nothing there), and every compile misses.
+  selftest-sccache-archive-other-family:
+    name: sccache archive, another ${{ matrix.family }} restores nothing
+    needs: [selftest-sccache-archive-save]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - family: namespace
+            namespace: selftest/b
+            extra-env: ""
+          - family: CARGO_* environment
+            namespace: selftest/a
+            extra-env: CARGO_TERM_COLOR=always
+    steps:
+      - uses: actions/checkout@v7
+      - name: a CARGO_* variable the writer did not have
+        if: matrix.extra-env != ''
+        env:
+          EXTRA_ENV: ${{ matrix.extra-env }}
+        run: echo "$EXTRA_ENV" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
+        id: sccache
+        with:
+          archive: selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          namespace: ${{ matrix.namespace }}
+          lockfiles: fixtures/sample-crate/Cargo.lock
+          write: "false"
+      - name: nothing of the writer's family arrived
+        working-directory: fixtures/sample-crate
+        run: |
+          [ "${{ steps.sccache.outputs.archive }}" = true ] || { echo "::error::the archive did not engage"; exit 1; }
+          restored=$(find "$RUNNER_TEMP/rust-ci-sccache/cache" -type f | wc -l)
+          [ "$restored" = 0 ] || { echo "::error::$restored file(s) restored from the writer's family"; exit 1; }
+          cargo build --locked --quiet
+          stats=$("$RUSTC_WRAPPER" --show-stats --stats-format=json)
+          hits=$(jq '[.stats.cache_hits.counts[]?] | add // 0' <<<"$stats")
+          [ "$hits" = 0 ] || { echo "::error::$hits hit(s) from another family's archive"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ another ${{ matrix.family }} restored nothing"
+
+  # The archive is saved once per key. A source change under the same
+  # lockfile and toolchain: its writer restores the entry by its exact key and
+  # saves nothing at job end, so the reader after it still hits the
+  # dependency and misses the changed crate.
+  selftest-sccache-archive-source-change:
+    name: sccache archive, a source change under the same key saves nothing
+    needs: [selftest-sccache-archive-save]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: change the fixture's source
+        run: echo 'pub fn changed() -> u8 { 1 }' >> fixtures/sample-crate/src/lib.rs
+      - uses: ./.github/actions/sccache
+        with:
+          archive: selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          namespace: selftest/a
+          lockfiles: fixtures/sample-crate/Cargo.lock
+      - name: the dependency hits, the changed crate compiles anew
         working-directory: fixtures/sample-crate
         run: |
           cargo build --locked --quiet
           stats=$("$RUSTC_WRAPPER" --show-stats --stats-format=json)
-          writes=$(jq '.stats.cache_writes // 0' <<<"$stats")
-          first=$(jq '[.stats.cache_hits.counts[]?] | add // 0' <<<"$stats")
-          [ "$writes" -gt 0 ] || [ "$first" -gt 0 ] || { echo "::error::the cache service neither stored nor served anything"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          hits=$(jq '[.stats.cache_hits.counts[]?] | add // 0' <<<"$stats")
+          misses=$(jq '[.stats.cache_misses.counts[]?] | add // 0' <<<"$stats")
+          [ "$hits" -gt 0 ] && [ "$misses" -gt 0 ] || { echo "::error::expected hits and misses, got $hits and $misses"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $hits hit(s), $misses miss(es); the entry exists, so this writer saves nothing"
+
+  selftest-sccache-archive-after-change:
+    name: sccache archive, the reader after a source change misses that crate
+    needs: [selftest-sccache-archive-source-change]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the same change
+        run: echo 'pub fn changed() -> u8 { 1 }' >> fixtures/sample-crate/src/lib.rs
+      - uses: ./.github/actions/sccache
+        with:
+          archive: selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          namespace: selftest/a
+          lockfiles: fixtures/sample-crate/Cargo.lock
+          write: "false"
+      - name: the first writer's archive serves the dependency only
+        working-directory: fixtures/sample-crate
+        run: |
+          cargo build --locked --quiet
+          stats=$("$RUSTC_WRAPPER" --show-stats --stats-format=json)
+          hits=$(jq '[.stats.cache_hits.counts[]?] | add // 0' <<<"$stats")
+          misses=$(jq '[.stats.cache_misses.counts[]?] | add // 0' <<<"$stats")
+          [ "$hits" -gt 0 ] || { echo "::error::the dependency did not hit"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          [ "$misses" -gt 0 ] || { echo "::error::the changed crate hit, so a later writer saved into the entry"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $hits dependency hit(s), $misses miss(es) for the changed crate, as documented"
+
+  # A host backend wins over the archive, and a leftover SCCACHE_GHA_ENABLED
+  # fails the step instead of the first compile.
+  selftest-sccache-archive-backend-wins:
+    name: sccache archive stays unused beside a backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: offer a backend the way a job-started hook would
+        run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
+        id: sccache
+        with:
+          archive: never-${{ github.run_id }}
+      - name: the job-env backend serves the job
+        run: |
+          [ "${{ steps.sccache.outputs.archive }}" = false ] || { echo "::error::the archive engaged beside a backend"; exit 1; }
+          [ "${{ steps.sccache.outputs.active }}" = true ] || { echo "::error::sccache did not activate on the backend"; exit 1; }
+          [ "$SCCACHE_DIR" = "$RUNNER_TEMP/sccache-store" ] || { echo "::error::SCCACHE_DIR is $SCCACHE_DIR"; exit 1; }
+      - uses: ./.github/actions/sccache
+        id: gha-leftover
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: the leftover gha variable was refused
+        run: |
+          [ "${{ steps.gha-leftover.outcome }}" = failure ] || { echo "::error::SCCACHE_GHA_ENABLED was accepted"; exit 1; }
+
+  # The same leftover without any backend in the job environment: auto would
+  # no-op silently, so the refusal has to come first; mode off alone stays a
+  # true no-op.
+  selftest-sccache-gha-leftover:
+    name: a leftover SCCACHE_GHA_ENABLED fails an otherwise idle auto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/sccache
+        id: gha-leftover
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: the leftover was refused before the no-op
+        run: |
+          [ "${{ steps.gha-leftover.outcome }}" = failure ] || { echo "::error::SCCACHE_GHA_ENABLED passed auto silently"; exit 1; }
+          echo "✓ the leftover gha variable failed the step"
+      - uses: ./.github/actions/sccache
+        id: off-with-leftover
+        with:
+          mode: "off"
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: mode off changed nothing despite the leftover
+        run: |
+          [ "${{ steps.off-with-leftover.outputs.active }}" = false ] || { echo "::error::mode off activated"; exit 1; }
+          echo "✓ mode off stayed a no-op"
+
+  # The detection against the pinned release. A cache in sccache's
+  # configuration file and a multi-level chain are refused a namespace and a
+  # read-only mode, and the refusal leaves the job environment untouched.
+  # Azure's Entra ID variables configure nothing in 0.17.0: beside a local
+  # SCCACHE_DIR, write: false goes to that directory, and the server the
+  # action starts reports it as its cache location.
+  selftest-sccache-effective-config:
+    name: sccache detection agrees with the pinned release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: a configuration file that configures a cache
+        run: printf '[cache.disk]\ndir = "%s"\n' "$RUNNER_TEMP/file-store" > "$RUNNER_TEMP/sccache-file.toml"
+      - uses: ./.github/actions/sccache
+        id: file-read-only
+        continue-on-error: true
+        env:
+          SCCACHE_CONF: ${{ runner.temp }}/sccache-file.toml
+        with:
+          write: "false"
+      - uses: ./.github/actions/sccache
+        id: file-namespace
+        continue-on-error: true
+        env:
+          SCCACHE_CONF: ${{ runner.temp }}/sccache-file.toml
+        with:
+          namespace: selftest
+      - uses: ./.github/actions/sccache
+        id: chain-read-only
+        continue-on-error: true
+        env:
+          SCCACHE_MULTILEVEL_CHAIN: disk
+          SCCACHE_DIR: ${{ runner.temp }}/chain-store
+        with:
+          write: "false"
+      - name: all three were refused before touching the job environment
+        run: |
+          for outcome in "${{ steps.file-read-only.outcome }}" "${{ steps.file-namespace.outcome }}" "${{ steps.chain-read-only.outcome }}"; do
+            [ "$outcome" = failure ] || { echo "::error::a backend the action cannot manage was accepted ($outcome)"; exit 1; }
+          done
+          [ -z "${RUSTC_WRAPPER:-}" ] || { echo "::error::a refusal exported RUSTC_WRAPPER=$RUSTC_WRAPPER"; exit 1; }
+          echo "✓ refused, and the job environment is as it was"
+      - name: offer a local backend beside Azure's Entra ID variables
+        run: |
+          {
+            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store"
+            echo "SCCACHE_AZURE_BLOB_CONTAINER=selftest"
+            echo "SCCACHE_AZURE_STORAGE_ACCOUNT=selftest"
+            echo "SCCACHE_AZURE_ENDPOINT=https://selftest.blob.core.windows.net"
+          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
+        id: entra
+        with:
+          write: "false"
+      - name: the server stores to the local directory, as detected
+        run: |
+          [ "${{ steps.entra.outputs.active }}" = true ] || { echo "::error::sccache did not activate on SCCACHE_DIR"; exit 1; }
+          [ "${SCCACHE_LOCAL_RW_MODE:-}" = READ_ONLY ] || { echo "::error::SCCACHE_LOCAL_RW_MODE is '${SCCACHE_LOCAL_RW_MODE:-unset}'"; exit 1; }
+          [ -z "${SCCACHE_AZURE_RW_MODE:-}" ] || { echo "::error::the Entra ID variables counted as an Azure backend"; exit 1; }
+          location=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq -r .cache_location)
+          case "$location" in "Local disk: \"$SCCACHE_DIR\"") ;; *) echo "::error::the server reports '$location'"; exit 1 ;; esac
+          echo "✓ $location"
+      # The comparison itself, against a stand-in for the installed binary
+      # whose server reports an S3 bucket while the action set a read-only
+      # mode for the local directory.
+      - name: a stand-in server that stores elsewhere
+        run: |
+          printf '#!/bin/sh\ncase "$*" in *--show-stats*) echo %s ;; esac\nexit 0\n' \
+            "'{\"cache_location\":\"s3, name: elsewhere, prefix: /\"}'" > "$RUNNER_TEMP/stand-in"
+          chmod +x "$RUNNER_TEMP/stand-in"
+          # The running server keeps the binary busy, so the stand-in takes its name.
+          mv -f "$RUNNER_TEMP/stand-in" "$RUSTC_WRAPPER"
+      - uses: ./.github/actions/sccache
+        id: elsewhere
+        continue-on-error: true
+        with:
+          write: "false"
+      - name: the mismatch failed the step
+        run: |
+          [ "${{ steps.elsewhere.outcome }}" = failure ] || { echo "::error::a server storing elsewhere was accepted"; exit 1; }
+          echo "✓ a server that stores past the configured backend fails the step"
+
+  # An inactive action needs no working compiler: a rustc that gives no
+  # version, as a rustup shim without a toolchain does, stops neither "off"
+  # nor an idle "auto", and an engaged archive keys it as norustc.
+  selftest-sccache-no-compiler:
+    name: sccache without a working rustc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: a rustc that fails, first on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/broken-rustc"
+          printf '#!/bin/sh\necho "error: rustup could not choose a version of rustc to run" >&2\nexit 1\n' > "$RUNNER_TEMP/broken-rustc/rustc"
+          chmod +x "$RUNNER_TEMP/broken-rustc/rustc"
+          echo "$RUNNER_TEMP/broken-rustc" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/sccache
+        id: mode-off
+        with:
+          mode: "off"
+          archive: never-${{ github.run_id }}
+      - uses: ./.github/actions/sccache
+        id: idle
+      - uses: ./.github/actions/sccache
+        id: archived
+        with:
+          archive: selftest-norustc-${{ github.run_id }}-${{ github.run_attempt }}
+          write: "false"
+      - name: off and idle stayed off, the archive engaged
+        run: |
+          ! rustc -V 2>/dev/null || { echo "::error::rustc answers; the shim is not first on PATH"; exit 1; }
+          [ "${{ steps.mode-off.outputs.active }}" = false ] || { echo "::error::mode off activated"; exit 1; }
+          [ "${{ steps.idle.outputs.active }}" = false ] || { echo "::error::an idle auto activated"; exit 1; }
+          [ "${{ steps.archived.outputs.archive }}" = true ] && [ "${{ steps.archived.outputs.active }}" = true ] \
+            || { echo "::error::the archive did not engage without a rustc version"; exit 1; }
+          echo "✓ off and idle need no compiler; the archive keys as norustc"
+
+  # A remote backend against the pinned release: Redis as a service
+  # container. write: false stores no key, not even sccache's startup check;
+  # write: true stores below the namespace, and a rebuild hits what it stored.
+  selftest-sccache-redis:
+    name: sccache on Redis with write ${{ matrix.write }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        write: ["false", "true"]
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      SCCACHE_REDIS_ENDPOINT: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/sccache
+        id: sccache
+        with:
+          namespace: selftest/redis
+          write: ${{ matrix.write }}
+      - name: the backend holds what write allows, below the namespace
+        working-directory: fixtures/sample-crate
+        env:
+          REDIS: ${{ job.services.redis.id }}
+          WRITE: ${{ matrix.write }}
+        run: |
+          [ "${{ steps.sccache.outputs.active }}" = true ] || { echo "::error::auto did not activate on the Redis endpoint"; exit 1; }
+          [ "$SCCACHE_REDIS_KEY_PREFIX" = selftest/redis ] || { echo "::error::SCCACHE_REDIS_KEY_PREFIX is '${SCCACHE_REDIS_KEY_PREFIX:-unset}'"; exit 1; }
+          cargo build --locked --quiet
+          keys=$(docker exec "$REDIS" redis-cli --scan)
+          if [ "$WRITE" = false ]; then
+            [ -z "$keys" ] || { echo "::error::write false stored: $keys"; exit 1; }
+            echo "✓ nothing stored"
+            exit 0
+          fi
+          [ -n "$keys" ] || { echo "::error::write true stored nothing"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          outside=$(grep -v '^selftest/redis/' <<<"$keys" || true)
+          [ -z "$outside" ] || { echo "::error::keys outside the namespace: $outside"; exit 1; }
           rm -rf target
           cargo build --locked --quiet
           hits=$("$RUSTC_WRAPPER" --show-stats --stats-format=json | jq '[.stats.cache_hits.counts[]?] | add // 0')
-          [ "$hits" -gt 0 ] || { echo "::error::no cache hits after a repeat build"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
-          echo "✓ $writes write(s), $hits hit(s) through the cache service"
+          [ "$hits" -gt 0 ] || { echo "::error::no hits from Redis after a rebuild"; "$RUSTC_WRAPPER" --show-stats; exit 1; }
+          echo "✓ $(wc -l <<<"$keys") key(s) below selftest/redis/, $hits hit(s) on the rebuild"
 
   # crates-mirror: a REAL sparse mirror, ten lines of setup: the upstream
   # config.json plus the one index file the fixture needs, served locally.

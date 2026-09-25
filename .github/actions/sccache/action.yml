@@ -2,24 +2,47 @@ name: sccache
 description: >-
   Install a pinned sccache as RUSTC_WRAPPER.
   The backend is whatever SCCACHE_* the job environment carries; sccache reads it itself.
-  "auto" is a no-op without one, so one workflow runs unchanged on hosted and self-hosted runners (docs/self-hosted.md).
+  Without one, a named archive carries the local disk cache between runs on GitHub's cache service, so one workflow runs unchanged on hosted and self-hosted runners (docs/self-hosted.md).
   CARGO_INCREMENTAL defaults to 0 because incremental output is uncacheable; an explicit value is obeyed.
   Linux only; the sealed Docker actions are untouched.
 
 inputs:
   mode:
     description: >-
-      "auto" activates when a non-empty SCCACHE_* variable is set in the job environment, "on" activates regardless (and warns without a backend), "off" changes nothing.
-      "gha" uses GitHub's cache service as the backend, the choice for hosted runners; it is explicit on purpose because it exports ACTIONS_RUNTIME_TOKEN (masked) and ACTIONS_RESULTS_URL into the job environment and spends the repository's cache pool (see the README).
+      "auto" activates when a backend is configured (SCCACHE_* in the job environment, a cache in sccache's configuration file, a multi-level chain) or an archive engages, "on" activates regardless (and warns without either), "off" changes nothing.
     required: false
     default: auto
+  archive:
+    description: >-
+      Name of a GitHub Actions cache archive (A-Za-z0-9._-) that carries the local disk cache between runs when no backend is configured: restored before the server starts, saved at job end when write is "true" and the key is new, once per archive and namespace, OS, architecture, toolchain, CARGO_* environment and lockfile hash.
+      An entry is immutable, so it keeps what its first writer compiled: the dependencies the lockfile names, for builds that run with --locked.
+      One archive per job, since a second saver of one key is refused; empty turns the fallback off.
+    required: false
+    default: ""
+  archive-size:
+    description: SCCACHE_CACHE_SIZE of the archived directory (2G, 500M), unless the job sets one; it bounds what the archive transfers.
+    required: false
+    default: "2G"
+  lockfiles:
+    description: Glob of the lockfile(s) whose hash keys the archive.
+    required: false
+    default: "**/Cargo.lock"
   namespace:
     description: >-
       A path below the configured backend's key prefix, `release/linux-amd64` for example, so tiers or platforms share one backend without sharing objects.
-      Segments of A-Za-z0-9._- joined by "/"; applied to whichever backend the job environment configures (the S3, GCS, Azure, WebDAV, Redis, Memcached or OSS key prefix, the gha version, or a subdirectory of SCCACHE_DIR) and ignored without one.
+      Segments of A-Za-z0-9._- joined by "/"; applied to whichever backend the job environment configures (the S3, GCS, Azure, WebDAV, Redis, Memcached, OSS or COS key prefix, or a subdirectory of SCCACHE_DIR) and ignored without one.
+      Beside an engaged archive it joins the archive's key as well; a backend from sccache's configuration file or a multi-level chain refuses it.
       A namespace separates objects, not writers.
     required: false
     default: ""
+  write:
+    description: >-
+      "true" lets the job store what it compiles; "false" reads and stores nothing, the setting for pull requests beside a default branch that writes.
+      On a backend it sets the backend's own read/write mode (SCCACHE_S3_RW_MODE=READ_ONLY on S3); on an archive it restores without saving.
+      A backend from sccache's configuration file or a multi-level chain refuses "false", since the action cannot make it read-only.
+      A client setting: a backend that accepts writes from any job still does.
+    required: false
+    default: "true"
   server-startup-timeout-ms:
     description: >-
       How long the sccache client waits for its server to start, in milliseconds, written as server_startup_timeout_ms into a configuration file the action points SCCACHE_CONF at.
@@ -44,6 +67,9 @@ outputs:
   active:
     description: '"true" when sccache was installed and RUSTC_WRAPPER exported.'
     value: ${{ steps.setup.outputs.active }}
+  archive:
+    description: '"true" when the named archive carries the cache, because no backend is configured.'
+    value: ${{ steps.meta.outputs.archive }}
   bin:
     description: Absolute path of the installed sccache binary (empty when inactive).
     value: ${{ steps.setup.outputs.bin }}
@@ -51,37 +77,49 @@ outputs:
 runs:
   using: composite
   steps:
-    # The runner injects the cache-service endpoint and token only into
-    # JavaScript action steps; this exports them for the compile processes.
-    # Gated on the explicit mode. The token can write this run's artifacts
-    # and caches, so putting it into the job env is a deliberate opt-in.
-    - name: Expose the cache-service runtime for the gha backend
-      if: inputs.mode == 'gha'
-      uses: actions/github-script@v9
+    - name: Decide the archive
+      id: meta
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        ARCHIVE: ${{ inputs.archive }}
+        ARCHIVE_SIZE: ${{ inputs.archive-size }}
+        NAMESPACE: ${{ inputs.namespace }}
+      run: bash "$GITHUB_ACTION_PATH/archive.sh"
+
+    # A reader restores only, so a pull request never saves; a writer restores
+    # the newest generation and saves at job end (the post step of
+    # actions/cache runs even when nested in a composite action), skipped when
+    # the exact key already exists. Both restores land before the server
+    # starts, which indexes its disk cache at startup. The family is the
+    # archive name with the namespace below it; the restore keys never leave
+    # the family, the toolchain or the CARGO_* environment.
+    - name: Restore the archive
+      if: steps.meta.outputs.archive == 'true' && inputs.write != 'true'
+      uses: actions/cache/restore@v6
       with:
-        script: |
-          const token = process.env.ACTIONS_RUNTIME_TOKEN
-          const url = process.env.ACTIONS_RESULTS_URL
-          if (!token || !url) {
-            core.setFailed('sccache: the runner exposed no cache-service runtime (ACTIONS_RESULTS_URL / ACTIONS_RUNTIME_TOKEN)')
-          } else {
-            core.setSecret(token)
-            core.exportVariable('ACTIONS_RESULTS_URL', url)
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', token)
-            // The backend speaks the twirp v2 protocol only when the runner's
-            // flag travels along; without it, reads degrade to clean misses
-            // and every write errors against the retired v1 API.
-            for (const k of ['ACTIONS_CACHE_SERVICE_V2', 'ACTIONS_CACHE_URL']) {
-              if (process.env[k]) core.exportVariable(k, process.env[k])
-            }
-          }
+        path: ${{ steps.meta.outputs.dir }}
+        key: sccache-${{ steps.meta.outputs.family }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.meta.outputs.rust }}-${{ steps.meta.outputs.cargo-env }}-${{ hashFiles(inputs.lockfiles) }}
+        restore-keys: |
+          sccache-${{ steps.meta.outputs.family }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.meta.outputs.rust }}-${{ steps.meta.outputs.cargo-env }}-
+
+    - name: Restore the archive and save it at job end
+      if: steps.meta.outputs.archive == 'true' && inputs.write == 'true'
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.meta.outputs.dir }}
+        key: sccache-${{ steps.meta.outputs.family }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.meta.outputs.rust }}-${{ steps.meta.outputs.cargo-env }}-${{ hashFiles(inputs.lockfiles) }}
+        restore-keys: |
+          sccache-${{ steps.meta.outputs.family }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.meta.outputs.rust }}-${{ steps.meta.outputs.cargo-env }}-
 
     - name: Install sccache
       id: setup
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
+        ARCHIVED: ${{ steps.meta.outputs.archive }}
         NAMESPACE: ${{ inputs.namespace }}
+        WRITE: ${{ inputs.write }}
         VERSION: ${{ inputs.version }}
         STARTUP_TIMEOUT_MS: ${{ inputs.server-startup-timeout-ms }}
         SHA256_X86_64: ${{ inputs.sha256-x86_64 }}

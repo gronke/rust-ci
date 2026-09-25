@@ -28,6 +28,29 @@ jobs:
           save: ${{ github.ref == 'refs/heads/main' }}
 ```
 
+A compiler cache for the same kind of job, one definition for hosted and self-hosted runners: `sccache` uses the backend a self-hosted runner offers in the job environment, and a GitHub Actions cache archive where there is none; the default branch writes, pull requests read.
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: gronke/rust-ci/.github/actions/install-toolchain@v1   # before sccache: the toolchain keys the archive
+      - uses: gronke/rust-ci/.github/actions/rust-cache@v1          # the registry: downloads, not compiles
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: gronke/rust-ci/.github/actions/sccache@v1
+        with:
+          archive: test
+          write: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --locked                                   # the lockfile hash names what the archive holds
+      - uses: gronke/rust-ci/.github/actions/sccache-stats@v1
+        if: always()
+```
+
+`sccache` runs in runner-native and `container:` jobs on Linux x86_64 and aarch64; the sealed Docker actions below keep their compile cache in the mounted `target-dir` instead, and [docs/self-hosted.md](docs/self-hosted.md) sets out the cache for each execution model.
+
 The sealed pipeline as one reusable-workflow call: build the toolchain image, warm the cache once, then fmt, clippy and test with `--network=none`, plus optional cross-target and MSRV checks.
 
 ```yaml
@@ -78,7 +101,7 @@ Each name links to the action's README.
 | --- | --- |
 | [`rust-cache`](.github/actions/rust-cache/README.md) | Restore cargo's registry cache and, optionally, `target/`. |
 | [`rust-cache-save`](.github/actions/rust-cache-save/README.md) | Prune `target/` to dependency artifacts and save it, as the job's last step. |
-| [`sccache`](.github/actions/sccache/README.md) | Install a pinned sccache as `RUSTC_WRAPPER`; the backend comes from `SCCACHE_*` in the job environment. |
+| [`sccache`](.github/actions/sccache/README.md) | Install a pinned sccache as `RUSTC_WRAPPER`; the backend comes from `SCCACHE_*` in the job environment, or from a GitHub Actions cache archive without one. |
 | [`sccache-stats`](.github/actions/sccache-stats/README.md) | Record sccache's hits and misses in the step summary and for the timing report. |
 | [`crates-mirror`](.github/actions/crates-mirror/README.md) | Point cargo's crates-io source at a mirror URL. |
 

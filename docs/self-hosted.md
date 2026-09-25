@@ -7,7 +7,7 @@ The actions read that offer from the job environment and from their inputs, noth
 
 | Variable | Read by | Meaning |
 | --- | --- | --- |
-| `SCCACHE_*` | `sccache` | sccache's own backend configuration, for example `SCCACHE_WEBDAV_ENDPOINT`, `SCCACHE_BUCKET` with `SCCACHE_ENDPOINT`, `SCCACHE_REDIS_ENDPOINT` or `SCCACHE_DIR`; credentials such as `AWS_ACCESS_KEY_ID` are ordinary variables next to them. |
+| `SCCACHE_*` | `sccache` | sccache's own backend configuration, for example `SCCACHE_WEBDAV_ENDPOINT`, `SCCACHE_BUCKET` with `SCCACHE_ENDPOINT`, `SCCACHE_REDIS_ENDPOINT` or `SCCACHE_DIR`; credentials such as `AWS_ACCESS_KEY_ID` are ordinary variables next to them. A backend in sccache's configuration file works too, but takes neither `namespace` nor `write: "false"`. |
 | `RUST_CI_CRATES_MIRROR` | `crates-mirror`, `rust-cache` with `cache-registry: auto` | A `sparse+http(s)://.../` registry URL of a crates.io pull-through, written into `$CARGO_HOME/config.toml` as the crates-io source replacement; `rust-cache` then skips the registry archive, since the mirror serves the same downloads without the transfer. |
 | `RUST_CI_LOCAL_TARGET=1` | `rust-cache` with `local-target: auto` | The runner keeps its work tree between jobs, so `target/` stays on disk instead of travelling through the cache. Never set it on ephemeral runners. |
 
@@ -45,7 +45,18 @@ Other routes, for completeness:
 - A workflow may set the same variables itself, from `env:`, `vars.*` or `container.env`; an unset variable yields an empty value, which the actions treat as absent.
 - Variables in the runner's `.env` alone reach the steps of bare jobs, never the steps of a `container:` job, and never the `env` expression context.
 - `container.options: -e NAME` copies a variable from the runner's process environment into one workflow's container.
-- `runner.environment` is `github-hosted` or `self-hosted`, so a fleet whose self-hosted runners keep their work tree can pass `local-target: ${{ runner.environment == 'self-hosted' }}` and pick `mode: gha` for sccache on hosted runners.
+- `runner.environment` is `github-hosted` or `self-hosted`, so a fleet whose self-hosted runners keep their work tree can pass `local-target: ${{ runner.environment == 'self-hosted' }}`; sccache's `archive` needs no such switch, since it engages only where no backend is configured.
+
+## Compile caches by execution model
+
+| Execution model | Compile cache |
+| --- | --- |
+| Runner-native or `container:` job, the host offers a backend | `sccache` on that backend, `write: "false"` for pull requests. |
+| Runner-native or `container:` job, no backend | `sccache` with an `archive`: its local directory travels as one Actions cache entry. |
+| Sealed Docker actions | The `target-dir` mount, restored by `rust-cache` with `cache-target` or kept by `local-target`. |
+| Dependency downloads, in every model | `rust-cache`'s registry archive, or `crates-mirror` where the host runs one. |
+
+A target archive beside an sccache archive transfers the same objects twice; combine them only where a measurement of build time and transfer size shows the gain.
 
 ## Trust
 
@@ -53,6 +64,7 @@ Everything the hook exports is readable by every job the runner executes, third-
 Scope credentials to the cache backend alone, on a network the runners can reach and the world cannot.
 A compile cache written by untrusted jobs is a poisoning surface: keep release builds cache-off, or give trust tiers separate backends.
 The action's `namespace` input keeps the objects of a tier or a platform apart within one backend (`release/linux-amd64` below the host prefix); it separates objects, not writers, so it orders a shared backend rather than securing it.
+`write: "false"` turns a job into a reader through the backend's own read/write mode, which binds the job that asks for it, not a hostile one, while the backend accepts writes from every job.
 The crates mirror serves under `Cargo.lock` checksum protection, so its requirement is availability, not trust.
 
 ## Limits
