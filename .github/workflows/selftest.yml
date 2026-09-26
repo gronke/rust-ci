@@ -15,7 +15,7 @@ jobs:
     name: exercise the composite actions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: install-toolchain
         uses: ./.github/actions/install-toolchain
@@ -265,7 +265,7 @@ jobs:
     name: cargo-install checks the binary later steps run
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: the pinned version on PATH, a stale one in a cache
         run: |
           fake() { mkdir -p "$(dirname "$1")"; printf '#!/bin/sh\necho "cargo-nextest %s (fake)"\n' "$2" > "$1"; chmod +x "$1"; }
@@ -312,7 +312,7 @@ jobs:
     name: exercise the changelog action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -491,7 +491,7 @@ jobs:
     name: exercise the changelog notes mode
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: stage a changelog with a Markdown-rich section
         run: |
           set -euo pipefail
@@ -572,7 +572,7 @@ jobs:
     name: exercise the cut-release action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # cargo metadata resolves the crate version; the runner's default toolchain suffices.
       - name: install-toolchain
@@ -661,7 +661,7 @@ jobs:
     name: exercise the no-crate version ladder
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: stage a crateless repository with a changelog
         run: |
@@ -757,7 +757,7 @@ jobs:
     name: changelog check (this repository)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # The section/tag coherence derives from the tags.
           fetch-depth: 0
@@ -769,7 +769,7 @@ jobs:
     name: exercise the release guidance and the signed-tag gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # The action wiring writes the real step summary of this run.
       - name: release-guidance renders into the step summary
@@ -836,7 +836,7 @@ jobs:
     env:
       CICD_PROBE: forwarded
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: build-image (local, cached, with a cross target)
         uses: ./.github/actions/build-image
@@ -1105,7 +1105,7 @@ jobs:
     name: exercise the msrv action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # msrv: pull rust:<declared rust-version> and cargo check there, sealed.
       # Exercises the Cargo.toml extraction, the image pull, and the sealed check.
@@ -1249,7 +1249,7 @@ jobs:
         runner: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/install-toolchain
         with:
           components: clippy
@@ -1269,7 +1269,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/rust-cache
         with:
           prefix: passthrough
@@ -1285,7 +1285,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: seed a sentinel in the custom cargo home
         run: |
           mkdir -p "$CARGO_HOME/registry/index" "$CARGO_HOME/registry/cache" "$CARGO_HOME/git/db"
@@ -1301,7 +1301,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/cargo-home
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/rust-cache
         with:
           prefix: cargohome-${{ github.run_id }}
@@ -1315,7 +1315,7 @@ jobs:
     name: rust-cache save:false saves nothing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/rust-cache
         with:
           prefix: nosave-${{ github.run_id }}
@@ -1350,7 +1350,7 @@ jobs:
     env:
       RUST_CI_LOCAL_TARGET: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/rust-cache
         with:
           prefix: localtgt-${{ github.run_id }}
@@ -1394,7 +1394,7 @@ jobs:
     env:
       SCCACHE_DIR: /tmp/sccache-store
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - run: apt-get update -qq && apt-get install -y -qq jq >/dev/null
       - uses: ./.github/actions/sccache
         id: sccache
@@ -1426,7 +1426,7 @@ jobs:
     env:
       CARGO_HOME: /tmp/selftest-off
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/rust-cache
         id: cache
         with:
@@ -1481,7 +1481,7 @@ jobs:
     name: sccache round-trip through a job-env backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: offer a backend the way a job-started hook would
         run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
       - uses: ./.github/actions/sccache
@@ -1532,7 +1532,7 @@ jobs:
     name: the sccache namespace and read-only mode follow the configured backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: table of backends and refusals
         run: |
           set -euo pipefail
@@ -1661,7 +1661,7 @@ jobs:
     name: sccache with write false stores nothing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: offer an empty backend the way a job-started hook would
         run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
       - uses: ./.github/actions/sccache
@@ -1690,7 +1690,7 @@ jobs:
     name: sccache archive, the writer saves at job end
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/sccache
         id: sccache
         with:
@@ -1713,7 +1713,7 @@ jobs:
     needs: [selftest-sccache-archive-save]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/sccache
         id: sccache
         with:
@@ -1749,7 +1749,7 @@ jobs:
             namespace: selftest/a
             extra-env: CARGO_TERM_COLOR=always
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: a CARGO_* variable the writer did not have
         if: matrix.extra-env != ''
         env:
@@ -1783,7 +1783,7 @@ jobs:
     needs: [selftest-sccache-archive-save]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: change the fixture's source
         run: echo 'pub fn changed() -> u8 { 1 }' >> fixtures/sample-crate/src/lib.rs
       - uses: ./.github/actions/sccache
@@ -1806,7 +1806,7 @@ jobs:
     needs: [selftest-sccache-archive-source-change]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: the same change
         run: echo 'pub fn changed() -> u8 { 1 }' >> fixtures/sample-crate/src/lib.rs
       - uses: ./.github/actions/sccache
@@ -1832,7 +1832,7 @@ jobs:
     name: sccache archive stays unused beside a backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: offer a backend the way a job-started hook would
         run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-store" >> "$GITHUB_ENV"
       - uses: ./.github/actions/sccache
@@ -1860,7 +1860,7 @@ jobs:
     name: a leftover SCCACHE_GHA_ENABLED fails an otherwise idle auto
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/sccache
         id: gha-leftover
         continue-on-error: true
@@ -1891,7 +1891,7 @@ jobs:
     name: sccache detection agrees with the pinned release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: a configuration file that configures a cache
         run: printf '[cache.disk]\ndir = "%s"\n' "$RUNNER_TEMP/file-store" > "$RUNNER_TEMP/sccache-file.toml"
       - uses: ./.github/actions/sccache
@@ -1970,7 +1970,7 @@ jobs:
     name: sccache without a working rustc
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: a rustc that fails, first on PATH
         run: |
           mkdir -p "$RUNNER_TEMP/broken-rustc"
@@ -2020,7 +2020,7 @@ jobs:
     env:
       SCCACHE_REDIS_ENDPOINT: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/sccache
         id: sccache
         with:
@@ -2066,7 +2066,7 @@ jobs:
       CARGO_HOME: /tmp/selftest-cargo-mirror
       RUST_CI_CRATES_MIRROR: sparse+http://127.0.0.1:8399/
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: serve a minimal sparse mirror
         run: |
           mkdir -p /tmp/sparse-mirror/li/bc
@@ -2118,7 +2118,7 @@ jobs:
     name: publish-draft-release seals by tree
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: a scratch repository, candidate markers and a fake gh
         run: |
           set -euo pipefail
@@ -2172,7 +2172,7 @@ jobs:
     name: cargo-publish (dry run · refusal · duplicate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Dry run (default)
         id: dry
         uses: ./.github/actions/cargo-publish
@@ -2247,7 +2247,7 @@ jobs:
     name: exercise the transient-retry helper
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: a registry hiccup retries, a build error does not
         run: |
           set -euo pipefail
@@ -2313,7 +2313,7 @@ jobs:
     name: exercise the route-git-token action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: route a github.com namespace (defaults)
         uses: ./.github/actions/route-git-token
@@ -2475,7 +2475,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: timing-start
         id: start
@@ -2593,7 +2593,7 @@ jobs:
     name: exercise timing-report without the Actions API
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/timing-start
 
@@ -2635,7 +2635,7 @@ jobs:
     name: exercise the cache statistics
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/timing-start
         with:

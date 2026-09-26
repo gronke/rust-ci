@@ -47,7 +47,7 @@ jobs:
     name: sealed lint, test, cross-check, msrv
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # The toolchain image, with any requested cross targets baked in.
       - uses: gronke/rust-ci/.github/actions/build-image@v1
