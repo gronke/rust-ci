@@ -27,7 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.expect.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Derive the expected version from the ref
         id: expect
         run: |
@@ -74,7 +74,7 @@ jobs:
     env:
       VERSION: ${{ needs.gate.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Notes render, draft create/refresh, marker push: one step.
       - uses: ./.github/actions/draft-release
@@ -98,7 +98,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Tree seal against the newest marker, the draft flip, and the moving
       # major: one step.
